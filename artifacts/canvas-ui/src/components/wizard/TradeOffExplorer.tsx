@@ -24,6 +24,8 @@ import {
   Info,
 } from "lucide-react";
 
+
+
 const BASELINE_TRADE_OFFS: TradeOffSettings = {
   architectureStyle: "Simple",
   deploymentModel: "Cloud",
@@ -58,6 +60,7 @@ export function TradeOffExplorer({
   selections,
   tradeOffs,
   onTradeOffsChange,
+  onBack,
 }: TradeOffExplorerProps) {
   const baseline = useMemo(
     () => deriveArchitecture(context, selections, BASELINE_TRADE_OFFS),
@@ -102,6 +105,14 @@ export function TradeOffExplorer({
           </p>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={onBack}
+            className="gap-2"
+            data-testid="button-back-to-blueprint"
+          >
+            <ArrowLeft className="w-4 h-4" /> Back to Blueprint
+          </Button>
           <Button
             variant="outline"
             onClick={() => onTradeOffsChange(BASELINE_TRADE_OFFS)}
