@@ -225,23 +225,20 @@ export function TradeOffExplorer({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <IndicatorCard
           icon={<Cpu className="w-8 h-8 text-primary mb-2" />}
-          baseline={baseline.indicators.complexityScore}
-          current={explored.indicators.complexityScore}
+          value={explored.indicators.complexityScore}
           label="Complexity"
           testid="indicator-complexity"
           accent
         />
         <IndicatorCard
           icon={<Activity className="w-8 h-8 text-muted-foreground mb-2" />}
-          baseline={baseline.indicators.operationalOverheadScore}
-          current={explored.indicators.operationalOverheadScore}
+          value={explored.indicators.operationalOverheadScore}
           label="Operational Overhead"
           testid="indicator-operational"
         />
         <IndicatorCard
           icon={<BarChart className="w-8 h-8 text-muted-foreground mb-2" />}
-          baseline={baseline.indicators.changeCostLaterScore}
-          current={explored.indicators.changeCostLaterScore}
+          value={explored.indicators.changeCostLaterScore}
           label="Change Cost Later"
           testid="indicator-change"
         />
@@ -319,39 +316,22 @@ export function TradeOffExplorer({
 
 interface IndicatorCardProps {
   icon: React.ReactNode;
-  baseline: number;
-  current: number;
+  value: number;
   label: string;
   testid: string;
   accent?: boolean;
 }
 
-function IndicatorCard({ icon, baseline, current, label, testid, accent }: IndicatorCardProps) {
-  const delta = current - baseline;
-  const deltaLabel =
-    delta === 0 ? "no change" : delta > 0 ? `+${delta} vs baseline` : `${delta} vs baseline`;
-  const deltaClass =
-    delta === 0
-      ? "text-muted-foreground"
-      : delta > 0
-        ? "text-amber-500"
-        : "text-emerald-500";
-
+function IndicatorCard({ icon, value, label, testid, accent }: IndicatorCardProps) {
   return (
     <Card className={accent ? "bg-primary/10 border-primary/20" : "bg-secondary/50"}>
       <CardContent className="p-6 flex flex-col items-center justify-center text-center space-y-2">
         {icon}
         <div className="text-4xl font-bold" data-testid={testid}>
-          {current}
+          {value}
         </div>
         <div className="text-xs uppercase tracking-widest font-semibold text-muted-foreground">
           {label}
-        </div>
-        <div
-          className={`text-[10px] font-mono ${deltaClass}`}
-          data-testid={`${testid}-delta`}
-        >
-          {deltaLabel}
         </div>
       </CardContent>
     </Card>
