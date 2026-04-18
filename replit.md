@@ -31,6 +31,16 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 Entry point: `lib/architecture-grammar/src/index.ts`  
 Main function: `deriveArchitecture(context, capabilitySelections, tradeOffs) → ArchitectureResult`
 
+## Architecture Decision Canvas UI
+
+`artifacts/canvas-ui` is a React + Vite web app (preview path: `/`) that provides a three-screen wizard UI for the grammar engine:
+
+- **Screen 1 — ContextForm**: Collects `OrganisationContext` (organisation type, sensitivity level, system intent, expected lifespan)
+- **Screen 2 — CapabilitySelector**: Selects status (IN_SCOPE / DEFERRED / OUT_OF_SCOPE) for all 7 capabilities, plus `TradeOffSettings` overrides
+- **Screen 3 — ArchitectureResultDisplay**: Calls `deriveArchitecture()` synchronously, displays required components grouped by layer, risks with RED/AMBER/GREEN indicators, and the three numeric complexity indicators
+
+No backend. All derivation runs client-side. Imports from `@workspace/architecture-grammar` (workspace dependency).
+
 ## Key Commands
 
 - `pnpm run typecheck` — full typecheck across all packages

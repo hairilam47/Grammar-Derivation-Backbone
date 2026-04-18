@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Architecture Decision Canvas"
+version = "1.0.0"
+id = "artifacts/canvas-ui"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 20054
+
+[services.development]
+run = "pnpm --filter @workspace/canvas-ui run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/canvas-ui", "run", "build" ]
+publicDir = "artifacts/canvas-ui/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20054"
+BASE_PATH = "/"
