@@ -1,18 +1,34 @@
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Slider } from "@/components/ui/slider";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowRight } from "lucide-react";
-import type { OrganisationContext } from "@workspace/architecture-grammar";
+import type {
+  OrganisationType,
+  SensitivityLevel,
+  SystemIntent,
+  OrganisationContext,
+} from "@workspace/architecture-grammar";
 
 interface ContextFormProps {
-  data: OrganisationContext;
-  onChange: (data: OrganisationContext) => void;
+  data: Partial<OrganisationContext>;
+  onChange: (data: Partial<OrganisationContext>) => void;
   onNext: () => void;
 }
 
+function isComplete(data: Partial<OrganisationContext>): data is OrganisationContext {
+  return (
+    data.organisationType !== undefined &&
+    data.sensitivityLevel !== undefined &&
+    data.systemIntent !== undefined &&
+    data.expectedLifespanYears !== undefined
+  );
+}
+
 export function ContextForm({ data, onChange, onNext }: ContextFormProps) {
+  const complete = isComplete(data);
+
   return (
     <div className="space-y-6 max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div>
@@ -28,8 +44,8 @@ export function ContextForm({ data, onChange, onNext }: ContextFormProps) {
           </CardHeader>
           <CardContent>
             <RadioGroup
-              value={data.organisationType}
-              onValueChange={(val: any) => onChange({ ...data, organisationType: val })}
+              value={data.organisationType ?? ""}
+              onValueChange={(val: OrganisationType) => onChange({ ...data, organisationType: val })}
               className="flex gap-4"
               data-testid="radio-org-type"
             >
@@ -52,8 +68,8 @@ export function ContextForm({ data, onChange, onNext }: ContextFormProps) {
           </CardHeader>
           <CardContent>
             <RadioGroup
-              value={data.sensitivityLevel}
-              onValueChange={(val: any) => onChange({ ...data, sensitivityLevel: val })}
+              value={data.sensitivityLevel ?? ""}
+              onValueChange={(val: SensitivityLevel) => onChange({ ...data, sensitivityLevel: val })}
               className="flex gap-4"
               data-testid="radio-sensitivity"
             >
@@ -80,8 +96,8 @@ export function ContextForm({ data, onChange, onNext }: ContextFormProps) {
           </CardHeader>
           <CardContent>
             <RadioGroup
-              value={data.systemIntent}
-              onValueChange={(val: any) => onChange({ ...data, systemIntent: val })}
+              value={data.systemIntent ?? ""}
+              onValueChange={(val: SystemIntent) => onChange({ ...data, systemIntent: val })}
               className="flex flex-col gap-3"
               data-testid="radio-intent"
             >
@@ -100,27 +116,40 @@ export function ContextForm({ data, onChange, onNext }: ContextFormProps) {
         <Card>
           <CardHeader>
             <CardTitle className="text-sm font-semibold uppercase tracking-wider">Expected Lifespan</CardTitle>
-            <CardDescription>Projected operational lifespan in years.</CardDescription>
+            <CardDescription>Projected operational lifespan in years (1–30).</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex justify-between text-sm font-bold">
-              <span>1 Year</span>
-              <span className="text-primary text-lg">{data.expectedLifespanYears} Years</span>
-              <span>30 Years</span>
+          <CardContent>
+            <div className="flex items-center gap-3">
+              <Input
+                type="number"
+                min={1}
+                max={30}
+                value={data.expectedLifespanYears ?? ""}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  if (!isNaN(val) && val >= 1 && val <= 30) {
+                    onChange({ ...data, expectedLifespanYears: val });
+                  } else if (e.target.value === "") {
+                    const { expectedLifespanYears: _omit, ...rest } = data;
+                    onChange(rest);
+                  }
+                }}
+                className="w-28"
+                placeholder="e.g. 10"
+                data-testid="input-lifespan"
+              />
+              <span className="text-sm text-muted-foreground">years</span>
             </div>
-            <Slider
-              value={[data.expectedLifespanYears]}
-              onValueChange={([val]) => onChange({ ...data, expectedLifespanYears: val })}
-              max={30}
-              min={1}
-              step={1}
-              data-testid="slider-lifespan"
-            />
           </CardContent>
         </Card>
 
         <div className="flex justify-end pt-4">
-          <Button onClick={onNext} className="gap-2" data-testid="button-next-step-1">
+          <Button
+            onClick={onNext}
+            disabled={!complete}
+            className="gap-2"
+            data-testid="button-next-step-1"
+          >
             Proceed to Capabilities <ArrowRight className="w-4 h-4" />
           </Button>
         </div>

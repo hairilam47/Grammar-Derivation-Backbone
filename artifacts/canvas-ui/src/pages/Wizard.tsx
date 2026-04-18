@@ -5,49 +5,22 @@ import { ArchitectureResultDisplay } from "@/components/wizard/ArchitectureResul
 import type {
   OrganisationContext,
   CapabilitySelection,
-  TradeOffSettings,
 } from "@workspace/architecture-grammar";
-import { CAPABILITIES } from "@workspace/architecture-grammar";
 import { Layout } from "lucide-react";
 
 export default function Wizard() {
   const [step, setStep] = useState<number>(1);
 
-  const [context, setContext] = useState<OrganisationContext>({
-    organisationType: "Enterprise",
-    sensitivityLevel: "Medium",
-    systemIntent: "NewCapability",
-    expectedLifespanYears: 5,
-  });
+  const [context, setContext] = useState<Partial<OrganisationContext>>({});
 
-  const [selections, setSelections] = useState<CapabilitySelection[]>(
-    CAPABILITIES.map((c) => ({ capabilityId: c.id, status: "IN_SCOPE" }))
-  );
-
-  const [tradeOffs, setTradeOffs] = useState<TradeOffSettings>({
-    architectureStyle: "Simple",
-    deploymentModel: "Cloud",
-    scopeLevel: "Minimal",
-  });
+  const [selections, setSelections] = useState<CapabilitySelection[]>([]);
 
   const nextStep = () => setStep((s) => Math.min(s + 1, 3));
-  const prevStep = () => setStep((s) => Math.max(s - 1, 1));
+
   const reset = () => {
     setStep(1);
-    setContext({
-      organisationType: "Enterprise",
-      sensitivityLevel: "Medium",
-      systemIntent: "NewCapability",
-      expectedLifespanYears: 5,
-    });
-    setSelections(
-      CAPABILITIES.map((c) => ({ capabilityId: c.id, status: "IN_SCOPE" }))
-    );
-    setTradeOffs({
-      architectureStyle: "Simple",
-      deploymentModel: "Cloud",
-      scopeLevel: "Minimal",
-    });
+    setContext({});
+    setSelections([]);
   };
 
   return (
@@ -83,17 +56,13 @@ export default function Wizard() {
           <CapabilitySelector
             selections={selections}
             onSelectionsChange={setSelections}
-            tradeOffs={tradeOffs}
-            onTradeOffsChange={setTradeOffs}
             onNext={nextStep}
-            onBack={prevStep}
           />
         )}
-        {step === 3 && (
+        {step === 3 && context.organisationType && context.sensitivityLevel && context.systemIntent && context.expectedLifespanYears && (
           <ArchitectureResultDisplay
-            context={context}
+            context={context as OrganisationContext}
             selections={selections}
-            tradeOffs={tradeOffs}
             onReset={reset}
           />
         )}
