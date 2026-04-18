@@ -16,7 +16,7 @@ const DEFAULT_TRADE_OFFS: TradeOffSettings = {
   scopeLevel: "Minimal",
 };
 
-const LAYER_ORDER = ["UI", "Application", "Integration", "Data", "Security", "Operations"] as const;
+const LAYER_ORDER = ["UI", "Application", "Data", "Integration", "Security", "Operations"] as const;
 
 const RISK_COLORS: Record<string, string> = {
   RED: "bg-destructive/10 text-destructive border-destructive/20",
