@@ -1,0 +1,162 @@
+SYSTEM ROLE
+
+You are building STEP 4 of the Architecture Decision Canvas.
+
+STEP 1 (Grammar Engine), STEP 2 (Decision Declaration UI),
+and STEP 3 (Trade-off Exploration UI) are COMPLETE and FROZEN.
+
+STEP 4 is a READ-ONLY governance export layer.
+It MUST NOT modify decisions or logic.
+
+---
+
+STEP 4 OBJECTIVE
+
+Implement a read-only export capability that:
+
+1. Produces an Architecture Decision Snapshot (ADS)
+2. Produces an Execution Constraint Profile (ECP)
+3. Allows ECP CONTENT to evolve without code rewrites
+4. Exports ADS and ECP as PDF / DOCX
+
+STEP 4 finalises decisions — it does NOT design or recommend.
+
+---
+
+CORE DESIGN REQUIREMENT (CRITICAL)
+
+DO NOT hard-code ECP requirements or constraints into components.
+
+Instead:
+- Encode a stable ECP STRUCTURE schema
+- Populate ECP sections using:
+  - ADS outputs
+  - Configurable ECP section definitions
+  - Institution-specific rule metadata (future-safe)
+
+Structure is fixed. Content is configurable.
+
+---
+
+ECP STRUCTURE (STABLE)
+
+The ECP must always render sections in the following order:
+
+1. Decision Reference & Authority
+2. Approved Scope & Mandate
+3. Mandatory Architectural Layers
+4. Mandatory Constraint Categories
+5. Integration & Legacy Constraints
+6. Acknowledged Architectural Risks
+7. Trade-Off Boundary Declaration
+8. Change Control Clause
+9. Disclaimer
+
+THIS ORDER IS IMMUTABLE.
+
+---
+
+ECP CONTENT GENERATION (CONFIGURABLE)
+
+Each ECP section must be built using:
+
+- A SECTION DEFINITION object:
+  {
+    sectionId: string,
+    title: string,
+    description?: string,
+    source: "ADS" | "GRAMMAR" | "STATIC_TEXT",
+    placeholderPolicy: "REQUIRED" | "OPTIONAL"
+  }
+
+- Section definitions must be loaded from configuration,
+  not embedded in UI JSX or components.
+
+This ensures future evolution without refactoring.
+
+---
+
+DATA SOURCES (READ-ONLY)
+
+Step 4 may only consume:
+
+- Approved ADS output (from Steps 1–3)
+- Risk set (baseline)
+- Capability scope
+- Architecture structure
+- Trade-off baseline posture
+
+NO new inputs allowed.
+
+---
+
+STEP 4 UI BEHAVIOR
+
+- Step 4 is entered via explicit action:
+  "Freeze Decision & Export"
+
+- Once entered:
+  - No navigation back to Step 2 or Step 3
+  - No editing controls
+  - Only export actions allowed
+
+- UI must display:
+  - ADS preview
+  - ECP preview
+  - Metadata banner on every page:
+    ADS ID, Version, Date, Authority
+
+---
+
+EXPORT CAPABILITIES
+
+Provide export actions:
+- Export ADS (PDF)
+- Export ADS (DOCX)
+- Export ECP (PDF)
+- Export ECP (DOCX)
+
+File names auto-generated:
+ADS_<Project>_<Version>_<Date>.pdf
+ECP_<Project>_<Version>_<Date>.docx
+
+Users cannot rename files inside the app.
+
+---
+
+VERSIONING & INTEGRITY
+
+- Version derived from hash of:
+  - Context
+  - Capability selections
+  - Baseline trade-off posture
+
+Same decisions → same version.
+
+Add an integrity footer:
+"This artefact was system-generated from an approved Architecture Decision Snapshot."
+
+---
+
+FORBIDDEN FEATURES
+
+- No editing
+- No toggles
+- No comments
+- No collaboration
+- No explanations
+- No technology assumptions
+
+STEP 4 IS TERMINAL.
+
+---
+
+STOP CONDITION
+
+Once read-only ADS/ECP previews and exports work,
+STOP.
+
+Do NOT add additional governance logic.
+
+END.
+

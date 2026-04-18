@@ -1,0 +1,220 @@
+SYSTEM ROLE
+You are building STEP 4 of the Architecture Decision Canvas.
+STEP 1 (Grammar Engine), STEP 2 (Decision Declaration UI), and STEP 3 (Trade‑Off Exploration) are COMPLETE, AUDITED, and FROZEN.
+STEP 4 is a terminal governance export layer.
+It MUST NOT design, recommend, optimise, or modify architecture.
+
+STEP 4 OBJECTIVE
+Implement a “Freeze Decision & Export” capability that produces two read‑only, governance‑grade artefacts from an approved decision:
+
+Architecture Decision Snapshot (ADS)
+Execution Constraint Profile (ECP)
+
+Both artefacts must be exportable as PDF and DOCX, entirely client‑side.
+This step exists to finalise and externalise decisions for downstream stakeholders (steering committees, procurement, auditors).
+It does not guide delivery or propose solutions.
+
+CORE DESIGN PRINCIPLE (NON‑NEGOTIABLE)
+
+Step 4 governs format, structure, and traceability — not policy content.
+
+The platform enforces artefact structure, ordering, and integrity, while allowing institutions to evolve ECP wording and expectations without UI or logic rewrites.
+
+EXPLICIT HARD CONSTRAINTS (MUST BE ENFORCED)
+🔒 Constraint 1 — Version Hash EXCLUDES Project Metadata
+The ADS/ECP version hash MUST be derived only from:
+
+Organisation context
+Capability selections
+Baseline trade‑off posture (Simple / Cloud / Minimal)
+
+The version hash MUST NOT include:
+
+Project Name
+Approving Authority
+Any display‑only metadata
+
+Rationale:
+The same architectural decision reused across initiatives must always produce the same version. Administrative or cosmetic changes must not invalidate governance artefacts.
+
+🔒 Constraint 2 — ECP Section Order Is Programmatically Enforced
+The ECP consists of exactly nine sections, in the following immutable order:
+
+Decision Reference & Authority
+Approved Scope & Mandate
+Mandatory Architectural Layers
+Mandatory Constraint Categories
+Integration & Legacy Constraints
+Acknowledged Architectural Risks
+Trade‑Off Boundary Declaration
+Change Control Clause
+Disclaimer
+
+This order MUST be enforced programmatically using an explicit numeric sectionOrder.
+Do NOT rely on array order or JSX layout.
+
+🔒 Constraint 3 — Constraint Content Must Stay Category‑Level
+ECP constraint content MUST describe categories only, for example:
+
+Security
+Operations
+Compliance
+Data protection
+
+ECP MUST NOT enumerate:
+
+control mechanisms
+specific practices
+technologies, tools, or platforms
+
+Rationale:
+Step 4 defines execution boundaries, not implementation methods.
+
+🔒 Constraint 4 — Export Preview Is Document‑Like, Not Editor‑Like
+The ADS/ECP preview UI MUST:
+
+mirror exported document layout,
+be static and read‑only,
+avoid pagination controls, zoom sliders, collapsible sections, or editing affordances.
+
+The preview is a visual confirmation, not a document editor.
+
+STEP 4 POSITION IN THE WIZARD
+
+Step 4 is reachable only from Screen 4 (What‑If Exploration) via explicit action:
+
+
+Freeze Decision & Export
+
+
+Once entered:
+
+❌ No navigation back to Screens 2, 3, or 4
+✅ Only two exits:
+
+Export artefacts
+Start Over (full reset)
+
+
+
+
+
+This enforces decision finality.
+
+METADATA CAPTURE (DISPLAY‑ONLY)
+Before entering Step 4, collect once:
+
+Project Name
+Approving Authority
+
+These fields:
+
+are display‑only,
+MUST NOT influence architecture derivation,
+MUST NOT influence ADS/ECP structural content,
+MUST NOT be included in version hashing.
+
+
+DATA SOURCES (READ‑ONLY)
+STEP 4 may consume ONLY:
+
+approved ADS output (Steps 1–3),
+baseline risks,
+capability scope,
+architecture structure,
+baseline trade‑off posture.
+
+NO new architectural logic is allowed.
+
+ADS EXPORT & PREVIEW
+ADS preview renders the following fixed sections, in order:
+
+Decision Context
+Capability Scope Declaration
+Derived Architecture (grouped by layer)
+Risk Acknowledgement (baseline risks)
+Trade‑Off Exploration Summary (baseline posture only)
+Decision Record
+
+No reordering, no omission.
+Each page includes a metadata banner:
+
+ADS ID
+Version
+Date
+Approving Authority
+
+
+ECP EXPORT & PREVIEW
+Section‑Driven Rendering (CONFIG‑BASED)
+ECP sections must be rendered from SectionDefinition records loaded from a configuration module — never embedded in JSX.
+Each SectionDefinition has:
+TypeScript{  sectionId: string,  sectionOrder: number,  title: string,  description?: string,  source: "ADS" | "GRAMMAR" | "STATIC_TEXT",  placeholderPolicy: "REQUIRED" | "OPTIONAL"}
+
+JSX must map over resolved sections generically.
+Do NOT branch on sectionId.
+
+EXPORT CAPABILITIES
+Provide four client‑side export actions:
+
+Export ADS (PDF)
+Export ADS (DOCX)
+Export ECP (PDF)
+Export ECP (DOCX)
+
+Export Rules
+
+Client‑side generation only
+Fixed paper size (A4 or Letter)
+Auto‑generated filenames:
+
+ADS_<Project>_<Version>_<Date>.pdf
+ECP_<Project>_<Version>_<Date>.docx
+
+
+Sanitise project names for filesystem safety
+❌ Users cannot rename files inside the app
+
+Mandatory Integrity Footer
+Append to every exported page:
+
+“This artefact was system‑generated from an approved Architecture Decision Snapshot.”
+
+
+FORBIDDEN FEATURES (EXPLICIT)
+
+Editing or override controls
+Scenario comparison
+Recommendations or guidance
+Technology assumptions
+Vendor or procurement logic
+Backend persistence
+Digital signatures / PKI
+Collaboration, comments, or annotations
+
+If a change is required, the only valid path is:
+
+Exit → restart from Step 2 → re‑approve
+
+
+IMPLEMENTATION STEPS (DEVELOPER‑FACING)
+
+Create ECP section configuration module (with sectionOrder)
+Implement pure ADS builder + deterministic version hashing (excluding metadata)
+Implement pure ECP builder consuming ADS + section configuration
+Add “Freeze Decision & Export” entry flow in Screen 4
+Implement Screen 5 (FreezeAndExport) with read‑only previews
+Add client‑side PDF and DOCX export functions
+Extend wizard to five steps; ensure Start Over resets all state
+
+
+STOP CONDITION
+Stop development once:
+
+ADS and ECP previews render read‑only,
+ADS/ECP export succeeds (PDF/DOCX),
+versioning is deterministic and stable,
+ECP section order is enforced programmatically,
+no policy logic is hard‑coded in UI.
+
+END.

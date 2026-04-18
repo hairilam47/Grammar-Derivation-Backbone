@@ -1,0 +1,52 @@
+tep 4: Governance Export Layer
+What & Why
+Add a terminal "Freeze Decision & Export" screen that produces two read-only governance artefacts from the approved decision: an Architecture Decision Snapshot (ADS) and an Execution Constraint Profile (ECP). Both can be exported as PDF and DOCX. The screen exists to finalise decisions for downstream stakeholders — it does not design, recommend, or allow editing.
+
+The ECP must be section-driven from a configuration module (not hard-coded into JSX), so future evolution of constraint content needs no UI rewrites. The ECP section structure and order are immutable; only section content sources are configurable.
+
+Done looks like
+A new fifth wizard screen ("Freeze & Export") is reachable from Screen 4 via a "Freeze Decision & Export" button. Once entered, there is no Back navigation to Screen 2, 3, or 4. Only "Start Over" (which resets the whole wizard) and export actions are available.
+Before entering, the user provides two identification fields in a small modal/inline form: Project Name and Approving Authority. These are metadata only, not architectural inputs.
+A persistent metadata banner is visible at the top of Screen 5 showing: ADS ID, Version, Date, Authority.
+The screen renders two preview panels stacked or tabbed: ADS Preview and ECP Preview.
+ADS preview shows: context inputs, capability scope (in-scope / deferred / out-of-scope), baseline trade-off posture (Simple / Cloud / Minimal), required components grouped by layer, baseline risks, and baseline indicators.
+ECP preview renders the nine fixed sections in this immutable order: 1) Decision Reference & Authority, 2) Approved Scope & Mandate, 3) Mandatory Architectural Layers, 4) Mandatory Constraint Categories, 5) Integration & Legacy Constraints, 6) Acknowledged Architectural Risks, 7) Trade-Off Boundary Declaration, 8) Change Control Clause, 9) Disclaimer.
+Each ECP section is rendered from a SectionDefinition record (sectionId, title, description, source, placeholderPolicy) loaded from a separate configuration module — never embedded in JSX.
+Version is a deterministic hash derived from the canonical JSON of context + capability selections + baseline trade-off posture. Same decisions always produce the same version string.
+Four export buttons work: Export ADS (PDF), Export ADS (DOCX), Export ECP (PDF), Export ECP (DOCX). Files download client-side with auto-generated names: ADS_<Project>_<Version>_<Date>.pdf, ECP_<Project>_<Version>_<Date>.docx, etc. Project names with spaces or unsafe characters are sanitised. Users cannot rename inside the app.
+Every exported file ends with the integrity footer: "This artefact was system-generated from an approved Architecture Decision Snapshot."
+Progress header expands to 5 segments; segment 5 is active on this screen.
+No editing controls, no toggles, no comments, no recommendations, no technology assumptions on Screen 5.
+Out of scope
+Modifying the grammar engine, rules, derivation pipeline, types, or any of Screens 1–4
+Persisting decisions to a backend, database, or shared storage
+Collaboration, comments, or annotations on the artefacts
+Multiple export themes, branding customisation, or letterhead uploads
+Digital signatures, e-signature integration, or PKI
+Server-side PDF rendering — exports must be client-side
+Steps
+ECP section configuration — Create a configuration module that exports the nine ECP SectionDefinition records in canonical order, each with sectionId, title, description, source ("ADS" | "GRAMMAR" | "STATIC_TEXT"), and placeholderPolicy ("REQUIRED" | "OPTIONAL"). Include the static disclaimer and change-control clause text here.
+
+ADS builder and version hashing — Pure function that takes context, selections, baseline tradeOffs, project metadata (name + authority) and returns a structured ADS object including a deterministic version hash computed from canonical JSON of context + selections + baseline tradeOffs. Same inputs yield same version every time.
+
+ECP builder — Pure function that consumes an ADS plus the section configuration and produces a populated ECP object: an ordered array of resolved sections with their final content. Section content drawn from ADS fields, grammar metadata, or static text per the section's source.
+
+Freeze entry control — Add "Freeze Decision & Export" button to TradeOffExplorer (Screen 4). Clicking opens a small inline modal asking for Project Name and Approving Authority, then advances to Screen 5 with that metadata bound.
+
+Screen 5 component (FreezeAndExport) — New component receiving the resolved ADS and ECP. Renders the persistent metadata banner, the ADS preview panel, the ECP preview panel (mapping over resolved sections — no section-specific JSX branching), the four export buttons, and a Start Over control. No back navigation to prior steps.
+
+PDF and DOCX export — Add client-side libraries for PDF (e.g. jsPDF) and DOCX (e.g. the docx package) to the canvas-ui artifact. Implement four export functions that serialise the ADS and ECP into the respective formats, append the integrity footer, and trigger a download with the auto-generated filename.
+
+Wizard wiring — Extend Wizard.tsx to support a fifth step, hold the project metadata state, render FreezeAndExport at step === 5, extend the progress bar to 5 segments, and ensure Start Over resets project metadata too.
+
+Relevant files
+artifacts/canvas-ui/src/pages/Wizard.tsx
+artifacts/canvas-ui/src/components/wizard/TradeOffExplorer.tsx
+artifacts/canvas-ui/src/components/wizard/ArchitectureResultDisplay.tsx
+artifacts/canvas-ui/src/components/wizard/ContextForm.tsx
+artifacts/canvas-ui/src/components/wizard/CapabilitySelector.tsx
+artifacts/canvas-ui/package.json
+lib/architecture-grammar/src/index.ts
+lib/architecture-grammar/src/types.ts
+lib/architecture-grammar/src/capabilities.ts
+lib/architecture-grammar/src/components.ts
