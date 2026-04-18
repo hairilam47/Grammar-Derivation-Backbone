@@ -9,14 +9,15 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { PortfolioHeaderNav } from "@/components/governance/PortfolioHeaderNav";
-import { AdsPreview } from "@/components/governance/AdsPreview";
-import { EcpPreview } from "@/components/governance/EcpPreview";
+import {
+  EntryAdsView,
+  EntryEcpView,
+} from "@/components/governance/EntryArtefactView";
 import { ReadOnlyArtefactModal } from "@/components/governance/ReadOnlyArtefactModal";
 import {
   listEntries,
   type PortfolioEntry,
 } from "@/governance/portfolioStore";
-import { buildECP } from "@/governance/ecpBuilder";
 import { assertAllGovernanceLanguage } from "@/governance/staticTextGuard";
 
 // HC6 governance language guard: every static string the portfolio page
@@ -208,10 +209,8 @@ export default function Portfolio() {
         testid="modal-artefact"
         onClose={() => setViewer(null)}
       >
-        {viewer?.kind === "ADS" && <AdsPreview ads={viewer.entry.ads} />}
-        {viewer?.kind === "ECP" && (
-          <EcpPreview ecp={buildECP(viewer.entry.ads)} />
-        )}
+        {viewer?.kind === "ADS" && <EntryAdsView entry={viewer.entry} />}
+        {viewer?.kind === "ECP" && <EntryEcpView entry={viewer.entry} />}
       </ReadOnlyArtefactModal>
     </div>
   );

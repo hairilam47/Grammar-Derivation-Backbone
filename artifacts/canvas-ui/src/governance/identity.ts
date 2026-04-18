@@ -1,15 +1,17 @@
 import { fnv1aHex } from "./hash";
 
-// Generates a stable logical decision identity from a project name.
+// Logical decision identity, derived deterministically from the project name.
 //
-// The identity is collision-resistant: two distinct project names always
-// produce two distinct ids, even when the readable slug is empty, identical
-// after normalisation, or truncated. We achieve this by always appending the
-// FNV-1a hex of the *original* project name as a disambiguator.
+// Format: `ads-<slug>` where the slug is the project name lowercased,
+// diacritics stripped, non-alphanumerics collapsed to hyphens, trimmed,
+// and capped at 60 characters. When the project name normalises to an
+// empty slug (e.g. only punctuation), an FNV-1a hex of the original name
+// is used as the slug so the identity is still derivable and unique to
+// that exact name.
 //
-// Format: `ads-<readable-slug>-<8-char-hex>` (lowercase prefix for canonical
-// casing). When the project name normalises to an empty slug, the slug part
-// is omitted: `ads-<8-char-hex>`.
+// Two project names that share the same slug after normalisation will
+// share the same adsId — by design. The portfolio treats that as the
+// same logical decision lineage.
 export function slugifyAdsId(projectName: string): string {
   const slug = projectName
     .normalize("NFKD")
@@ -18,9 +20,8 @@ export function slugifyAdsId(projectName: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 60);
-  const disambiguator = fnv1aHex(projectName).toLowerCase();
   if (slug.length === 0) {
-    return `ads-${disambiguator}`;
+    return `ads-${fnv1aHex(projectName).toLowerCase()}`;
   }
-  return `ads-${slug}-${disambiguator}`;
+  return `ads-${slug}`;
 }

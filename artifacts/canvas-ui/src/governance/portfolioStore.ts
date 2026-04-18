@@ -9,15 +9,12 @@ import type { ADS } from "./types";
 
 const STORAGE_KEY = "adc.portfolio.v1";
 
-// HC4: top-level allow-list. The portfolio entry persists exactly these
-// fields and no others. The `ads` field carries the full canonical
-// Architecture Decision Snapshot (HC1 source of truth) so that the
-// read-only viewer can render the snapshot through the same preview
-// renderers used at freeze time and re-build the ECP through the
-// existing `buildECP` flow. The remaining fields are a flat summary
-// derived from the ADS for the table and aggregation views.
+// HC4: top-level allow-list. The portfolio entry persists EXACTLY these
+// 13 fields and nothing else. The full ADS is intentionally NOT
+// persisted here — the portfolio is a deliberately reduced read-model
+// of the canonical artefact (HC1). The read-only viewer renders from
+// these fields directly, never by re-running the grammar.
 const ALLOWED_FIELDS = [
-  "ads",
   "adsId",
   "adsVersion",
   "projectName",
@@ -34,7 +31,6 @@ const ALLOWED_FIELDS = [
 ] as const;
 
 export interface PortfolioEntry {
-  ads: ADS;
   adsId: string;
   adsVersion: string;
   projectName: string;
@@ -68,7 +64,6 @@ export function entryFromADS(ads: ADS): PortfolioEntry {
   ).sort() as ComponentLayer[];
 
   return {
-    ads,
     adsId: ads.adsId,
     adsVersion: ads.version,
     projectName: ads.projectName,
@@ -137,13 +132,6 @@ function isValidEntry(raw: unknown): raw is PortfolioEntry {
   for (const k of Object.keys(e.baselinePosture as Record<string, unknown>)) {
     if (!ALLOWED_BASELINE_KEYS.has(k)) return false;
   }
-  // Minimal shape check on the embedded ADS — the canonical artefact's full
-  // structural validation is the responsibility of `buildADS`; here we only
-  // confirm the required top-level fields are present.
-  if (e.ads === null || typeof e.ads !== "object") return false;
-  const ads = e.ads as Record<string, unknown>;
-  if (typeof ads.adsId !== "string" || typeof ads.version !== "string") return false;
-  if (!Array.isArray(ads.sections)) return false;
   return true;
 }
 
@@ -154,9 +142,6 @@ function readAll(): PortfolioEntry[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    // HC4 read-path enforcement: drop any row that does not match the
-    // strict allow-list schema. localStorage is mutable, so a tampered
-    // entry must not be able to surface forbidden fields to the UI.
     return parsed.filter(isValidEntry);
   } catch {
     return [];
