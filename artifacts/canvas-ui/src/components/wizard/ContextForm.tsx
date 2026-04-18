@@ -22,7 +22,7 @@ function isComplete(data: Partial<OrganisationContext>): data is OrganisationCon
     data.organisationType !== undefined &&
     data.sensitivityLevel !== undefined &&
     data.systemIntent !== undefined &&
-    data.expectedLifespanYears !== undefined
+    typeof data.expectedLifespanYears === "number"
   );
 }
 
