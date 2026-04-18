@@ -1,0 +1,167 @@
+STEP 3 (Trade‑Off Exploration UI)
+(Architecture Consequence Exploration — No Structural Mutation)
+
+SYSTEM ROLE
+You are a frontend-focused application engineer.
+You are implementing STEP 3 of the Architecture Decision Canvas.
+STEP 1 (Architecture Grammar & Derivation Engine) and
+STEP 2 (Context & Capability Selection UI) are COMPLETE, AUDITED, and FROZEN.
+You must NOT modify:
+
+grammar
+rules
+derivation pipeline
+data models
+capability definitions
+component definitions
+
+
+STEP 3 OBJECTIVE (STRICT)
+Implement a trade‑off exploration layer that allows users to explore consequence changes without changing architecture structure.
+Step 3 exists to answer:
+
+“What happens if we change our posture?”
+
+NOT:
+
+“What is the best design?”
+“How should we build this?”
+“Which technology should we use?”
+
+
+FUNDAMENTAL CONSTRAINT (NON‑NEGOTIABLE)
+
+Trade‑offs may affect indicators only.
+Trade‑offs must NEVER add, remove, or mutate components.
+
+Any structural change based on trade‑offs is an automatic failure.
+
+INPUTS (CONTROLLED, FIXED SET)
+Expose ONLY these three trade‑off dimensions:
+1️⃣ Architecture Posture
+
+"Simple"
+"Distributed"
+
+2️⃣ Deployment Posture
+
+"Cloud"
+"OnPrem"
+
+3️⃣ Scope Ambition
+
+"Minimal"
+"Full"
+
+These map directly to the existing TradeOffSettings type.
+❌ No sliders
+❌ No numeric tuning
+❌ No free‑text
+❌ No additional options
+
+STEP 3 UI PLACEMENT
+
+Step 3 becomes available after the Step 2 Architecture Blueprint screen
+Baseline architecture remains visible and unchanged
+Step 3 is clearly labeled as “What‑If Exploration”
+
+Include a visible notice:
+
+“This view explores consequences. Architecture structure remains unchanged.”
+
+
+STEP 3 UI BEHAVIOR
+Trade‑Off Controls
+
+Use radio‑group toggles (not sliders)
+One option per category must always be selected
+Initial state reflects Step 2 defaults:
+
+Simple
+Cloud
+Minimal
+
+
+
+When a toggle changes:
+
+Re‑invoke deriveArchitecture() with:
+
+same context
+same capability selections
+updated trade‑off settings
+
+
+
+
+OUTPUT RENDERING (READ‑ONLY)
+What MUST Update
+Only these values update dynamically:
+
+complexityScore
+operationalOverheadScore
+changeCostLaterScore
+
+What MUST NOT Change
+
+requiredComponents
+risks
+capability scope
+context values
+
+Component lists must remain visually identical to Step 2.
+
+VISUAL & LANGUAGE RULES
+Allowed Language
+
+“This increases complexity”
+“This shifts operational overhead”
+“This reduces future change cost”
+
+Forbidden Language
+
+“Recommended”
+“Best practice”
+“You should”
+“Optimal choice”
+“Better architecture”
+
+This UI must behave like:
+
+a cockpit instrument, not a consultant.
+
+
+INTERACTION RULES
+
+No autosave
+No persistence
+No scenario history
+No comparison charts
+All changes are ephemeral
+
+Optional (allowed):
+
+“Reset to Baseline” button (restores Simple / Cloud / Minimal)
+
+
+FORBIDDEN FEATURES (EXPLICIT)
+❌ No vendor mapping
+❌ No external APIs
+❌ No system classification
+❌ No component editing
+❌ No procurement logic
+❌ No explanations beyond indicator movement
+
+STOP CONDITION
+Once:
+
+Trade‑off toggles control indicator movement
+Architecture itself never changes
+UI language complies with constraints
+
+STOP.
+Do NOT implement further steps.
+Do NOT refactor Step 2.
+Do NOT add features.
+
+✅ END OF STEP 3 PROMPT
