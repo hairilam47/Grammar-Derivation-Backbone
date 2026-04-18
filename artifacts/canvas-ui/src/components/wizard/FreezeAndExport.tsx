@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
+import { Link } from "wouter";
 import type {
   OrganisationContext,
   CapabilitySelection,
@@ -11,10 +12,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { FileText, FileType, RotateCcw, Lock } from "lucide-react";
+import { FileText, FileType, RotateCcw, Lock, LayoutGrid } from "lucide-react";
 import type { ProjectMetadata, ADSSection, ECPResolvedSection } from "@/governance/types";
 import { buildADS } from "@/governance/adsBuilder";
 import { buildECP } from "@/governance/ecpBuilder";
+import { addOrUpdateEntry, entryFromADS } from "@/governance/portfolioStore";
 import {
   exportADSPdf,
   exportADSDocx,
@@ -56,6 +58,17 @@ export function FreezeAndExport({
 
   const ecp = useMemo(() => buildECP(ads), [ads]);
 
+  // Passive portfolio capture: every freeze adds or updates the portfolio
+  // entry keyed by (adsId, adsVersion). Users who never open the portfolio
+  // see no behavioural change.
+  useEffect(() => {
+    try {
+      addOrUpdateEntry(entryFromADS(ads));
+    } catch (err) {
+      console.error("Failed to capture portfolio entry:", err);
+    }
+  }, [ads]);
+
   return (
     <div className="space-y-8 animate-in fade-in zoom-in-95 duration-500">
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -71,14 +84,25 @@ export function FreezeAndExport({
             over to revise.
           </p>
         </div>
-        <Button
-          variant="outline"
-          onClick={onStartOver}
-          className="gap-2"
-          data-testid="button-start-over"
-        >
-          <RotateCcw className="w-4 h-4" /> Start Over
-        </Button>
+        <div className="flex gap-2">
+          <Link href="/portfolio">
+            <Button
+              variant="outline"
+              className="gap-2"
+              data-testid="button-view-portfolio"
+            >
+              <LayoutGrid className="w-4 h-4" /> View Portfolio
+            </Button>
+          </Link>
+          <Button
+            variant="outline"
+            onClick={onStartOver}
+            className="gap-2"
+            data-testid="button-start-over"
+          >
+            <RotateCcw className="w-4 h-4" /> Start Over
+          </Button>
+        </div>
       </div>
 
       <div

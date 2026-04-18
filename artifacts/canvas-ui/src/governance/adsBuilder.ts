@@ -8,6 +8,7 @@ import {
 } from "@workspace/architecture-grammar";
 import type { ADS, ADSSection, ProjectMetadata } from "./types";
 import { canonicalJSON, fnv1aHex } from "./hash";
+import { slugifyAdsId } from "./identity";
 
 const LAYER_ORDER = [
   "UI",
@@ -77,7 +78,11 @@ export function buildADS(args: {
 }): ADS {
   const { context, selections, baselineTradeOffs, metadata } = args;
   const version = computeVersion(context, selections, baselineTradeOffs);
-  const adsId = `ADS-${version}`;
+  // adsId is the logical decision identity, derived from project name.
+  // It is intentionally distinct from `version` (the architectural hash) so
+  // that two freezes of the same project with revised architecture share
+  // the same adsId but have different versions.
+  const adsId = slugifyAdsId(metadata.projectName);
   const date = todayISO(args.now);
 
   const result = deriveArchitecture(context, selections, baselineTradeOffs);

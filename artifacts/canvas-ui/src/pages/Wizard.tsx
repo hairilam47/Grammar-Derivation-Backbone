@@ -12,6 +12,7 @@ import type {
 } from "@workspace/architecture-grammar";
 import type { ProjectMetadata } from "@/governance/types";
 import { Layout } from "lucide-react";
+import { PortfolioHeaderNav } from "@/components/governance/PortfolioHeaderNav";
 
 const BASELINE_TRADE_OFFS: TradeOffSettings = {
   architectureStyle: "Simple",
@@ -60,23 +61,26 @@ export default function Wizard() {
   return (
     <div className="min-h-[100dvh] bg-background text-foreground flex flex-col font-mono">
       <header className="border-b border-border/50 bg-card/50 backdrop-blur sticky top-0 z-10">
-        <div className="container max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
+        <div className="container max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2 text-primary">
             <Layout className="w-5 h-5" />
             <span className="font-bold tracking-tight text-sm uppercase">
               Architecture Decision Canvas
             </span>
           </div>
-          <div className="flex gap-1 items-center">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div
-                key={i}
-                className={`w-8 h-1 transition-colors ${
-                  step >= i ? "bg-primary" : "bg-muted"
-                }`}
-                data-testid={`step-indicator-${i}`}
-              />
-            ))}
+          <div className="flex gap-4 items-center">
+            <div className="flex gap-1 items-center">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div
+                  key={i}
+                  className={`w-8 h-1 transition-colors ${
+                    step >= i ? "bg-primary" : "bg-muted"
+                  }`}
+                  data-testid={`step-indicator-${i}`}
+                />
+              ))}
+            </div>
+            <PortfolioHeaderNav />
           </div>
         </div>
       </header>
