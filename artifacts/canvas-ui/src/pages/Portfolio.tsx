@@ -9,15 +9,45 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { PortfolioHeaderNav } from "@/components/governance/PortfolioHeaderNav";
-import {
-  EntryAdsView,
-  EntryEcpView,
-} from "@/components/governance/EntryArtefactView";
+import { AdsPreview } from "@/components/governance/AdsPreview";
+import { EcpPreview } from "@/components/governance/EcpPreview";
 import { ReadOnlyArtefactModal } from "@/components/governance/ReadOnlyArtefactModal";
 import {
   listEntries,
   type PortfolioEntry,
 } from "@/governance/portfolioStore";
+import { buildECP } from "@/governance/ecpBuilder";
+import { assertAllGovernanceLanguage } from "@/governance/staticTextGuard";
+
+// HC6 governance language guard: every static string the portfolio page
+// renders is registered here. The guard executes at module load and throws
+// if any forbidden vocabulary slips in. Updates to the strings below MUST
+// keep the keyed string in sync with the JSX that renders it.
+const PORTFOLIO_STATIC_TEXT = {
+  pageTitle: "Portfolio Governance",
+  interpretationHeading: "Reading this view",
+  interpretation1:
+    "This view shows approved architecture decisions only. It does not show delivery status, cost, effort, or progress.",
+  interpretation2:
+    "The indicators reflect structural implications of each decision, not cost or effort.",
+  interpretation3:
+    "Patterns visible here are intended to prompt discussion, not action. Sort and filter controls are presentation conveniences and do not imply priority or desirability.",
+  interpretation4:
+    "Any change to a decision requires re-entering the canvas at Step 2. This view does not modify any decision.",
+  tableHeading: "Approved Architecture Decisions",
+  presentationCaption:
+    "Sort and filter controls are presentation conveniences. Order does not imply priority or desirability.",
+  emptyState: "The portfolio contains no approved decisions yet.",
+  emptyStateCta: "Open the canvas to freeze a decision",
+  riskHeading: "Risk Concentration",
+  severityHeading: "Decisions by Highest Risk Severity",
+  categoryHeading: "Distribution of Risk Categories Present",
+  noRiskCategories: "No risk categories present across the portfolio.",
+  indicatorHeading: "Indicator Distribution",
+  filtersNoMatch: "No decisions match the current filters.",
+};
+
+assertAllGovernanceLanguage(Object.values(PORTFOLIO_STATIC_TEXT));
 
 type SortColumn =
   | "projectName"
@@ -134,7 +164,7 @@ export default function Portfolio() {
           <div className="flex items-center gap-2 text-primary">
             <LayoutGrid className="w-5 h-5" />
             <span className="font-bold tracking-tight text-sm uppercase">
-              Portfolio Governance
+              {PORTFOLIO_STATIC_TEXT.pageTitle}
             </span>
           </div>
           <PortfolioHeaderNav />
@@ -178,8 +208,10 @@ export default function Portfolio() {
         testid="modal-artefact"
         onClose={() => setViewer(null)}
       >
-        {viewer?.kind === "ADS" && <EntryAdsView entry={viewer.entry} />}
-        {viewer?.kind === "ECP" && <EntryEcpView entry={viewer.entry} />}
+        {viewer?.kind === "ADS" && <AdsPreview ads={viewer.entry.ads} />}
+        {viewer?.kind === "ECP" && (
+          <EcpPreview ecp={buildECP(viewer.entry.ads)} />
+        )}
       </ReadOnlyArtefactModal>
     </div>
   );
@@ -190,27 +222,14 @@ function InterpretationPanel() {
     <Card data-testid="interpretation-panel" className="border-primary/30 bg-primary/5">
       <CardHeader>
         <CardTitle className="text-sm font-semibold uppercase tracking-wider">
-          Reading this view
+          {PORTFOLIO_STATIC_TEXT.interpretationHeading}
         </CardTitle>
       </CardHeader>
       <CardContent className="text-xs leading-relaxed space-y-1.5 text-muted-foreground">
-        <p>
-          This view shows approved architecture decisions only. It does not
-          show delivery status, cost, effort, or progress.
-        </p>
-        <p>
-          The indicators reflect structural implications of each decision, not
-          cost or effort.
-        </p>
-        <p>
-          Patterns visible here are intended to prompt discussion, not action.
-          Sort and filter controls are presentation conveniences and do not
-          imply priority or desirability.
-        </p>
-        <p>
-          Any change to a decision requires re-entering the canvas at Step 2.
-          This view does not modify any decision.
-        </p>
+        <p>{PORTFOLIO_STATIC_TEXT.interpretation1}</p>
+        <p>{PORTFOLIO_STATIC_TEXT.interpretation2}</p>
+        <p>{PORTFOLIO_STATIC_TEXT.interpretation3}</p>
+        <p>{PORTFOLIO_STATIC_TEXT.interpretation4}</p>
       </CardContent>
     </Card>
   );
@@ -221,11 +240,11 @@ function EmptyState() {
     <Card data-testid="empty-state">
       <CardContent className="py-16 text-center space-y-3">
         <div className="text-muted-foreground text-sm">
-          The portfolio contains no approved decisions yet.
+          {PORTFOLIO_STATIC_TEXT.emptyState}
         </div>
         <Link href="/">
           <Button variant="outline" className="gap-2" data-testid="button-empty-go-canvas">
-            <Layout className="w-4 h-4" /> Open the canvas to freeze a decision
+            <Layout className="w-4 h-4" /> {PORTFOLIO_STATIC_TEXT.emptyStateCta}
           </Button>
         </Link>
       </CardContent>
@@ -253,7 +272,7 @@ function PortfolioTable(props: {
     <Card data-testid="portfolio-table">
       <CardHeader>
         <CardTitle className="text-sm font-semibold uppercase tracking-wider">
-          Approved Architecture Decisions
+          {PORTFOLIO_STATIC_TEXT.tableHeading}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -280,8 +299,7 @@ function PortfolioTable(props: {
             testid="filter-posture"
           />
           <p className="text-[10px] italic text-muted-foreground ml-auto max-w-xs">
-            Sort and filter controls are presentation conveniences. Order does
-            not imply priority or desirability.
+            {PORTFOLIO_STATIC_TEXT.presentationCaption}
           </p>
         </div>
 
@@ -357,7 +375,7 @@ function PortfolioTable(props: {
               {props.entries.length === 0 && (
                 <tr>
                   <td colSpan={10} className="py-6 text-center text-muted-foreground text-xs">
-                    No decisions match the current filters.
+                    {PORTFOLIO_STATIC_TEXT.filtersNoMatch}
                   </td>
                 </tr>
               )}
@@ -453,13 +471,13 @@ function RiskConcentration({ entries }: { entries: PortfolioEntry[] }) {
     <Card data-testid="risk-concentration">
       <CardHeader>
         <CardTitle className="text-sm font-semibold uppercase tracking-wider">
-          Risk Concentration
+          {PORTFOLIO_STATIC_TEXT.riskHeading}
         </CardTitle>
       </CardHeader>
       <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
           <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
-            Decisions by Highest Risk Severity
+            {PORTFOLIO_STATIC_TEXT.severityHeading}
           </div>
           <div className="space-y-1.5">
             {(["RED", "AMBER", "GREEN", "NONE"] as const).map((lvl) => (
@@ -475,11 +493,11 @@ function RiskConcentration({ entries }: { entries: PortfolioEntry[] }) {
         </div>
         <div>
           <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
-            Distribution of Risk Categories Present
+            {PORTFOLIO_STATIC_TEXT.categoryHeading}
           </div>
           {categoryEntries.length === 0 ? (
             <div className="text-xs text-muted-foreground italic">
-              No risk categories present across the portfolio.
+              {PORTFOLIO_STATIC_TEXT.noRiskCategories}
             </div>
           ) : (
             <div className="space-y-1.5">
@@ -530,7 +548,7 @@ function IndicatorDistribution({ entries }: { entries: PortfolioEntry[] }) {
     <Card data-testid="indicator-distribution">
       <CardHeader>
         <CardTitle className="text-sm font-semibold uppercase tracking-wider">
-          Indicator Distribution
+          {PORTFOLIO_STATIC_TEXT.indicatorHeading}
         </CardTitle>
       </CardHeader>
       <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-6">

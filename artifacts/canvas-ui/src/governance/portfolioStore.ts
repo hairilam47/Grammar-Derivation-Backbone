@@ -9,13 +9,21 @@ import type { ADS } from "./types";
 
 const STORAGE_KEY = "adc.portfolio.v1";
 
+// HC4: top-level allow-list. The portfolio entry persists exactly these
+// fields and no others. The `ads` field carries the full canonical
+// Architecture Decision Snapshot (HC1 source of truth) so that the
+// read-only viewer can render the snapshot through the same preview
+// renderers used at freeze time and re-build the ECP through the
+// existing `buildECP` flow. The remaining fields are a flat summary
+// derived from the ADS for the table and aggregation views.
 const ALLOWED_FIELDS = [
+  "ads",
   "adsId",
   "adsVersion",
   "projectName",
   "approvingAuthority",
   "decisionDate",
-  "context",
+  "organisationContext",
   "baselinePosture",
   "complexityScore",
   "operationalOverheadScore",
@@ -26,12 +34,13 @@ const ALLOWED_FIELDS = [
 ] as const;
 
 export interface PortfolioEntry {
+  ads: ADS;
   adsId: string;
   adsVersion: string;
   projectName: string;
   approvingAuthority: string;
   decisionDate: string;
-  context: OrganisationContext;
+  organisationContext: OrganisationContext;
   baselinePosture: TradeOffSettings;
   complexityScore: number;
   operationalOverheadScore: number;
@@ -58,13 +67,14 @@ export function entryFromADS(ads: ADS): PortfolioEntry {
     new Set(ads.result.requiredComponents.map((c) => c.layer)),
   ).sort() as ComponentLayer[];
 
-  const entry: PortfolioEntry = {
+  return {
+    ads,
     adsId: ads.adsId,
     adsVersion: ads.version,
     projectName: ads.projectName,
     approvingAuthority: ads.approvingAuthority,
     decisionDate: ads.date,
-    context: ads.context,
+    organisationContext: ads.context,
     baselinePosture: ads.baselineTradeOffs,
     complexityScore: ads.result.indicators.complexityScore,
     operationalOverheadScore: ads.result.indicators.operationalOverheadScore,
@@ -73,22 +83,6 @@ export function entryFromADS(ads: ADS): PortfolioEntry {
     riskCategoriesPresent: categories,
     layersPresent: layers,
   };
-  return entry;
-}
-
-function assertAllowedFields(entry: unknown): void {
-  // HC4: runtime allow-list guard. Reject any unexpected top-level field.
-  if (entry === null || typeof entry !== "object") {
-    throw new Error("Portfolio entry must be an object.");
-  }
-  const allowed = new Set<string>(ALLOWED_FIELDS);
-  for (const k of Object.keys(entry as Record<string, unknown>)) {
-    if (!allowed.has(k)) {
-      throw new Error(
-        `Portfolio entry contains forbidden field "${k}". Allowed fields: ${ALLOWED_FIELDS.join(", ")}.`,
-      );
-    }
-  }
 }
 
 const ALLOWED_CONTEXT_KEYS = new Set([
@@ -103,16 +97,28 @@ const ALLOWED_BASELINE_KEYS = new Set([
   "scopeLevel",
 ]);
 
+function assertAllowedFields(entry: unknown): void {
+  if (entry === null || typeof entry !== "object") {
+    throw new Error("Portfolio entry must be an object.");
+  }
+  const allowed = new Set<string>(ALLOWED_FIELDS);
+  for (const k of Object.keys(entry as Record<string, unknown>)) {
+    if (!allowed.has(k)) {
+      throw new Error(
+        `Portfolio entry contains forbidden field "${k}". Allowed fields: ${ALLOWED_FIELDS.join(", ")}.`,
+      );
+    }
+  }
+}
+
 function isValidEntry(raw: unknown): raw is PortfolioEntry {
   if (raw === null || typeof raw !== "object") return false;
   const e = raw as Record<string, unknown>;
-  // Top-level allow-list.
   for (const k of Object.keys(e)) {
     if (!ALLOWED_FIELDS.includes(k as (typeof ALLOWED_FIELDS)[number])) {
       return false;
     }
   }
-  // Required scalar fields.
   if (typeof e.adsId !== "string" || typeof e.adsVersion !== "string") return false;
   if (typeof e.projectName !== "string") return false;
   if (typeof e.approvingAuthority !== "string") return false;
@@ -123,15 +129,21 @@ function isValidEntry(raw: unknown): raw is PortfolioEntry {
   if (typeof e.highestRiskSeverity !== "string") return false;
   if (!Array.isArray(e.riskCategoriesPresent)) return false;
   if (!Array.isArray(e.layersPresent)) return false;
-  // Nested allow-list: only the fields we recognise; nothing else.
-  if (e.context === null || typeof e.context !== "object") return false;
-  for (const k of Object.keys(e.context as Record<string, unknown>)) {
+  if (e.organisationContext === null || typeof e.organisationContext !== "object") return false;
+  for (const k of Object.keys(e.organisationContext as Record<string, unknown>)) {
     if (!ALLOWED_CONTEXT_KEYS.has(k)) return false;
   }
   if (e.baselinePosture === null || typeof e.baselinePosture !== "object") return false;
   for (const k of Object.keys(e.baselinePosture as Record<string, unknown>)) {
     if (!ALLOWED_BASELINE_KEYS.has(k)) return false;
   }
+  // Minimal shape check on the embedded ADS — the canonical artefact's full
+  // structural validation is the responsibility of `buildADS`; here we only
+  // confirm the required top-level fields are present.
+  if (e.ads === null || typeof e.ads !== "object") return false;
+  const ads = e.ads as Record<string, unknown>;
+  if (typeof ads.adsId !== "string" || typeof ads.version !== "string") return false;
+  if (!Array.isArray(ads.sections)) return false;
   return true;
 }
 
@@ -142,9 +154,9 @@ function readAll(): PortfolioEntry[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    // HC4 read-path enforcement: silently drop any row that does not match the
-    // strict allow-list schema. localStorage is mutable, so a tampered entry
-    // must not be able to surface forbidden fields into the UI.
+    // HC4 read-path enforcement: drop any row that does not match the
+    // strict allow-list schema. localStorage is mutable, so a tampered
+    // entry must not be able to surface forbidden fields to the UI.
     return parsed.filter(isValidEntry);
   } catch {
     return [];
@@ -167,7 +179,6 @@ export function addOrUpdateEntry(entry: PortfolioEntry): void {
     (e) => e.adsId === entry.adsId && e.adsVersion === entry.adsVersion,
   );
   if (idx >= 0) {
-    // Same (adsId, adsVersion): metadata-only update.
     const existing = all[idx];
     all[idx] = {
       ...existing,
