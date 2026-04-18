@@ -22,6 +22,7 @@ import {
   ShieldAlert,
   RotateCcw,
   Info,
+  Lock,
 } from "lucide-react";
 
 
@@ -53,6 +54,7 @@ interface TradeOffExplorerProps {
   tradeOffs: TradeOffSettings;
   onTradeOffsChange: (next: TradeOffSettings) => void;
   onBack: () => void;
+  onFreeze: () => void;
 }
 
 export function TradeOffExplorer({
@@ -61,6 +63,7 @@ export function TradeOffExplorer({
   tradeOffs,
   onTradeOffsChange,
   onBack,
+  onFreeze,
 }: TradeOffExplorerProps) {
   const baseline = useMemo(
     () => deriveArchitecture(context, selections, BASELINE_TRADE_OFFS),
@@ -121,6 +124,13 @@ export function TradeOffExplorer({
             data-testid="button-reset-baseline"
           >
             <RotateCcw className="w-4 h-4" /> Reset to Baseline
+          </Button>
+          <Button
+            onClick={onFreeze}
+            className="gap-2"
+            data-testid="button-freeze-decision"
+          >
+            <Lock className="w-4 h-4" /> Freeze Decision &amp; Export
           </Button>
         </div>
       </div>

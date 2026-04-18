@@ -3,17 +3,25 @@ import { ContextForm } from "@/components/wizard/ContextForm";
 import { CapabilitySelector } from "@/components/wizard/CapabilitySelector";
 import { ArchitectureResultDisplay } from "@/components/wizard/ArchitectureResultDisplay";
 import { TradeOffExplorer } from "@/components/wizard/TradeOffExplorer";
+import { FreezeMetadataForm } from "@/components/wizard/FreezeMetadataForm";
+import { FreezeAndExport } from "@/components/wizard/FreezeAndExport";
 import type {
   OrganisationContext,
   CapabilitySelection,
   TradeOffSettings,
 } from "@workspace/architecture-grammar";
+import type { ProjectMetadata } from "@/governance/types";
 import { Layout } from "lucide-react";
 
 const BASELINE_TRADE_OFFS: TradeOffSettings = {
   architectureStyle: "Simple",
   deploymentModel: "Cloud",
   scopeLevel: "Minimal",
+};
+
+const EMPTY_METADATA: ProjectMetadata = {
+  projectName: "",
+  approvingAuthority: "",
 };
 
 export default function Wizard() {
@@ -27,7 +35,11 @@ export default function Wizard() {
 
   const [tradeOffs, setTradeOffs] = useState<TradeOffSettings>(BASELINE_TRADE_OFFS);
 
-  const nextStep = () => setStep((s) => Math.min(s + 1, 4));
+  const [metadata, setMetadata] = useState<ProjectMetadata>(EMPTY_METADATA);
+
+  const [freezeRequested, setFreezeRequested] = useState(false);
+
+  const nextStep = () => setStep((s) => Math.min(s + 1, 5));
   const goToStep = (n: number) => setStep(n);
 
   const reset = () => {
@@ -35,6 +47,8 @@ export default function Wizard() {
     setContext({ expectedLifespanYears: 10 });
     setSelections([]);
     setTradeOffs(BASELINE_TRADE_OFFS);
+    setMetadata(EMPTY_METADATA);
+    setFreezeRequested(false);
   };
 
   const contextReady =
@@ -54,7 +68,7 @@ export default function Wizard() {
             </span>
           </div>
           <div className="flex gap-1 items-center">
-            {[1, 2, 3, 4].map((i) => (
+            {[1, 2, 3, 4, 5].map((i) => (
               <div
                 key={i}
                 className={`w-8 h-1 transition-colors ${
@@ -86,13 +100,34 @@ export default function Wizard() {
             onExplore={() => goToStep(4)}
           />
         )}
-        {step === 4 && contextReady && (
+        {step === 4 && contextReady && !freezeRequested && (
           <TradeOffExplorer
             context={context as OrganisationContext}
             selections={selections}
             tradeOffs={tradeOffs}
             onTradeOffsChange={setTradeOffs}
             onBack={() => goToStep(3)}
+            onFreeze={() => setFreezeRequested(true)}
+          />
+        )}
+        {step === 4 && contextReady && freezeRequested && (
+          <FreezeMetadataForm
+            initial={metadata}
+            onCancel={() => setFreezeRequested(false)}
+            onConfirm={(m) => {
+              setMetadata(m);
+              setFreezeRequested(false);
+              goToStep(5);
+            }}
+          />
+        )}
+        {step === 5 && contextReady && (
+          <FreezeAndExport
+            context={context as OrganisationContext}
+            selections={selections}
+            baselineTradeOffs={BASELINE_TRADE_OFFS}
+            metadata={metadata}
+            onStartOver={reset}
           />
         )}
       </main>

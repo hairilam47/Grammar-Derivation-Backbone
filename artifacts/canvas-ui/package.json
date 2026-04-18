@@ -10,7 +10,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@workspace/architecture-grammar": "workspace:*"
+    "@workspace/architecture-grammar": "workspace:*",
+    "docx": "^9.6.1",
+    "jspdf": "^4.2.1"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",

@@ -33,14 +33,23 @@ Main function: `deriveArchitecture(context, capabilitySelections, tradeOffs) →
 
 ## Architecture Decision Canvas UI
 
-`artifacts/canvas-ui` is a React + Vite web app (preview path: `/`) that provides a four-screen wizard UI for the grammar engine:
+`artifacts/canvas-ui` is a React + Vite web app (preview path: `/`) that provides a five-screen wizard UI for the grammar engine:
 
 - **Screen 1 — ContextForm**: Collects `OrganisationContext` (organisation type, sensitivity level, system intent, expected lifespan)
 - **Screen 2 — CapabilitySelector**: Assigns status (IN_SCOPE / DEFERRED / OUT_OF_SCOPE) to all 7 capabilities (explicit classification required for all before proceeding)
 - **Screen 3 — ArchitectureResultDisplay**: Calls `deriveArchitecture()` synchronously with baseline trade-offs (Simple / Cloud / Minimal), displays required components grouped by layer, risks with RED/AMBER/GREEN indicators, and the three numeric complexity indicators
 - **Screen 4 — TradeOffExplorer**: "What-If Exploration" view. Three radio-group toggles (Architecture: Simple/Distributed, Deployment: Cloud/OnPrem, Scope: Minimal/Full) re-derive only the indicator scores. Components and risks remain frozen at baseline values. Reset to Baseline restores Simple/Cloud/Minimal.
+- **Screen 5 — FreezeAndExport**: Terminal "freeze" screen reachable only via the Step 4 "Freeze Decision & Export" action. Pre-freeze inline form collects Project Name + Approving Authority (these never feed the version hash). Renders a persistent metadata banner (ADS ID / Version / Date / Authority), a read-only ADS preview (6 fixed sections), a read-only ECP preview (9 sections sorted by `sectionOrder`), and four export buttons (ADS PDF, ADS DOCX, ECP PDF, ECP DOCX). Only exits are export actions or Start Over.
 
-No backend. All derivation runs client-side. Imports from `@workspace/architecture-grammar` (workspace dependency).
+### Governance Export Layer (`src/governance/`)
+
+Pure, dependency-light TypeScript layer producing two artefacts client-side:
+
+- **ADS (Architecture Decision Snapshot)** — 6 fixed ordered sections; deterministic version hash via FNV-1a on canonical JSON of `{ context, selections, baselineTradeOffs }` only (project metadata excluded by design).
+- **ECP (Execution Constraint Profile)** — 9 sections defined in `ecpSections.ts` with explicit `sectionOrder`; runtime validation enforces uniqueness + contiguity; JSX renders the resolved sections generically with no per-section branching. ECP wording is intentionally category-level (Security / Operations / Compliance / Data Protection) — no specific tools, vendors, products, or practices.
+- **Exports** — `jspdf` (PDF) and `docx` (DOCX) at fixed A4. Every page carries the integrity footer "This artefact was system-generated from an approved Architecture Decision Snapshot." Filenames: `ADS_<Project>_<Version>_<Date>.{pdf,docx}` / `ECP_...` with sanitised project segment.
+
+No backend. All derivation and exports run client-side. Imports from `@workspace/architecture-grammar` (workspace dependency).
 
 ## Key Commands
 
