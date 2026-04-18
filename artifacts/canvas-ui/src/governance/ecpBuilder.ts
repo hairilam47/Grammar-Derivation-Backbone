@@ -111,17 +111,22 @@ function resolveSection(def: ECPSectionDefinition, ads: ADS): ECPResolvedSection
         return {
           ...base,
           paragraphs: [
-            "No architectural risks were acknowledged at the time of decision approval. Implementation teams remain responsible for risks arising during delivery.",
+            "No architectural risks were acknowledged at the time of decision approval.",
           ],
         };
       }
+      // HC3: ECP carries only category-level acknowledgement. Mechanism-level
+      // detail (the risk reason) remains in the ADS, not in this profile.
+      const acknowledgedCategories = Array.from(
+        new Set(riskSec.risks.map((r) => r.category)),
+      ).sort();
       return {
         ...base,
         paragraphs: [
-          "The following risks were acknowledged at the time of decision approval. Implementation teams must operate with awareness of each risk.",
+          "Architectural risks were acknowledged at the time of decision approval in the following constraint categories. The full description of each acknowledged risk is recorded in the Architecture Decision Snapshot.",
         ],
-        bullets: riskSec.risks.map(
-          (r) => `${r.category} (${r.level}): ${r.reason}`,
+        bullets: acknowledgedCategories.map(
+          (cat) => `${cat} risk acknowledged.`,
         ),
       };
     }
