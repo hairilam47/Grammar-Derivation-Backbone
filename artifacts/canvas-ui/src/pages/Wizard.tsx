@@ -2,11 +2,19 @@ import { useState } from "react";
 import { ContextForm } from "@/components/wizard/ContextForm";
 import { CapabilitySelector } from "@/components/wizard/CapabilitySelector";
 import { ArchitectureResultDisplay } from "@/components/wizard/ArchitectureResultDisplay";
+import { TradeOffExplorer } from "@/components/wizard/TradeOffExplorer";
 import type {
   OrganisationContext,
   CapabilitySelection,
+  TradeOffSettings,
 } from "@workspace/architecture-grammar";
 import { Layout } from "lucide-react";
+
+const BASELINE_TRADE_OFFS: TradeOffSettings = {
+  architectureStyle: "Simple",
+  deploymentModel: "Cloud",
+  scopeLevel: "Minimal",
+};
 
 export default function Wizard() {
   const [step, setStep] = useState<number>(1);
@@ -17,13 +25,23 @@ export default function Wizard() {
 
   const [selections, setSelections] = useState<CapabilitySelection[]>([]);
 
-  const nextStep = () => setStep((s) => Math.min(s + 1, 3));
+  const [tradeOffs, setTradeOffs] = useState<TradeOffSettings>(BASELINE_TRADE_OFFS);
+
+  const nextStep = () => setStep((s) => Math.min(s + 1, 4));
+  const goToStep = (n: number) => setStep(n);
 
   const reset = () => {
     setStep(1);
     setContext({ expectedLifespanYears: 10 });
     setSelections([]);
+    setTradeOffs(BASELINE_TRADE_OFFS);
   };
+
+  const contextReady =
+    !!context.organisationType &&
+    !!context.sensitivityLevel &&
+    !!context.systemIntent &&
+    !!context.expectedLifespanYears;
 
   return (
     <div className="min-h-[100dvh] bg-background text-foreground flex flex-col font-mono">
@@ -31,15 +49,18 @@ export default function Wizard() {
         <div className="container max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2 text-primary">
             <Layout className="w-5 h-5" />
-            <span className="font-bold tracking-tight text-sm uppercase">Architecture Decision Canvas</span>
+            <span className="font-bold tracking-tight text-sm uppercase">
+              Architecture Decision Canvas
+            </span>
           </div>
           <div className="flex gap-1 items-center">
-            {[1, 2, 3].map((i) => (
+            {[1, 2, 3, 4].map((i) => (
               <div
                 key={i}
                 className={`w-8 h-1 transition-colors ${
                   step >= i ? "bg-primary" : "bg-muted"
                 }`}
+                data-testid={`step-indicator-${i}`}
               />
             ))}
           </div>
@@ -48,11 +69,7 @@ export default function Wizard() {
 
       <main className="flex-1 container max-w-5xl mx-auto px-4 py-8">
         {step === 1 && (
-          <ContextForm
-            data={context}
-            onChange={setContext}
-            onNext={nextStep}
-          />
+          <ContextForm data={context} onChange={setContext} onNext={nextStep} />
         )}
         {step === 2 && (
           <CapabilitySelector
@@ -61,17 +78,23 @@ export default function Wizard() {
             onNext={nextStep}
           />
         )}
-        {step === 3 &&
-          context.organisationType &&
-          context.sensitivityLevel &&
-          context.systemIntent &&
-          context.expectedLifespanYears && (
-            <ArchitectureResultDisplay
-              context={context as OrganisationContext}
-              selections={selections}
-              onReset={reset}
-            />
-          )}
+        {step === 3 && contextReady && (
+          <ArchitectureResultDisplay
+            context={context as OrganisationContext}
+            selections={selections}
+            onReset={reset}
+            onExplore={() => goToStep(4)}
+          />
+        )}
+        {step === 4 && contextReady && (
+          <TradeOffExplorer
+            context={context as OrganisationContext}
+            selections={selections}
+            tradeOffs={tradeOffs}
+            onTradeOffsChange={setTradeOffs}
+            onBack={() => goToStep(3)}
+          />
+        )}
       </main>
     </div>
   );

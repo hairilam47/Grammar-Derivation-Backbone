@@ -8,7 +8,7 @@ import type {
 } from "@workspace/architecture-grammar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { RotateCcw, Cpu, Activity, BarChart, Layers, ShieldAlert } from "lucide-react";
+import { RotateCcw, Cpu, Activity, BarChart, Layers, ShieldAlert, ArrowRight } from "lucide-react";
 
 const DEFAULT_TRADE_OFFS: TradeOffSettings = {
   architectureStyle: "Simple",
@@ -28,12 +28,14 @@ interface ArchitectureResultDisplayProps {
   context: OrganisationContext;
   selections: CapabilitySelection[];
   onReset: () => void;
+  onExplore: () => void;
 }
 
 export function ArchitectureResultDisplay({
   context,
   selections,
   onReset,
+  onExplore,
 }: ArchitectureResultDisplayProps) {
   const result = useMemo(() => {
     return deriveArchitecture(context, selections, DEFAULT_TRADE_OFFS);
@@ -62,9 +64,14 @@ export function ArchitectureResultDisplay({
             Derived deterministically from {inScopeCount} in-scope {inScopeCount === 1 ? "capability" : "capabilities"}.
           </p>
         </div>
-        <Button variant="outline" onClick={onReset} className="gap-2" data-testid="button-reset">
-          <RotateCcw className="w-4 h-4" /> Start Over
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={onReset} className="gap-2" data-testid="button-reset">
+            <RotateCcw className="w-4 h-4" /> Start Over
+          </Button>
+          <Button onClick={onExplore} className="gap-2" data-testid="button-explore-tradeoffs">
+            Explore Trade-offs <ArrowRight className="w-4 h-4" />
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
