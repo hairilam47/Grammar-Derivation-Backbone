@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "hello": "tsx ./src/hello.ts",
+    "derive-example": "tsx ./src/derive-example.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@workspace/architecture-grammar": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",
