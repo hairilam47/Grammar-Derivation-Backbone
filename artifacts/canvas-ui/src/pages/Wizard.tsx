@@ -6,13 +6,7 @@ import type {
   OrganisationContext,
   CapabilitySelection,
 } from "@workspace/architecture-grammar";
-import { CAPABILITIES } from "@workspace/architecture-grammar";
 import { Layout } from "lucide-react";
-
-const DEFAULT_SELECTIONS: CapabilitySelection[] = CAPABILITIES.map((c) => ({
-  capabilityId: c.id,
-  status: "IN_SCOPE",
-}));
 
 export default function Wizard() {
   const [step, setStep] = useState<number>(1);
@@ -21,14 +15,14 @@ export default function Wizard() {
     expectedLifespanYears: 10,
   });
 
-  const [selections, setSelections] = useState<CapabilitySelection[]>(DEFAULT_SELECTIONS);
+  const [selections, setSelections] = useState<CapabilitySelection[]>([]);
 
   const nextStep = () => setStep((s) => Math.min(s + 1, 3));
 
   const reset = () => {
     setStep(1);
     setContext({ expectedLifespanYears: 10 });
-    setSelections(DEFAULT_SELECTIONS);
+    setSelections([]);
   };
 
   return (

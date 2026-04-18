@@ -19,8 +19,8 @@ const STATUS_LABELS: Record<CapabilityStatus, string> = {
 
 const STATUSES: CapabilityStatus[] = ["IN_SCOPE", "DEFERRED", "OUT_OF_SCOPE"];
 
-function getStatus(selections: CapabilitySelection[], id: string): CapabilityStatus {
-  return selections.find((s) => s.capabilityId === id)?.status ?? "IN_SCOPE";
+function getStatus(selections: CapabilitySelection[], id: string): CapabilityStatus | undefined {
+  return selections.find((s) => s.capabilityId === id)?.status;
 }
 
 export function CapabilitySelector({
@@ -37,12 +37,15 @@ export function CapabilitySelector({
     }
   };
 
+  const classifiedCount = CAPABILITIES.filter((cap) => getStatus(selections, cap.id) !== undefined).length;
+  const allClassified = classifiedCount === CAPABILITIES.length;
+
   return (
     <div className="space-y-8 max-w-4xl mx-auto animate-in fade-in slide-in-from-right-8 duration-500">
       <div>
         <h1 className="text-2xl font-bold tracking-tight mb-2">Capability Scope</h1>
         <p className="text-muted-foreground text-sm">
-          Assign a status to each capability. All 7 are included by default — adjust as required.
+          Assign a status to each of the {CAPABILITIES.length} capabilities before deriving the architecture.
         </p>
       </div>
 
@@ -86,9 +89,13 @@ export function CapabilitySelector({
         })}
       </div>
 
-      <div className="flex justify-end pt-4 border-t border-border/50">
+      <div className="flex justify-between items-center pt-4 border-t border-border/50">
+        <span className="text-sm text-muted-foreground" data-testid="classified-count">
+          {classifiedCount} / {CAPABILITIES.length} classified
+        </span>
         <Button
           onClick={onNext}
+          disabled={!allClassified}
           className="gap-2"
           data-testid="button-derive-architecture"
         >
