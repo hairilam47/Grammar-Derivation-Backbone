@@ -1,0 +1,248 @@
+SYSTEM ROLE
+You are building STEP 5 of the Architecture Decision Canvas.
+STEP 1 (Architecture Grammar Engine), STEP 2 (Context & Capability Declaration),
+STEP 3 (Trade‑Off Exploration), and STEP 4 (Governance Export — ADS / ECP)
+are COMPLETE, APPROVED, and FROZEN.
+STEP 5 is a READ‑ONLY PORTFOLIO GOVERNANCE VIEW.
+It exists to observe, aggregate, and present multiple approved Architecture Decision Snapshots (ADS) together.
+STEP 5 MUST NOT:
+
+design architecture
+modify or override any ADS or ECP
+recommend actions or optimisations
+infer delivery status, cost, priority, or performance
+introduce cross‑initiative authority
+
+All outputs are observational and governance‑oriented only.
+
+STEP 5 OBJECTIVE
+Implement a portfolio‑level governance view that allows executives, architecture boards, and assurance functions to view and reason about many approved architecture decisions together.
+Each portfolio entry corresponds to one frozen Architecture Decision Snapshot (ADS).
+STEP 5 exists to answer governance questions such as:
+
+Where is architectural complexity accumulating?
+Where are risks concentrated across initiatives?
+Are architectural postures drifting over time?
+
+STEP 5 does not:
+
+create new decisions
+re‑evaluate or revise approvals
+rank or compare initiatives competitively
+recommend corrective actions
+optimise portfolio posture
+
+STEP 5 is descriptive, not prescriptive.
+
+SECTION 3 — HARD CONSTRAINTS (NON‑NEGOTIABLE)
+HARD CONSTRAINTS — MUST BE ENFORCED
+
+1. ADS IS THE SINGLE SOURCE OF TRUTH
+   - Every portfolio entry MUST correspond to one frozen ADS.
+   - STEP 5 MUST NOT generate or infer new decisions.
+   - STEP 5 MUST NOT synthesise new architectural judgement.
+
+2. NO MUTATION OF DECISIONS
+   - STEP 5 MUST NOT edit, amend, override, or annul any ADS or ECP.
+   - All ADS/ECP navigation MUST be read-only.
+
+3. NO CROSS-INITIATIVE AUTHORITY
+   - STEP 5 MUST NOT rank, prioritise, or arbitrate initiatives.
+   - STEP 5 MUST NOT imply better/worse or higher/lower priority.
+
+4. DESCRIPTIVE AGGREGATION ONLY
+   - STEP 5 MAY show counts, distributions, averages, and trends.
+   - STEP 5 MUST NOT compute composite scores or portfolio indexes.
+
+5. NO RECOMMENDATIONS
+   - STEP 5 MUST NOT recommend actions or posture changes.
+   - Forbidden terms include: "should", "recommended", "optimal".
+
+6. NO DELIVERY, COST, OR PERFORMANCE DATA
+   - STEP 5 MUST NOT show budgets, timelines, milestones, or KPIs.
+
+7. NO TECHNOLOGY OR VENDOR CONTEXT
+   - STEP 5 MUST NOT expose technologies, stacks, tools, or vendors.
+
+8. NO AUTOMATION OR AI JUDGEMENT
+   - STEP 5 MUST NOT include alerts, warnings, or AI insights.
+
+9. GOVERNANCE LANGUAGE ONLY
+   - Language MUST be neutral, factual, and audit‑appropriate.
+
+10. SCOPE OVERRIDE RULE
+    - Any feature implying decision‑making or enforcement
+      is OUT OF SCOPE by definition.
+
+
+SECTION 4 — DATA SOURCE & SCHEMA BOUNDARIES
+DATA SOURCE & SCHEMA BOUNDARIES — MUST BE ENFORCED
+
+1. SOLE DATA SOURCE
+   - STEP 5 MUST consume data exclusively from approved ADS artefacts.
+   - STEP 5 MUST NOT integrate with PMO, finance, delivery, or telemetry systems.
+
+2. IMMUTABILITY
+   - ADS inputs are immutable.
+   - STEP 5 MUST treat all ADS-derived data as read-only.
+
+3. PORTFOLIO READ-MODEL
+   - STEP 5 MUST operate on a flattened, governance-safe read-model.
+   - No new semantics may be introduced.
+
+4. ALLOWED FIELDS ONLY
+   - ADS ID & version
+   - Project name, approving authority, decision date
+   - Context (organisation type, sensitivity, intent, lifespan)
+   - Baseline posture
+   - Indicators (complexity, operational overhead, change cost)
+   - Risk summary (highest severity, categories present)
+   - Architectural footprint (layer presence)
+
+5. FORBIDDEN DATA
+   - Costs, budgets, ROI
+   - Delivery status or progress
+   - Teams or ownership
+   - Technologies or vendors
+   - Cross-initiative dependencies
+   - Compliance scoring
+
+6. NO CROSS-ADS DERIVATION
+   - STEP 5 MUST NOT derive new decision attributes
+     by combining multiple ADS.
+
+7. LINEAGE TRANSPARENCY
+   - Every value must trace directly to ADS fields.
+
+
+SECTION 5 — ALLOWED PORTFOLIO VIEWS
+ALLOWED PORTFOLIO VIEWS — STRICTLY LIMITED
+
+1. PORTFOLIO TABLE (PRIMARY VIEW)
+
+   Allowed columns:
+   - ADS ID / Version
+   - Project Name
+   - Approving Authority
+   - Decision Date
+   - Baseline Posture
+   - Complexity Score
+   - Operational Overhead Score
+   - Change Cost Later Score
+   - Highest Risk Severity
+
+   Allowed actions:
+   - Sort
+   - Filter
+   - View ADS (read-only)
+   - View ECP (read-only)
+
+2. RISK CONCENTRATION OVERVIEW
+
+   Allowed aggregations:
+   - Count of ADS by highest risk severity
+   - Presence of risk categories
+   - Optional trend by decision date
+
+3. INDICATOR DISTRIBUTION VIEW (OPTIONAL)
+
+   Allowed visuals:
+   - Distribution of complexity
+   - Distribution of operational overhead
+   - Distribution of change cost later
+
+4. VIEW SCOPE RULE
+   - All views MUST map directly to allowed schema fields.
+   - No synthesized interpretations are permitted.
+
+
+SECTION 6 — ALLOWED AGGREGATION METRICS
+ALLOWED AGGREGATION METRICS — STRICTLY LIMITED
+
+1. ALLOWED METRICS
+   - Count
+   - Simple average
+   - Distribution
+   - Trend over time (decision date)
+
+2. INDICATOR RULES
+   - No targets
+   - No ideal ranges
+   - No RAG thresholds
+   - No portfolio scoring
+
+3. RISK RULES
+   - Count by severity
+   - Presence by category
+   - No weighted or normalized risk scores
+
+4. POSTURE RULES
+   - Count and trend of posture selections
+   - No preferred or recommended posture
+
+5. NO METRIC FUSION
+   - Do not combine indicators, posture, and risk
+     into a single derived metric.
+
+6. NO COMPARATIVE JUDGEMENT
+   - No ranking
+   - No outlier labelling
+   - No competition framing
+
+
+SECTION 7 — EXECUTIVE INTERPRETATION GUIDANCE
+EXECUTIVE INTERPRETATION GUIDANCE — MANDATORY CONTEXT
+
+1. WHAT THIS VIEW REPRESENTS
+   - Approved architecture decisions only.
+
+2. WHAT INDICATORS MEAN
+   - Structural implications, not cost or effort.
+
+3. HOW TO INTERPRET PATTERNS
+   - Use for reflection and discussion,
+     not action or correction.
+
+4. APPROPRIATE QUESTIONS
+   - Why is complexity accumulating?
+   - Is risk concentrated or diversified?
+
+5. WHAT THIS VIEW CANNOT DO
+   - It does not change decisions.
+   - It does not direct teams.
+
+6. HOW CHANGE OCCURS
+   - Changes require re-entering the Canvas at STEP 2.
+   - STEP 5 provides no alternative path.
+
+7. LANGUAGE REQUIREMENT
+   - Neutral, factual, governance-safe language only.
+
+
+SECTION 8 — EXPLICIT NON‑GOALS & FORBIDDEN FEATURES
+STEP 5 MUST NEVER:
+
+- Modify ADS or ECP
+- Recommend actions
+- Optimise portfolio posture
+- Rank initiatives
+- Show budgets or delivery data
+- Visualise technologies or vendors
+- Model dependencies
+- Include AI judgements or alerts
+- Act as an approval or enforcement system
+
+Any feature violating these non-goals
+is OUT OF SCOPE by definition.
+
+
+STOP CONDITION
+STOP IMPLEMENTATION WHEN:
+
+- Portfolio views render read-only
+- Only allowed views are present
+- Only allowed aggregations are computed
+- No prescriptive or corrective logic exists
+- Navigation to ADS/ECP is read-only
+
+END OF STEP 5 PROMPT
