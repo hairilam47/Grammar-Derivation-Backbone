@@ -1,0 +1,184 @@
+Architecture Grammar & Derivation Backbone (NO UI)
+
+Copy‑paste this entire prompt into Replit AI as a single instruction.
+Do NOT merge it with later steps.
+
+
+SYSTEM ROLE
+You are a senior backend / application engineer.
+You are building Step 1 of an Architecture Decision Canvas.
+This step must implement only the internal grammar and derivation engine.
+There must be no UI, no routing, no styling, and no frontend logic beyond simple function calls.
+Think of this step as building a truth engine, not an app.
+
+STEP 1 OBJECTIVE (STRICT)
+Build a deterministic architecture grammar engine that:
+
+Defines canonical Capabilities
+Defines canonical Components
+Defines Rules that derive components from capabilities and context
+Produces:
+
+required components
+risk indicators
+complexity / operational indicators
+
+
+
+This engine must work using pure data + pure functions.
+
+NON‑NEGOTIABLE CONSTRAINTS
+
+❌ No UI code
+❌ No free‑text inputs
+❌ No vendors
+❌ No persistence (database not required)
+✅ All data must be deterministic and testable
+✅ All outputs must be JSON‑serialisable
+✅ Logic must be readable and auditable
+
+
+CORE DOMAIN MODELS (REQUIRED)
+Implement these as plain data objects (TypeScript preferred, JS acceptable).
+1️⃣ Organisation Context
+TypeScriptOrganisationContext {  organisationType: "Government" | "Enterprise"  sensitivityLevel: "Low" | "Medium" | "High"  systemIntent: "LegacyReplacement" | "NewCapability"  expectedLifespanYears: number}
+
+2️⃣ Capability Definition (Static)
+Capabilities are fixed and selectable only.
+TypeScriptCapability {  id: string  name: string  description: string}
+
+
+MVP Capability Set (Frozen):
+
+External / Public Access
+Internal Administrative Access
+Case / Transaction Management
+Document & Evidence Management
+Workflow & Approval
+Reporting & Analytics
+Audit & Compliance
+
+
+3️⃣ Component Definition (Static)
+Components are never user‑editable.
+TypeScriptComponent {  id: string  name: string  layer: "UI" | "Application" | "Data" | "Integration" | "Security" | "Operations"  complexityWeight: number   // 1–3  operationalImpact: number  // 1–3}
+
+MVP Component Set (Frozen, 18):
+
+External User Portal
+Internal Admin Portal
+API Interface
+Application Service Layer
+Workflow / Process Engine
+Rules Engine
+Relational Data Store
+Document / File Repository
+Immutable Audit Store
+API Gateway
+Event / Message Broker
+External System Connector
+Authentication Service
+Authorization & Access Control
+Audit Logging Service
+Encryption & Key Management
+Monitoring & Observability
+Backup & Disaster Recovery
+
+
+4️⃣ Capability Selection Input
+TypeScriptCapabilitySelection {  capabilityId: string  status: "IN_SCOPE" | "DEFERRED" | "OUT_OF_SCOPE"}
+
+RULE ENGINE (MANDATORY)
+Implement the following four rule types.
+
+Rule Type A — Capability → Component
+If a capability is IN_SCOPE, certain components become REQUIRED.
+Example (must be implemented):
+
+External / Public Access ⇒
+
+External User Portal
+Authentication Service
+API Gateway
+Audit Logging Service
+
+
+Rules must be encoded explicitly (no inference).
+
+Rule Type B — Component Dependency
+If a component is required, dependent components must also be required.
+Example:
+
+External User Portal ⇒
+
+Authentication Service
+Authorization & Access Control
+
+
+
+
+Rule Type C — Context Constraint Rules
+Context may force components regardless of capability choice.
+Example:
+
+Government + High Sensitivity ⇒
+
+Immutable Audit Store
+Encryption & Key Management
+Audit Logging Service
+
+
+
+Context rules must override user intent.
+
+Rule Type D — Trade‑Off Modifiers (Structure Only)
+Support these inputs, but only compute indicators (no decisions):
+TypeScriptTradeOffSettings {  architectureStyle: "Simple" | "Distributed"  deploymentModel: "OnPrem" | "Cloud"  scopeLevel: "Minimal" | "Full"}
+
+Each option modifies:
+complexityScore
+operationalScore
+changeCostLaterScore
+
+No recommendations.
+
+DERIVATION OUTPUT (REQUIRED)
+Your engine must expose a function like:
+TypeScriptderiveArchitecture(  context: OrganisationContext,  capabilitySelections: CapabilitySelection[],  tradeOffs: TradeOffSettings): ArchitectureResultShow more lines
+Where ArchitectureResult contains:
+TypeScriptArchitectureResult {  requiredComponents: Component[]  risks: {    category: "Security" | "Compliance" | "Operational" | "Complexity"    level: "GREEN" | "AMBER" | "RED"    reason: string  }[]  indicators: {    complexityScore: number    operationalOverheadScore: number    changeCostLaterScore: number  }}Show more lines
+
+RISK DETECTION (MANDATORY)
+You must generate risks when:
+
+High sensitivity without audit logging
+External access without authentication
+Any data store without backup
+Government systems without monitoring
+
+Risks must be explicit and explainable.
+
+SOLIDITY CHECKS (YOU MUST SELF‑VERIFY)
+Before finishing Step 1, ensure:
+✅ Same input → same output every time
+✅ No vendor or product names exist
+✅ No capability silently ignored
+✅ Missing mandatory components produce risks
+✅ Trade‑offs do not mutate structure, only indicators
+
+DELIVERABLES
+At the end of Step 1, produce:
+
+Grammar data (capabilities, components, rules)
+deriveArchitecture() function
+Example invocation + printed JSON output
+No UI, no API, no routing
+
+
+STOP CONDITION (IMPORTANT)
+Once Step 1 is complete:
+
+STOP
+Do NOT add UI
+Do NOT add persistence
+Do NOT add new features
