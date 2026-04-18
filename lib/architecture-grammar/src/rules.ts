@@ -6,7 +6,7 @@ import type {
   Risk,
   Indicators,
 } from "./types.js";
-import { getComponentById, COMPONENTS } from "./components.js";
+import { getComponentById } from "./components.js";
 
 type ComponentId = string;
 
