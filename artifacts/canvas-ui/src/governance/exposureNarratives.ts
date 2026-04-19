@@ -1,11 +1,7 @@
 import type { PortfolioEntry } from "./portfolioStore";
 import type { ExposurePayload } from "./exposureDerive";
 import type { EcpConstraintCategoryTag } from "./exposureCategories";
-import {
-  EXPOSURE_NARRATIVE_FORBIDDEN,
-  GovernanceLanguageError,
-  assertExposureNarrativeLanguage,
-} from "./staticTextGuard";
+import { assertExposureNarrativeLanguage } from "./staticTextGuard";
 
 // Phase 2 — Exposure Narratives derivation module.
 //
@@ -212,17 +208,16 @@ function composeNarrative(
     `${exposureSurfaceClause(sectionItems)}. ` +
     `${FRAMING_BOUNDARY_CLAUSE}`;
 
-  // PH2-HC4: full guard on the composed paragraph. Lower-case scan so
-  // any forbidden token, however introduced, is caught. The Framing
+  // PH2-HC4: route the composed paragraph through the same helper used
+  // for every other narrative-tier string in the system. Centralising
+  // the guard here (instead of inlining the EXPOSURE_NARRATIVE_FORBIDDEN
+  // loop) keeps the composer in step with any future change to the
+  // helper, and makes the "every produced string passes the guard"
+  // contract structurally obvious at the call site. The Framing
   // Boundary Clause is itself token-clean, so guarding the whole
   // paragraph is safe and there is no need for a banner-style
   // exemption.
-  const lower = paragraph.toLowerCase();
-  for (const term of EXPOSURE_NARRATIVE_FORBIDDEN) {
-    if (lower.indexOf(term) !== -1) {
-      throw new GovernanceLanguageError(term, paragraph);
-    }
-  }
+  assertExposureNarrativeLanguage(paragraph);
   return paragraph;
 }
 
