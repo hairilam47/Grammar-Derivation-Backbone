@@ -1,0 +1,299 @@
+Decision Exposure View — Phase 1 (Baseline Exposure, Path B)
+
+SYSTEM ROLE
+You are implementing Phase 1 of the Decision Exposure View in the Architecture Decision Canvas.
+Steps 1–7 of the core system are COMPLETE and FROZEN.
+This task introduces a new downstream, read‑only view that renders baseline institutional exposure surfaces for one approved architectural decision.
+This is Phase 1 (Foundation) of Decision Exposure.
+Phase 2 (Exposure Narratives) MUST NOT be implemented in this task.
+The Decision Exposure View is:
+
+descriptive, not prescriptive
+observational, not evaluative
+read‑only, not authoritative
+
+
+OBJECTIVE
+Implement a baseline Decision Exposure View that answers exactly one question:
+
+“Given this approved decision, what institutional and operational surfaces does it touch?”
+
+Phase 1 shows what is exposed, not how severe it is, who owns it, or what should be done.
+
+CLARIFICATION OF PH1‑HC5 (IMPORTANT)
+PH1‑HC5 (Clarified):
+No new runtime caches, databases, or authoritative stores may be introduced.
+
+The portfolio read‑model MAY be extended *only* with explicit, frozen
+decision‑intent fields required to support deterministic downstream
+projection.
+
+These fields do not feed back into the grammar engine and do not
+introduce new authority.
+
+This clarification is intentional and non‑negotiable.
+
+REQUIRED PORTFOLIO READ‑MODEL EXTENSION (PATH B)
+Extend the existing portfolioStore allow‑list once, with the following fields:
+TypeScriptinScopeCapabilityIds: string[]ecpConstraintCategories: string[]Show more lines
+Rules:
+
+These values are written once at freeze
+They represent frozen decision intent, not interpretation
+They are read‑only everywhere else
+No free‑text, weights, or derived metrics are permitted
+
+All existing allow‑list protections (write‑time throw, read‑time drop) MUST apply.
+
+ROUTING & SCOPE
+Route: /exposure/:adsId
+
+
+Renders one decision at a time
+Look up the decision via adsId
+Resolve the latest adsVersion unless otherwise specified
+No aggregation, no list views, no comparison
+
+If the decision cannot be resolved, render a neutral “Decision not found” message.
+
+DATA SOURCES (READ‑ONLY)
+Phase 1 MUST derive exposure exclusively from:
+
+Portfolio entry
+
+organisationContext
+baselinePosture
+riskCategoriesPresent
+layersPresent
+inScopeCapabilityIds ✅
+ecpConstraintCategories ✅
+
+
+ADS metadata embedded in the portfolio entry
+
+❌ No runtime systems
+❌ No delivery data
+❌ No ownership or team data
+❌ No network calls
+
+BASELINE EXPOSURE SECTIONS (MANDATORY)
+Render exactly four sections, in this order:
+
+Governance Domains
+External Scrutiny Vectors
+Impact Surfaces
+Organisational Functions Affected
+
+Each section renders:
+
+a plain, unordered list
+no counts
+no severity
+no emphasis styling
+
+
+EXACT DERIVATION LOGIC (LOCKED & VERBATIM)
+The following mappings MUST be implemented as written.
+They are structural, not heuristic.
+
+1️⃣ Governance Domains
+Purpose: show which oversight domains are structurally engaged.
+Mapping rules (additive):
+
+
+Data Protection & Privacy
+
+sensitivityLevel = High
+OR inScopeCapabilityIds include data‑handling capabilities
+OR ecpConstraintCategories include data protection constraints
+
+
+
+Auditability & Record Integrity
+
+inScopeCapabilityIds include Audit & Compliance
+OR ecpConstraintCategories include audit / logging constraints
+
+
+
+Identity & Access Oversight
+
+inScopeCapabilityIds include External Access or Internal Admin
+OR ecpConstraintCategories include access‑control constraints
+
+
+
+Financial & Reporting Controls
+
+inScopeCapabilityIds include Reporting & Analytics
+OR organisationContext implies regulated reporting environment
+
+
+
+Jurisdictional / Cross‑Border Considerations
+
+organisationContext implies multi‑jurisdictional use
+OR ecpConstraintCategories include residency / locality constraints
+
+
+
+✅ Render labels only.
+
+2️⃣ External Scrutiny Vectors
+Purpose: show who may reasonably examine the decision.
+Mapping rules:
+
+
+External Audit Scrutiny Likely
+
+Governance Domains include Auditability & Record Integrity
+
+
+
+Regulatory Inquiry Plausible
+
+Governance Domains include Data Protection & Privacy
+AND organisationContext = Government or Regulated Enterprise
+
+
+
+Third‑Party Assurance Reliance Increases
+
+ecpConstraintCategories include compliance / assurance
+OR expected lifespan is long‑lived
+
+
+
+Contractual / Partner Review Exposure
+
+inScopeCapabilityIds include External Access
+OR organisationContext implies inter‑agency or partner use
+
+
+
+✅ Content expresses possibility only, never prediction.
+
+3️⃣ Impact Surfaces
+Render three sub‑groups (no prioritisation):
+Institutional
+Derived when:
+
+multiple governance domains present
+OR constraint category count exceeds baseline
+
+Allowed labels:
+
+governance coordination load
+audit preparation effort
+decision defensibility obligations
+
+Product
+Derived when:
+
+inScopeCapabilityIds include external‑facing capabilities
+OR sensitivityLevel ≥ Medium
+
+Allowed labels:
+
+feature constraint surface
+trust expectation management
+lifecycle rigidity
+
+Infrastructure
+Derived when:
+
+ecpConstraintCategories include availability / resilience / recovery
+OR baselinePosture implies distributed or long‑lived systems
+
+Allowed labels:
+
+operational resilience obligations
+monitoring expectations
+recovery preparedness
+
+✅ No failure modes, no outcomes.
+
+4️⃣ Organisational Functions Affected
+Alphabetical list only. No ordering by importance.
+Mapping rules:
+
+
+Legal / Compliance
+
+Data Protection or Regulatory domains present
+
+
+
+Security Operations
+
+Identity & Access Oversight present
+
+
+
+Data Governance
+
+Data Protection & Privacy present
+
+
+
+Platform / Infrastructure
+
+Infrastructure impact surface present
+
+
+
+Customer Support
+
+External Access capability present
+
+
+
+Procurement / Vendor Management
+
+ecpConstraintCategories include third‑party dependency constraints
+
+
+
+✅ This indicates responsibility pressure, not ownership.
+
+UI REQUIREMENTS
+
+All four sections visible at once
+Equal visual weight
+Neutral colour palette
+No arrows, no flow, no heatmap
+No icons implying warning, urgency, or importance
+
+Render a permanent interpretation banner above sections:
+
+“This view shows where an approved decision places institutional exposure.
+It does not assess, rank, recommend, or require action.”
+
+
+EMPTY STATES
+If a section derives no items:
+
+“No exposure surfaces identified for this decision.”
+
+No CTA. No hint of missing data.
+
+ARCHITECTURAL CONSTRAINTS
+PH1‑HC1: Single‑decision scope only
+PH1‑HC2: Derived‑only (portfolio read‑model)
+PH1‑HC3: Read‑only, no mutation
+PH1‑HC4: No ranking / scoring
+PH1‑HC5: No new runtime storage or cache
+PH1‑HC6: Portfolio extension limited to explicitly listed fields
+PH1‑HC7: Phase 1 must be removable without breaking any other layer
+
+
+STOP CONDITION
+STOP IMPLEMENTATION WHEN:
+
+- /exposure/:adsId renders successfully
+- Four baseline exposure sections render deterministically
+- Portfolio extension is limited to the two specified fields
+- No actions, metrics, or persistence are introduced
+- Phase 2 narratives are NOT present
+
+END OF PHASE 1 PROMPT

@@ -7,6 +7,7 @@ import Wizard from "@/pages/Wizard";
 import Portfolio from "@/pages/Portfolio";
 import Signals from "@/pages/Signals";
 import Reflection from "@/pages/Reflection";
+import Exposure from "@/pages/Exposure";
 
 function DarkModeApplier() {
   useEffect(() => {
@@ -22,6 +23,7 @@ function Router() {
       <Route path="/portfolio" component={Portfolio} />
       <Route path="/signals" component={Signals} />
       <Route path="/reflection" component={Reflection} />
+      <Route path="/exposure/:adsId" component={Exposure} />
       <Route component={NotFound} />
     </Switch>
   );

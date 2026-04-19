@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { Layout, LayoutGrid, ArrowUpDown, FileText, FileType } from "lucide-react";
+import { Layout, LayoutGrid, ArrowUpDown, FileText, FileType, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -367,6 +367,16 @@ function PortfolioTable(props: {
                       >
                         <FileType className="w-3 h-3" /> ECP
                       </Button>
+                      <Link href={`/exposure/${e.adsId}`}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 gap-1 text-[10px]"
+                          data-testid={`view-exposure-${e.adsId}-${e.adsVersion}`}
+                        >
+                          <Eye className="w-3 h-3" /> Exposure
+                        </Button>
+                      </Link>
                     </div>
                   </td>
                 </tr>
