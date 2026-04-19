@@ -11,11 +11,19 @@ import {
   isEcpConstraintCategoryTag,
   type EcpConstraintCategoryTag,
 } from "./exposureCategories";
+// Phase 5 — approval-time markers are computed at freeze and frozen
+// onto the entry so the Decision Re-Entry Lens can compare current
+// derivation output against the approval-time profile. These imports
+// are value imports; the inverse direction in `exposureDerive.ts` and
+// `responsibilityLens.ts` is `import type` only, so there is no
+// runtime circular dependency.
+import { deriveExposure } from "./exposureDerive";
+import { deriveResponsibilityLens } from "./responsibilityLens";
 
 const STORAGE_KEY = "adc.portfolio.v1";
 
 // HC4: top-level allow-list. The portfolio entry persists EXACTLY these
-// 15 fields and nothing else. The full ADS is intentionally NOT
+// 17 fields and nothing else. The full ADS is intentionally NOT
 // persisted here — the portfolio is a deliberately reduced read-model
 // of the canonical artefact (HC1). The read-only viewer renders from
 // these fields directly, never by re-running the grammar.
@@ -25,6 +33,12 @@ const STORAGE_KEY = "adc.portfolio.v1";
 // decision-intent fields — `inScopeCapabilityIds` and
 // `ecpConstraintCategories`. They are written once at freeze and are
 // read-only thereafter; they do not feed back into the grammar engine.
+//
+// Phase 5 (Decision Re-Entry Lens) extension under PH5-HC3: the
+// allow-list grew by exactly two further frozen-at-freeze fields —
+// `approvalFunctionsAffected` and `approvalDominantFunctions` —
+// snapshotting the live Phase 1 / Phase 3 derivation outputs at
+// freeze. Same write-once / read-only / no-feedback semantics.
 const ALLOWED_FIELDS = [
   "adsId",
   "adsVersion",
@@ -41,6 +55,15 @@ const ALLOWED_FIELDS = [
   "layersPresent",
   "inScopeCapabilityIds",
   "ecpConstraintCategories",
+  // Phase 5 (PH5-HC3) approval-time markers. Both are written ONCE at
+  // freeze, read-only thereafter, and never feed back into the grammar
+  // engine. They snapshot what the live derivers (Phase 1 exposure,
+  // Phase 3 responsibility lens) produced AT freeze time. The
+  // Decision Re-Entry Lens compares current derivation output against
+  // these snapshots to recognise drift introduced by future derivation
+  // upgrades or future upstream-context evolution.
+  "approvalFunctionsAffected",
+  "approvalDominantFunctions",
 ] as const;
 
 export interface PortfolioEntry {
@@ -59,6 +82,12 @@ export interface PortfolioEntry {
   layersPresent: ComponentLayer[];
   inScopeCapabilityIds: string[];
   ecpConstraintCategories: EcpConstraintCategoryTag[];
+  // Phase 5 approval-time markers (see ALLOWED_FIELDS comment above).
+  // Both are alphabetically-sorted arrays of plain strings: function
+  // names captured at freeze from `payload.functionsAffected` and
+  // from the responsibility lens row set respectively.
+  approvalFunctionsAffected: string[];
+  approvalDominantFunctions: string[];
 }
 
 const RISK_RANK: Record<RiskLevel, number> = { GREEN: 1, AMBER: 2, RED: 3 };
@@ -87,6 +116,46 @@ export function entryFromADS(ads: ADS): PortfolioEntry {
     .sort();
   const ecpConstraintCategories = deriveEcpConstraintCategories(ads);
 
+  // Phase 5 approval-time markers. We assemble a draft entry that
+  // carries every field the downstream derivers need, then run the
+  // live Phase 1 + Phase 3 derivers against it and snapshot their
+  // outputs as alphabetically-sorted plain string arrays. Because
+  // these snapshots are taken at freeze, any future divergence
+  // between the live derivers and these snapshots — caused by a
+  // future derivation upgrade or by upstream context evolution —
+  // becomes a procedurally legitimate Re-Entry signal at read time.
+  const draftForDerivation: PortfolioEntry = {
+    adsId: ads.adsId,
+    adsVersion: ads.version,
+    projectName: ads.projectName,
+    approvingAuthority: ads.approvingAuthority,
+    decisionDate: ads.date,
+    organisationContext: ads.context,
+    baselinePosture: ads.baselineTradeOffs,
+    complexityScore: ads.result.indicators.complexityScore,
+    operationalOverheadScore: ads.result.indicators.operationalOverheadScore,
+    changeCostLaterScore: ads.result.indicators.changeCostLaterScore,
+    highestRiskSeverity: highest,
+    riskCategoriesPresent: categories,
+    layersPresent: layers,
+    inScopeCapabilityIds,
+    ecpConstraintCategories,
+    approvalFunctionsAffected: [],
+    approvalDominantFunctions: [],
+  };
+  const approvalPayload = deriveExposure(draftForDerivation);
+  const approvalLens = deriveResponsibilityLens(
+    draftForDerivation,
+    approvalPayload,
+  );
+  const approvalFunctionsAffected = [...approvalPayload.functionsAffected]
+    .slice()
+    .sort();
+  const approvalDominantFunctions = approvalLens
+    .map((row) => row.functionName)
+    .slice()
+    .sort();
+
   return {
     adsId: ads.adsId,
     adsVersion: ads.version,
@@ -103,6 +172,8 @@ export function entryFromADS(ads: ADS): PortfolioEntry {
     layersPresent: layers,
     inScopeCapabilityIds,
     ecpConstraintCategories,
+    approvalFunctionsAffected,
+    approvalDominantFunctions,
   };
 }
 
@@ -153,6 +224,27 @@ function assertAllowedFields(entry: unknown): void {
       "Portfolio entry field \"ecpConstraintCategories\" must be an array of canonical ECP constraint-category tags.",
     );
   }
+  // Phase 5 markers — strings only; allowed to be empty for decisions
+  // whose freeze-time derivers produced no functions / no responsibility
+  // lens rows. Pre-existing entries written before Phase 5 are
+  // accepted at READ time (see withDefaults) but every newly written
+  // entry must carry well-formed values.
+  if (
+    !Array.isArray(e.approvalFunctionsAffected) ||
+    !e.approvalFunctionsAffected.every((x) => typeof x === "string")
+  ) {
+    throw new Error(
+      "Portfolio entry field \"approvalFunctionsAffected\" must be an array of strings.",
+    );
+  }
+  if (
+    !Array.isArray(e.approvalDominantFunctions) ||
+    !e.approvalDominantFunctions.every((x) => typeof x === "string")
+  ) {
+    throw new Error(
+      "Portfolio entry field \"approvalDominantFunctions\" must be an array of strings.",
+    );
+  }
 }
 
 function isValidEntry(raw: unknown): raw is PortfolioEntry {
@@ -198,6 +290,21 @@ function isValidEntry(raw: unknown): raw is PortfolioEntry {
       return false;
     }
   }
+  // Phase 5 markers — optional at READ time so entries written before
+  // Phase 5 continue to load. They are mandatory at WRITE time
+  // (assertAllowedFields above).
+  if (e.approvalFunctionsAffected !== undefined) {
+    if (!Array.isArray(e.approvalFunctionsAffected)) return false;
+    if (!e.approvalFunctionsAffected.every((x) => typeof x === "string")) {
+      return false;
+    }
+  }
+  if (e.approvalDominantFunctions !== undefined) {
+    if (!Array.isArray(e.approvalDominantFunctions)) return false;
+    if (!e.approvalDominantFunctions.every((x) => typeof x === "string")) {
+      return false;
+    }
+  }
   return true;
 }
 
@@ -209,6 +316,8 @@ function withDefaults(entry: PortfolioEntry): PortfolioEntry {
     ...entry,
     inScopeCapabilityIds: entry.inScopeCapabilityIds ?? [],
     ecpConstraintCategories: entry.ecpConstraintCategories ?? [],
+    approvalFunctionsAffected: entry.approvalFunctionsAffected ?? [],
+    approvalDominantFunctions: entry.approvalDominantFunctions ?? [],
   };
 }
 

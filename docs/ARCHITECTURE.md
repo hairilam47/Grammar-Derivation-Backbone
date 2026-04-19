@@ -247,12 +247,20 @@ written, the frozen artefact cannot be edited from the freeze screen.
 ### Storage
 
 Key `adc.portfolio.v1` in `localStorage`. Each entry is a top-level
-allow-listed object with exactly 13 fields:
+allow-listed object with exactly 17 fields:
 
 `adsId`, `adsVersion`, `projectName`, `approvingAuthority`,
 `decisionDate`, `organisationContext`, `baselinePosture`,
 `complexityScore`, `operationalOverheadScore`, `changeCostLaterScore`,
-`highestRiskSeverity`, `riskCategoriesPresent`, `layersPresent`.
+`highestRiskSeverity`, `riskCategoriesPresent`, `layersPresent`,
+`inScopeCapabilityIds`, `ecpConstraintCategories`,
+`approvalFunctionsAffected`, `approvalDominantFunctions`.
+
+The last four fields are written once at freeze and read-only
+thereafter: `inScopeCapabilityIds` and `ecpConstraintCategories`
+were added to drive the Decision Exposure View (Phase 1);
+`approvalFunctionsAffected` and `approvalDominantFunctions` were
+added to drive the Decision Re-Entry Lens (Phase 5).
 
 ### Shape contract
 
@@ -422,7 +430,7 @@ shared across all four routes.
 | Layer | Storage key | Owner | Shape contract | Authoritative? |
 | --- | --- | --- | --- | --- |
 | Wizard (Layer 2) | (in memory only) | `pages/Wizard.tsx` state | none — discarded on reload before freeze | ephemeral |
-| Portfolio (Layer 4) | `adc.portfolio.v1` (`localStorage`) | `governance/portfolioStore.ts` | 13-field top-level allow-list, nested key allow-lists for `organisationContext` and `baselinePosture`, validated by `isValidEntry` | reduced read-model only |
+| Portfolio (Layer 4) | `adc.portfolio.v1` (`localStorage`) | `governance/portfolioStore.ts` | 17-field top-level allow-list, nested key allow-lists for `organisationContext` and `baselinePosture`, validated by `isValidEntry` | reduced read-model only |
 | Signals (Layer 5) | `adc.policy-signals.v1` (`localStorage`) | `governance/signalsStore.ts` | 11-field top-level allow-list, nested allow-list for `evidenceSummary` and `relatedEntries` items, validated by `isValidSignal` (including question-mark guidance check) | reduced read-model only |
 | Reflection (Layer 6) | (none) | `pages/Reflection.tsx` | n/a — pure aggregation | persists nothing |
 
@@ -779,43 +787,74 @@ procedural conditions for reconsideration are currently evident."*
 
 #### Closed signal set (PH5-HC4)
 
-Two sentences, drawn verbatim, mutually exclusive (the more inclusive
-sentence subsumes the less inclusive one):
+Four sentences, drawn verbatim, emitted in fixed render order. The
+two lifespan sentences are mutually exclusive (the more inclusive
+subsumes the less inclusive); the responsibility-shift and
+scope-breadth signals fire independently:
 
 1. *"The elapsed time since approval has reached the decision's originally expected lifespan."*
 2. *"The elapsed time since approval has crossed the midpoint of the decision's originally expected lifespan."*
+3. *"Responsibility pressure now appears in organisational functions that were not part of the approval-time profile."*
+4. *"Currently-derived exposure spans organisational functions beyond the approval-time profile."*
 
 Sentences are never templated at runtime.
 
 #### Derivation inputs (PH5-HC2 / PH5-HC3)
 
-`decisionReentry.ts` accepts exactly one `PortfolioEntry` and one
-`now: Date`. Age is computed against `entry.decisionDate` and
-compared to `entry.organisationContext.expectedLifespanYears`. The
-deriver does NOT consume the Phase 4 scenario lens state, runtime
-metrics, viewing telemetry, incident data, or external feeds.
+`decisionReentry.ts` accepts exactly one `PortfolioEntry`, the live
+Phase 1 `ExposurePayload`, the live Phase 2 `ExposureNarratives`, the
+live Phase 3 `ResponsibilityLens`, and one `now: Date`. The deriver
+does NOT consume the Phase 4 scenario lens state, runtime metrics,
+viewing telemetry, incident data, or external feeds.
+
+- The lifespan rules read `entry.decisionDate` and
+  `entry.organisationContext.expectedLifespanYears`.
+- The responsibility-pressure-shift rule compares the live
+  responsibility-lens function set against
+  `entry.approvalDominantFunctions` (the approval-time snapshot).
+- The exposure-scope-breadth rule compares the live
+  `payload.functionsAffected` against
+  `entry.approvalFunctionsAffected` (the approval-time snapshot).
+
+The `narratives` parameter is part of the contract for future rules
+but unused by any rule today (Phase 2 narratives are assembled from
+the same frozen inputs as the entry, so they cannot diverge from the
+payload on their own).
 
 The "now" Date is captured once on mount in `pages/Exposure.tsx`
 (`useState(() => new Date())`). The deriver itself stays pure: same
-`(entry, now)` always yields the same signal set.
+inputs always yield the same signal set.
 
-#### Dormant rules
+#### Approval-time markers
 
-The Phase 5 spec describes additional re-entry conditions that the
-current data model cannot evaluate without violating PH5-HC3
-(derived-only from durable inputs). They stay structurally absent
-rather than fabricate signals from data the system does not have:
+Two new fields were added to the portfolio entry allow-list in
+service of the Phase 5 deriver. Both are written ONCE at freeze (in
+`entryFromADS`), are read-only thereafter, and never feed back into
+the grammar engine:
 
-- *Function shift* — would require an approval-time dominant-function
-  field on the `PortfolioEntry` allow-list.
-- *Scope divergence* — would require a delta between approval-time
-  and current-time exposure; the entry IS the freeze-time snapshot.
-- *Repeated non-baseline lens viewing* — would require viewing
-  telemetry, which Phase 5 is explicitly forbidden to consume.
+- `approvalFunctionsAffected: string[]` — alphabetical snapshot of
+  `payload.functionsAffected` taken at freeze.
+- `approvalDominantFunctions: string[]` — alphabetical snapshot of
+  the responsibility-lens function set taken at freeze.
 
-These rules will become implementable when the upstream schema
-records the necessary lifecycle metadata, mirroring the Phase 1
-dormant-rule pattern.
+The portfolio entry now carries 17 allow-listed top-level fields.
+Pre-existing entries written before Phase 5 are accepted at read
+time and normalised to empty arrays for the two new fields. The
+responsibility-shift and scope-breadth rules suppress themselves
+when the corresponding snapshot is empty so that legacy decisions
+are not retroactively flagged.
+
+#### Latent rules (no remaining dormant rules)
+
+Every condition family from the Phase 5 spec is now implemented:
+lifespan-vs-approval-window (rules 1–2),
+responsibility-pressure-shift (rule 3), and
+exposure-scope-breadth (rule 4). Rules 3 and 4 are *latent* for
+brand-new decisions — they fire only when the live derivers diverge
+from the approval-time snapshot, which can happen after a future
+derivation upgrade or after upstream-context evolution introduces
+new functions. They are NOT dormant in the Phase 1 sense (no
+documented condition is left unimplemented).
 
 #### Empty state
 

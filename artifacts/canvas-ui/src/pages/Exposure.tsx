@@ -189,13 +189,25 @@ export default function Exposure() {
     [entry, payload, scenarioLens],
   );
 
-  // Phase 5 — Decision Re-Entry signals. Derived purely from the
-  // entry plus the captured "now" Date. PH5-HC3: this useMemo
-  // intentionally has NO dependency on `scenarioLens` — Phase 5 is
-  // not derived from the page's lens-state.
+  // Phase 5 — Decision Re-Entry signals. Derived from the entry,
+  // the live Phase 1 payload, the live Phase 2 narratives, the live
+  // Phase 3 responsibility lens, and the captured "now" Date.
+  // PH5-HC3: this useMemo intentionally has NO dependency on
+  // `scenarioLens` — Phase 5 is not derived from the page's
+  // lens-state. (`scenarioAnnotations` is also deliberately absent
+  // from the deps array.)
   const reEntrySignals: readonly string[] = useMemo(
-    () => (entry ? deriveReEntrySignals(entry, reEntryNow) : []),
-    [entry, reEntryNow],
+    () =>
+      entry && payload
+        ? deriveReEntrySignals(
+            entry,
+            payload,
+            narratives,
+            responsibilityLens ?? [],
+            reEntryNow,
+          )
+        : [],
+    [entry, payload, narratives, responsibilityLens, reEntryNow],
   );
 
   return (
