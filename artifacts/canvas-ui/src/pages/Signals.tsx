@@ -24,10 +24,13 @@ import {
   nextStatus,
 } from "@/governance/signalsStore";
 
-// S6-HC8 governance language guard: every static label rendered on the
-// signals page is registered here. The guard runs at module load and
-// throws if forbidden vocabulary appears.
-const SIGNALS_STATIC_TEXT = {
+// S6-HC8 governance language guard. Every user-visible static label on
+// the Signals page is registered here. The guard runs at module load
+// and throws if any forbidden vocabulary appears (priority, fix,
+// resolve, escalate, mitigate — plus the Step 5 portfolio set).
+// JSX below references only these constants — never literal strings —
+// so the guard cannot be bypassed.
+const T = {
   pageTitle: "Policy Signals",
   interpretationHeading: "Reading this view",
   interpretation1:
@@ -50,10 +53,52 @@ const SIGNALS_STATIC_TEXT = {
   submit: "Record Signal",
   advanceLabel: "Advance to next state",
   terminalLabel: "Terminal state reached. No further transitions.",
-  navLabel: "Signals",
+  // Table headers
+  colCategory: "Category",
+  colTitle: "Title",
+  colStatus: "Status",
+  colReviewingBody: "Reviewing Body",
+  colCreated: "Created",
+  colLastReviewed: "Last Reviewed",
+  colActions: "Actions",
+  view: "View",
+  // Detail field labels
+  fieldSignalId: "Signal ID",
+  fieldDescription: "Description",
+  fieldEvidenceSummary: "Evidence Summary",
+  fieldObservationWindow: "Observation window",
+  fieldRelatedDecisionCount: "Related decision count",
+  fieldQualitativePattern: "Qualitative pattern",
+  fieldRelatedEntries: "Related Portfolio Entries",
+  fieldInterpretationGuidance: "Interpretation Guidance",
+  fieldRegulatoryContext: "Regulatory Context",
+  fieldReviewingBody: "Reviewing Body",
+  fieldCreated: "Created",
+  fieldLastReviewed: "Last Reviewed",
+  // Form labels and placeholders
+  formCategory: "Category",
+  formTitle: "Title",
+  formDescription: "Description",
+  formEvidenceLegend: "Evidence Summary",
+  formObservationWindow: "Observation Window",
+  formObservationWindowPlaceholder: "e.g. Q1-Q3 2026",
+  formRelatedCount: "Related Decision Count",
+  formQualitativePattern: "Qualitative Pattern",
+  formRelatedEntries: "Related Portfolio Entries (optional)",
+  formGuidanceLegend: "Interpretation Guidance (questions only, must end with ?)",
+  formGuidancePlaceholder:
+    "What does this pattern suggest about our governance posture?",
+  formGuidanceError:
+    "Each interpretation guidance entry must be a question ending with ?",
+  formAddQuestion: "Add question",
+  formRegulatoryContext: "Regulatory Context (optional)",
+  formReviewingBody: "Reviewing Body",
+  formReviewingBodyPlaceholder: "e.g. Architecture Board",
+  viewPortfolio: "View portfolio",
+  vSeparator: "v",
 };
 
-assertAllSignalsLanguage(Object.values(SIGNALS_STATIC_TEXT));
+assertAllSignalsLanguage(Object.values(T));
 
 type SortKey = "createdAt" | "lastReviewedAt" | "signalCategory";
 
@@ -121,7 +166,7 @@ export default function Signals() {
           <div className="flex items-center gap-2 text-primary">
             <Radio className="w-5 h-5" />
             <span className="font-bold tracking-tight text-sm uppercase">
-              {SIGNALS_STATIC_TEXT.pageTitle}
+              {T.pageTitle}
             </span>
           </div>
           <PortfolioHeaderNav />
@@ -134,7 +179,7 @@ export default function Signals() {
         <Card data-testid="signals-list">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-sm font-semibold uppercase tracking-wider">
-              {SIGNALS_STATIC_TEXT.listHeading}
+              {T.listHeading}
             </CardTitle>
             <Button
               size="sm"
@@ -143,7 +188,7 @@ export default function Signals() {
               onClick={() => setCreating(true)}
               data-testid="button-new-signal"
             >
-              <Plus className="w-4 h-4" /> {SIGNALS_STATIC_TEXT.newButton}
+              <Plus className="w-4 h-4" /> {T.newButton}
             </Button>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -153,7 +198,7 @@ export default function Signals() {
               <>
                 <div className="flex flex-wrap gap-3 items-end text-xs">
                   <p className="text-[10px] italic text-muted-foreground ml-auto max-w-md">
-                    {SIGNALS_STATIC_TEXT.presentationCaption}
+                    {T.presentationCaption}
                   </p>
                 </div>
 
@@ -165,30 +210,30 @@ export default function Signals() {
                     <thead>
                       <tr className="border-b border-border text-left text-muted-foreground uppercase tracking-wider text-[10px]">
                         <SortableHeader
-                          label="Category"
+                          label={T.colCategory}
                           col="signalCategory"
                           sortKey={sortKey}
                           sortDir={sortDir}
                           onSort={toggleSort}
                         />
-                        <th className="py-2 px-2">Title</th>
-                        <th className="py-2 px-2">Status</th>
-                        <th className="py-2 px-2">Reviewing Body</th>
+                        <th className="py-2 px-2">{T.colTitle}</th>
+                        <th className="py-2 px-2">{T.colStatus}</th>
+                        <th className="py-2 px-2">{T.colReviewingBody}</th>
                         <SortableHeader
-                          label="Created"
+                          label={T.colCreated}
                           col="createdAt"
                           sortKey={sortKey}
                           sortDir={sortDir}
                           onSort={toggleSort}
                         />
                         <SortableHeader
-                          label="Last Reviewed"
+                          label={T.colLastReviewed}
                           col="lastReviewedAt"
                           sortKey={sortKey}
                           sortDir={sortDir}
                           onSort={toggleSort}
                         />
-                        <th className="py-2 px-2"></th>
+                        <th className="py-2 px-2">{T.colActions}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -225,7 +270,7 @@ export default function Signals() {
                               onClick={() => setViewing(s)}
                               data-testid={`view-signal-${s.signalId}`}
                             >
-                              View
+                              {T.view}
                             </Button>
                           </td>
                         </tr>
@@ -241,7 +286,7 @@ export default function Signals() {
 
       <ReadOnlyArtefactModal
         open={creating}
-        title={SIGNALS_STATIC_TEXT.formHeading}
+        title={T.formHeading}
         testid="modal-create-signal"
         onClose={() => setCreating(false)}
       >
@@ -256,7 +301,7 @@ export default function Signals() {
 
       <ReadOnlyArtefactModal
         open={viewing !== null}
-        title={SIGNALS_STATIC_TEXT.detailHeading}
+        title={T.detailHeading}
         testid="modal-signal-detail"
         onClose={() => setViewing(null)}
       >
@@ -276,14 +321,14 @@ function InterpretationPanel() {
     >
       <CardHeader>
         <CardTitle className="text-sm font-semibold uppercase tracking-wider">
-          {SIGNALS_STATIC_TEXT.interpretationHeading}
+          {T.interpretationHeading}
         </CardTitle>
       </CardHeader>
       <CardContent className="text-xs leading-relaxed space-y-1.5 text-muted-foreground">
-        <p>{SIGNALS_STATIC_TEXT.interpretation1}</p>
-        <p>{SIGNALS_STATIC_TEXT.interpretation2}</p>
-        <p>{SIGNALS_STATIC_TEXT.interpretation3}</p>
-        <p>{SIGNALS_STATIC_TEXT.interpretation4}</p>
+        <p>{T.interpretation1}</p>
+        <p>{T.interpretation2}</p>
+        <p>{T.interpretation3}</p>
+        <p>{T.interpretation4}</p>
       </CardContent>
     </Card>
   );
@@ -295,7 +340,7 @@ function EmptyState() {
       className="py-12 text-center text-muted-foreground text-xs"
       data-testid="empty-state"
     >
-      {SIGNALS_STATIC_TEXT.emptyState}
+      {T.emptyState}
     </div>
   );
 }
@@ -351,27 +396,41 @@ function SignalDetail({
         </div>
       </div>
 
-      <Field label="Description">{signal.signalDescription}</Field>
+      <Field label={T.fieldSignalId}>
+        <span data-testid="detail-signal-id">{signal.signalId}</span>
+      </Field>
+
+      <Field label={T.fieldDescription}>{signal.signalDescription}</Field>
 
       <div className="space-y-1.5">
         <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
-          Evidence Summary
+          {T.fieldEvidenceSummary}
         </div>
         <ul className="list-disc pl-5 space-y-0.5">
-          <li>Observation window: {e.observationWindow}</li>
-          <li>Related decision count: {e.relatedDecisionCount}</li>
-          <li>Qualitative pattern: {e.qualitativePattern}</li>
+          <li>
+            {T.fieldObservationWindow}: {e.observationWindow}
+          </li>
+          <li>
+            {T.fieldRelatedDecisionCount}: {e.relatedDecisionCount}
+          </li>
+          <li>
+            {T.fieldQualitativePattern}: {e.qualitativePattern}
+          </li>
         </ul>
         {e.relatedEntries && e.relatedEntries.length > 0 && (
           <div className="mt-2">
             <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">
-              Related Portfolio Entries
+              {T.fieldRelatedEntries}
             </div>
             <ul className="list-disc pl-5 space-y-0.5">
               {e.relatedEntries.map((r) => (
                 <li key={`${r.adsId}__${r.adsVersion}`}>
                   <span className="font-semibold">{r.adsId}</span>
-                  <span className="text-muted-foreground"> · v{r.adsVersion}</span>
+                  <span className="text-muted-foreground">
+                    {" · "}
+                    {T.vSeparator}
+                    {r.adsVersion}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -381,7 +440,7 @@ function SignalDetail({
 
       <div className="space-y-1.5">
         <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
-          Interpretation Guidance
+          {T.fieldInterpretationGuidance}
         </div>
         <ul className="list-disc pl-5 space-y-0.5">
           {signal.interpretationGuidance.map((q, i) => (
@@ -391,14 +450,18 @@ function SignalDetail({
       </div>
 
       {signal.regulatoryContext && (
-        <Field label="Regulatory Context">{signal.regulatoryContext}</Field>
+        <Field label={T.fieldRegulatoryContext}>
+          {signal.regulatoryContext}
+        </Field>
       )}
 
-      <Field label="Reviewing Body">{signal.reviewingBody}</Field>
+      <Field label={T.fieldReviewingBody}>{signal.reviewingBody}</Field>
 
       <div className="grid grid-cols-2 gap-4">
-        <Field label="Created">{formatDate(signal.createdAt)}</Field>
-        <Field label="Last Reviewed">{formatDate(signal.lastReviewedAt)}</Field>
+        <Field label={T.fieldCreated}>{formatDate(signal.createdAt)}</Field>
+        <Field label={T.fieldLastReviewed}>
+          {formatDate(signal.lastReviewedAt)}
+        </Field>
       </div>
 
       <div className="border-t border-border pt-3">
@@ -409,7 +472,7 @@ function SignalDetail({
             onClick={() => onAdvance(signal.signalId)}
             data-testid="button-advance"
           >
-            {SIGNALS_STATIC_TEXT.advanceLabel}: {signal.status}{" "}
+            {T.advanceLabel}: {signal.status}{" "}
             <ArrowRight className="w-3 h-3" /> {next}
           </Button>
         ) : (
@@ -417,7 +480,7 @@ function SignalDetail({
             className="text-[10px] italic text-muted-foreground"
             data-testid="terminal-note"
           >
-            {SIGNALS_STATIC_TEXT.terminalLabel}
+            {T.terminalLabel}
           </div>
         )}
       </div>
@@ -523,7 +586,7 @@ function CreateSignalForm({
       className="space-y-5 text-xs"
       data-testid="form-create-signal"
     >
-      <FormField label="Category">
+      <FormField label={T.formCategory}>
         <select
           value={signalCategory}
           onChange={(e) => setSignalCategory(e.target.value as SignalCategory)}
@@ -538,7 +601,7 @@ function CreateSignalForm({
         </select>
       </FormField>
 
-      <FormField label="Title">
+      <FormField label={T.formTitle}>
         <input
           type="text"
           value={signalTitle}
@@ -548,7 +611,7 @@ function CreateSignalForm({
         />
       </FormField>
 
-      <FormField label="Description">
+      <FormField label={T.formDescription}>
         <textarea
           value={signalDescription}
           onChange={(e) => setSignalDescription(e.target.value)}
@@ -560,19 +623,19 @@ function CreateSignalForm({
 
       <fieldset className="border border-border rounded p-3 space-y-3">
         <legend className="text-[10px] uppercase tracking-widest text-muted-foreground px-1">
-          Evidence Summary
+          {T.formEvidenceLegend}
         </legend>
-        <FormField label="Observation Window">
+        <FormField label={T.formObservationWindow}>
           <input
             type="text"
             value={observationWindow}
             onChange={(e) => setObservationWindow(e.target.value)}
             className="bg-background border border-border rounded px-2 py-1.5 text-xs w-full"
             data-testid="input-observation-window"
-            placeholder="e.g. Q1–Q3 2026"
+            placeholder={T.formObservationWindowPlaceholder}
           />
         </FormField>
-        <FormField label="Related Decision Count">
+        <FormField label={T.formRelatedCount}>
           <input
             type="number"
             min={0}
@@ -584,7 +647,7 @@ function CreateSignalForm({
             data-testid="input-related-count"
           />
         </FormField>
-        <FormField label="Qualitative Pattern">
+        <FormField label={T.formQualitativePattern}>
           <textarea
             value={qualitativePattern}
             onChange={(e) => setQualitativePattern(e.target.value)}
@@ -595,7 +658,7 @@ function CreateSignalForm({
         </FormField>
 
         {portfolioEntries.length > 0 && (
-          <FormField label="Related Portfolio Entries (optional)">
+          <FormField label={T.formRelatedEntries}>
             <div
               className="border border-border rounded max-h-40 overflow-y-auto p-2 space-y-1"
               data-testid="input-related-entries"
@@ -623,10 +686,12 @@ function CreateSignalForm({
                     />
                     <span className="font-semibold">{p.adsId}</span>
                     <span className="text-muted-foreground">
-                      v{p.adsVersion}
+                      {T.vSeparator}
+                      {p.adsVersion}
                     </span>
                     <span className="text-muted-foreground">
-                      · {p.projectName}
+                      {" · "}
+                      {p.projectName}
                     </span>
                   </label>
                 );
@@ -638,7 +703,7 @@ function CreateSignalForm({
 
       <fieldset className="border border-border rounded p-3 space-y-3">
         <legend className="text-[10px] uppercase tracking-widest text-muted-foreground px-1">
-          Interpretation Guidance (questions only, must end with "?")
+          {T.formGuidanceLegend}
         </legend>
         {guidance.map((q, i) => {
           const invalid = !endsWithQuestionMark(q);
@@ -657,7 +722,7 @@ function CreateSignalForm({
                     ? "border-destructive"
                     : "border-border"
                 }`}
-                placeholder="What does this pattern suggest about our governance posture?"
+                placeholder={T.formGuidancePlaceholder}
                 data-testid={`input-guidance-${i}`}
               />
               {guidance.length > 1 && (
@@ -684,20 +749,19 @@ function CreateSignalForm({
           onClick={() => setGuidance([...guidance, ""])}
           data-testid="add-guidance"
         >
-          <Plus className="w-3 h-3" /> Add question
+          <Plus className="w-3 h-3" /> {T.formAddQuestion}
         </Button>
         {guidanceInvalid && (
           <div
             className="text-[10px] text-destructive"
             data-testid="guidance-error"
           >
-            Each interpretation guidance entry must be a question ending with
-            &quot;?&quot;.
+            {T.formGuidanceError}
           </div>
         )}
       </fieldset>
 
-      <FormField label="Regulatory Context (optional)">
+      <FormField label={T.formRegulatoryContext}>
         <input
           type="text"
           value={regulatoryContext}
@@ -707,14 +771,14 @@ function CreateSignalForm({
         />
       </FormField>
 
-      <FormField label="Reviewing Body">
+      <FormField label={T.formReviewingBody}>
         <input
           type="text"
           value={reviewingBody}
           onChange={(e) => setReviewingBody(e.target.value)}
           className="bg-background border border-border rounded px-2 py-1.5 text-xs w-full"
           data-testid="input-reviewing-body"
-          placeholder="e.g. Architecture Board"
+          placeholder={T.formReviewingBodyPlaceholder}
         />
       </FormField>
 
@@ -734,14 +798,14 @@ function CreateSignalForm({
           onClick={onCancel}
           data-testid="button-cancel"
         >
-          {SIGNALS_STATIC_TEXT.cancel}
+          {T.cancel}
         </Button>
         <Button
           type="submit"
           disabled={!canSubmit}
           data-testid="button-submit"
         >
-          {SIGNALS_STATIC_TEXT.submit}
+          {T.submit}
         </Button>
       </div>
 
@@ -752,7 +816,7 @@ function CreateSignalForm({
           className="underline hover:text-foreground"
           data-testid="link-portfolio-from-form"
         >
-          View portfolio
+          {T.viewPortfolio}
         </Link>
       </div>
     </form>
