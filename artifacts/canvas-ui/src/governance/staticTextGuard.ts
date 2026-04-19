@@ -187,3 +187,61 @@ export function assertResponsibilityLensLanguage(text: string): void {
 export function assertAllResponsibilityLensLanguage(texts: string[]): void {
   for (const t of texts) assertResponsibilityLensLanguage(t);
 }
+
+// Phase 4 (PH4-HC5 / PH4-HC6) extends the SIGNALS vocabulary with the
+// strictest tier in the system. Phase 4 — Scenario-Conditioned Reading
+// renders contextual qualifier phrases ("persists", "broadens",
+// "becomes more continuous", etc.) attached to existing Phase 1/2/3
+// elements; under no lens may any qualifier, selector label, helper
+// sentence, or empty-state sentence imply prediction, probability,
+// severity, comparison, urgency, or remediation.
+//
+// SCENARIO_READING_FORBIDDEN is a STRICT SUPERSET of all three sibling
+// upper tiers (RESPONSIBILITY_LENS_FORBIDDEN, EXPOSURE_NARRATIVE_FORBIDDEN,
+// REFLECTIVE_FORBIDDEN), unioned with the Phase 4-specific bans
+// (predict / forecast / probability / likelihood / worst / best /
+// severe / escalate / urgent). Because every higher tier is a strict
+// superset of SIGNALS_FORBIDDEN, taking the union of the three sibling
+// tiers also covers SIGNALS_FORBIDDEN and PORTFOLIO_FORBIDDEN
+// transitively.
+//
+// Layering: PORTFOLIO ⊂ SIGNALS ⊂ {REFLECTIVE, EXPOSURE_NARRATIVE,
+//                                  RESPONSIBILITY_LENS} ⊂ SCENARIO_READING
+//
+// Carve-out notes for substring matching (Phase 4 surface):
+//   - "best" matches "bestow", "asbestos". Phase 4 surface
+//     intentionally avoids both. Same renaming rule as the other
+//     tiers if a consumer label ever introduces those words.
+//   - "worst" has no common embedding in neutral English; safe.
+//   - "lead" / "high" / "low" / "owner" / "address" carve-outs from
+//     RESPONSIBILITY_LENS_FORBIDDEN apply transitively. Phase 4
+//     qualifier phrases ("persists", "broadens", "concentrates",
+//     "becomes more continuous", "remains episodic", "becomes more
+//     distributed") deliberately avoid every embedding above.
+//   - "must" carve-out from EXPOSURE_NARRATIVE_FORBIDDEN applies
+//     transitively. Phase 4 surface contains no "must"-bearing word.
+function dedup(arr: string[]): string[] {
+  return Array.from(new Set(arr));
+}
+export const SCENARIO_READING_FORBIDDEN = dedup([
+  ...RESPONSIBILITY_LENS_FORBIDDEN,
+  ...EXPOSURE_NARRATIVE_FORBIDDEN,
+  ...REFLECTIVE_FORBIDDEN,
+  "predict",
+  "forecast",
+  "probability",
+  "likelihood",
+  "worst",
+  "best",
+  "severe",
+  "escalate",
+  "urgent",
+]);
+
+export function assertScenarioReadingLanguage(text: string): void {
+  checkAgainst(text, SCENARIO_READING_FORBIDDEN);
+}
+
+export function assertAllScenarioReadingLanguage(texts: string[]): void {
+  for (const t of texts) assertScenarioReadingLanguage(t);
+}

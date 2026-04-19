@@ -28,6 +28,18 @@ import {
   type ResponsibilityLens,
 } from "@/governance/responsibilityLens";
 import {
+  deriveScenarioAnnotations,
+  annotationsAreEmpty,
+  SCENARIO_LENS_ORDER,
+  SCENARIO_LENS_LABEL,
+  SCENARIO_HEADING,
+  SCENARIO_HELPER,
+  SCENARIO_SELECTOR_LABEL,
+  SCENARIO_EMPTY,
+  type ScenarioLens,
+  type ScenarioAnnotations,
+} from "@/governance/scenarioReading";
+import {
   assertAllReflectiveLanguage,
   assertAllResponsibilityLensLanguage,
 } from "@/governance/staticTextGuard";
@@ -98,6 +110,9 @@ export default function Exposure() {
   const [, params] = useRoute<{ adsId: string }>("/exposure/:adsId");
   const adsId = params?.adsId ?? "";
   const [entries, setEntries] = useState<PortfolioEntry[]>([]);
+  // Phase 4 — selected scenario lens. Always defaults to Baseline so
+  // the page's initial render is byte-identical to Phases 1–3.
+  const [scenarioLens, setScenarioLens] = useState<ScenarioLens>("BASELINE");
 
   useEffect(() => {
     setEntries(listEntries());
@@ -131,6 +146,19 @@ export default function Exposure() {
     () =>
       entry && payload ? deriveResponsibilityLens(entry, payload) : null,
     [entry, payload],
+  );
+
+  // Phase 4 — scenario annotations. Pure derivation; recomputed only
+  // when the entry, payload, or selected lens changes. Baseline always
+  // returns an empty annotations object, so under the default lens
+  // every Phase 1/2/3 render path takes its existing branch and
+  // produces byte-identical output.
+  const scenarioAnnotations: ScenarioAnnotations = useMemo(
+    () =>
+      entry && payload
+        ? deriveScenarioAnnotations(entry, payload, scenarioLens)
+        : { itemQualifiers: {}, narrativeQualifiers: {} },
+    [entry, payload, scenarioLens],
   );
 
   return (
@@ -168,25 +196,49 @@ export default function Exposure() {
                 testid="section-governance-domains"
                 items={payload.governanceDomains.map((d) => d.label)}
                 narrative={narratives?.governanceDomains ?? null}
+                itemQualifiers={scenarioAnnotations.itemQualifiers}
+                narrativeQualifier={
+                  scenarioAnnotations.narrativeQualifiers.governanceDomains
+                }
               />
               <ListSection
                 title={SECTION_SCRUTINY}
                 testid="section-scrutiny-vectors"
                 items={payload.scrutinyVectors.map((d) => d.label)}
                 narrative={narratives?.scrutinyVectors ?? null}
+                itemQualifiers={scenarioAnnotations.itemQualifiers}
+                narrativeQualifier={
+                  scenarioAnnotations.narrativeQualifiers.scrutinyVectors
+                }
               />
               <ImpactSurfacesSection
                 payload={payload.impactSurfaces}
                 narrative={narratives?.impactSurfaces ?? null}
+                itemQualifiers={scenarioAnnotations.itemQualifiers}
+                narrativeQualifier={
+                  scenarioAnnotations.narrativeQualifiers.impactSurfaces
+                }
               />
               <ListSection
                 title={SECTION_FUNCTIONS}
                 testid="section-functions-affected"
                 items={payload.functionsAffected.map((f) => f)}
                 narrative={narratives?.functionsAffected ?? null}
+                itemQualifiers={scenarioAnnotations.itemQualifiers}
+                narrativeQualifier={
+                  scenarioAnnotations.narrativeQualifiers.functionsAffected
+                }
               />
             </div>
-            <ResponsibilityLensSection lens={responsibilityLens ?? []} />
+            <ResponsibilityLensSection
+              lens={responsibilityLens ?? []}
+              itemQualifiers={scenarioAnnotations.itemQualifiers}
+            />
+            <ScenarioReadingSection
+              lens={scenarioLens}
+              onChange={setScenarioLens}
+              annotations={scenarioAnnotations}
+            />
             <div className="pt-2">
               <Link href="/portfolio">
                 <Button
@@ -236,16 +288,24 @@ function NotFoundPanel() {
   );
 }
 
+// Phase 4 — `itemQualifiers` and `narrativeQualifier` are optional and
+// default to undefined. When undefined (or empty), the rendered output
+// is byte-identical to the Phase 1/2/3 baseline. Removing Phase 4
+// restores the original signature with no further edits.
 function ListSection({
   title,
   items,
   testid,
   narrative,
+  itemQualifiers,
+  narrativeQualifier,
 }: {
   title: string;
   items: string[];
   testid: string;
   narrative: string | null;
+  itemQualifiers?: Record<string, string>;
+  narrativeQualifier?: string;
 }) {
   return (
     <Card data-testid={testid}>
@@ -262,24 +322,61 @@ function ListSection({
         ) : (
           <ul className="list-disc pl-5 space-y-1" data-testid={`${testid}-list`}>
             {items.map((label) => (
-              <li key={label}>{label}</li>
+              <li key={label}>
+                {label}
+                <ItemQualifier label={label} map={itemQualifiers} />
+              </li>
             ))}
           </ul>
         )}
         {narrative !== null && (
-          <NarrativeDisclosure narrative={narrative} testid={`${testid}-narrative`} />
+          <NarrativeDisclosure
+            narrative={narrative}
+            testid={`${testid}-narrative`}
+            qualifier={narrativeQualifier}
+          />
         )}
       </CardContent>
     </Card>
   );
 }
 
+// Phase 4 inline qualifier renderer. Renders nothing unless the
+// qualifier map exists AND contains the label. The qualifier is shown
+// as " → <phrase>" inline after the label, in muted colour, with no
+// new focusable element, no badge, no icon. Per PH4-HC4 / PH4-HC5 the
+// qualifier never replaces or visually outranks the underlying label.
+function ItemQualifier({
+  label,
+  map,
+}: {
+  label: string;
+  map?: Record<string, string>;
+}) {
+  if (!map) return null;
+  const q = map[label];
+  if (!q) return null;
+  return (
+    <span
+      className="text-muted-foreground/80"
+      data-testid={`scenario-qualifier-${label}`}
+    >
+      {" → "}
+      {q}
+    </span>
+  );
+}
+
 function ImpactSurfacesSection({
   payload,
   narrative,
+  itemQualifiers,
+  narrativeQualifier,
 }: {
   payload: ExposurePayload["impactSurfaces"];
   narrative: string | null;
+  itemQualifiers?: Record<string, string>;
+  narrativeQualifier?: string;
 }) {
   const allEmpty =
     payload.institutional.length === 0 &&
@@ -307,16 +404,19 @@ function ImpactSurfacesSection({
               title={SECTION_IMPACT_INSTITUTIONAL}
               items={payload.institutional}
               testid="impact-institutional"
+              itemQualifiers={itemQualifiers}
             />
             <ImpactSubgroup
               title={SECTION_IMPACT_PRODUCT}
               items={payload.product}
               testid="impact-product"
+              itemQualifiers={itemQualifiers}
             />
             <ImpactSubgroup
               title={SECTION_IMPACT_INFRASTRUCTURE}
               items={payload.infrastructure}
               testid="impact-infrastructure"
+              itemQualifiers={itemQualifiers}
             />
           </>
         )}
@@ -324,6 +424,7 @@ function ImpactSurfacesSection({
           <NarrativeDisclosure
             narrative={narrative}
             testid="section-impact-surfaces-narrative"
+            qualifier={narrativeQualifier}
           />
         )}
       </CardContent>
@@ -345,9 +446,14 @@ function ImpactSurfacesSection({
 function NarrativeDisclosure({
   narrative,
   testid,
+  qualifier,
 }: {
   narrative: string;
   testid: string;
+  // Phase 4 — optional inline qualifier appended to the narrative
+  // paragraph as " → <phrase>". Defaults to undefined so Phase 1/2/3
+  // call sites are byte-identical to before.
+  qualifier?: string;
 }) {
   return (
     <details className="mt-3 text-[11px]" data-testid={testid}>
@@ -362,6 +468,12 @@ function NarrativeDisclosure({
         data-testid={`${testid}-paragraph`}
       >
         {narrative}
+        {qualifier ? (
+          <span data-testid={`${testid}-qualifier`}>
+            {" → "}
+            {qualifier}
+          </span>
+        ) : null}
       </p>
     </details>
   );
@@ -371,10 +483,12 @@ function ImpactSubgroup({
   title,
   items,
   testid,
+  itemQualifiers,
 }: {
   title: string;
   items: string[];
   testid: string;
+  itemQualifiers?: Record<string, string>;
 }) {
   return (
     <div data-testid={testid}>
@@ -388,7 +502,10 @@ function ImpactSubgroup({
       ) : (
         <ul className="list-disc pl-5 space-y-0.5">
           {items.map((label) => (
-            <li key={label}>{label}</li>
+            <li key={label}>
+              {label}
+              <ItemQualifier label={label} map={itemQualifiers} />
+            </li>
           ))}
         </ul>
       )}
@@ -406,8 +523,14 @@ function ImpactSubgroup({
 // guarantees it).
 function ResponsibilityLensSection({
   lens,
+  itemQualifiers,
 }: {
   lens: ResponsibilityLens;
+  // Phase 4 — pressure-type labels are looked up in the same flat
+  // qualifier map used by Phase 1/2 sections. Optional and defaults
+  // to undefined so the Phase 3 render path is unchanged when the
+  // selected lens is Baseline.
+  itemQualifiers?: Record<string, string>;
 }) {
   return (
     <Card data-testid="section-responsibility-lens">
@@ -443,12 +566,86 @@ function ResponsibilityLensSection({
                 <div className="font-semibold">{row.functionName}</div>
                 <ul className="list-disc pl-5 mt-0.5 space-y-0.5 text-muted-foreground">
                   {row.pressureTypes.map((p) => (
-                    <li key={p}>{p}</li>
+                    <li key={p}>
+                      {p}
+                      <ItemQualifier label={p} map={itemQualifiers} />
+                    </li>
                   ))}
                 </ul>
               </li>
             ))}
           </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Phase 4 — Scenario-Conditioned Reading section.
+//
+// PH4-HC1 / PH4-HC4 / PH4-HC7: rendered as its own card BENEATH the
+// Phase 3 lens. The selector is a single radio group (no compare,
+// no diff, no multi-select). Switching lenses recomputes the
+// annotations object passed in from the page; under Baseline the
+// object is empty and the rest of the page renders Phase 1/2/3
+// untouched. Removing this section + the Phase 4 module restores the
+// page to its Phase 3 baseline.
+function ScenarioReadingSection({
+  lens,
+  onChange,
+  annotations,
+}: {
+  lens: ScenarioLens;
+  onChange: (next: ScenarioLens) => void;
+  annotations: ScenarioAnnotations;
+}) {
+  const showEmpty =
+    lens !== "BASELINE" && annotationsAreEmpty(annotations);
+  return (
+    <Card data-testid="section-scenario-reading">
+      <CardHeader>
+        <CardTitle className="text-sm font-semibold uppercase tracking-wider">
+          {SCENARIO_HEADING}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="text-xs space-y-3">
+        <p
+          className="text-muted-foreground leading-relaxed"
+          data-testid="scenario-reading-helper"
+        >
+          {SCENARIO_HELPER}
+        </p>
+        <fieldset
+          className="space-y-1"
+          data-testid="scenario-reading-selector"
+        >
+          <legend className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">
+            {SCENARIO_SELECTOR_LABEL}
+          </legend>
+          {SCENARIO_LENS_ORDER.map((opt) => (
+            <label
+              key={opt}
+              className="flex items-center gap-2 cursor-pointer"
+              data-testid={`scenario-lens-option-${opt}`}
+            >
+              <input
+                type="radio"
+                name="scenario-lens"
+                value={opt}
+                checked={lens === opt}
+                onChange={() => onChange(opt)}
+              />
+              <span>{SCENARIO_LENS_LABEL[opt]}</span>
+            </label>
+          ))}
+        </fieldset>
+        {showEmpty && (
+          <p
+            className="text-muted-foreground"
+            data-testid="scenario-reading-empty"
+          >
+            {SCENARIO_EMPTY}
+          </p>
         )}
       </CardContent>
     </Card>

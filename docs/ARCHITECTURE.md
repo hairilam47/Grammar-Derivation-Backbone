@@ -683,3 +683,75 @@ Phase 1 payload and returns one alphabetically-sorted list of
 Removing `exposureNarratives.ts` and the `NarrativeDisclosure` block
 in `pages/Exposure.tsx` restores exact Phase 1 behaviour without any
 other change.
+
+### Phase 4 — Scenario-Conditioned Reading
+
+A single additional card rendered beneath the Phase 3 lens, headed
+*"Scenario-Conditioned Reading"*. The card contains a short helper
+sentence and a single-select radio group letting a reader switch
+between five reading lenses:
+
+1. **Baseline (Approved Context)** — the default; renders Phase 1/2/3 unchanged.
+2. **Limited-Scale Use** — narrow deployment, restricted audience.
+3. **Organisation-Wide Use** — broad internal adoption.
+4. **External Partner Exposure** — use beyond the organisational boundary.
+5. **Extended Lifespan** — use significantly longer than initially planned.
+
+Switching lenses does not change the underlying exposure; it changes
+how the same exposure reads. Under a non-baseline lens, a fixed table
+of (lens × element → qualifier) rules attaches a contextual qualifier
+phrase — drawn from a closed list (*"persists"*, *"broadens"*,
+*"concentrates"*, *"becomes more continuous"*, *"remains episodic"*,
+*"becomes more distributed"*) — to existing Phase 1 list items, Phase
+2 narrative paragraphs, and Phase 3 pressure-type entries that are
+actually present for the current decision. Qualifiers render inline
+as *" → &lt;phrase&gt;"* in muted colour with no badge, no icon, no new
+focusable element, and never replace or visually outrank the
+underlying label.
+
+#### Derivation inputs
+
+`scenarioReading.ts` reads only the `PortfolioEntry`, the Phase 1
+`ExposurePayload`, and the selected lens. Phase 2 narratives and the
+Phase 3 lens are not parsed; the deriver instead checks the same
+upstream payload conditions Phase 3 uses, so a qualifier never lands
+on a Phase 3 row that did not render or on a Phase 2 empty-state
+sentence.
+
+#### Empty state
+
+When a non-baseline lens fires no qualifiers for the current decision,
+the section renders one neutral sentence: *"This scenario does not
+change how the existing exposure reads."* Baseline never shows the
+empty-state sentence (it returns an empty annotations object by
+design).
+
+#### Vocabulary tier
+
+`SCENARIO_READING_FORBIDDEN` (declared in `staticTextGuard.ts`) is
+the strictest tier in the system: a strict superset of all three
+sibling upper tiers (`RESPONSIBILITY_LENS_FORBIDDEN`,
+`EXPOSURE_NARRATIVE_FORBIDDEN`, `REFLECTIVE_FORBIDDEN`) plus the
+Phase 4-specific bans (`predict`, `forecast`, `probability`,
+`likelihood`, `worst`, `best`, `severe`, `escalate`, `urgent`).
+Every qualifier phrase, lens label, helper sentence, selector label,
+and empty-state sentence is asserted against this guard at module
+load and re-asserted at the emission boundary inside the deriver.
+
+#### No persistence, no aggregation
+
+The selected lens is component-local React state. Switching lenses
+recomputes the annotations object purely from inputs; there is no new
+storage key, no cache, no network call, and the lens is never written
+back to the portfolio entry.
+
+#### Strictly additive (PH4-HC7)
+
+Phase 4 is rendered as its own card beneath the Phase 3 lens. The
+qualifier props threaded through `ListSection`, `ImpactSubgroup`,
+`NarrativeDisclosure`, and `ResponsibilityLensSection` are optional
+and default to undefined; under the default Baseline lens every
+existing render path takes its existing branch. Removing
+`scenarioReading.ts`, the `ScenarioReadingSection` component, and the
+optional qualifier props at each call site restores exact Phase 3
+behaviour without any other change.
