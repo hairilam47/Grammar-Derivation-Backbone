@@ -915,106 +915,95 @@ other change.
 
 ---
 
-## 17. TOGAF / ArchiMate Constitutional Layer (Phase 6)
+## 17. Phase 6 — TOGAF / ArchiMate Constitutional Layer
 
-A read-only governance surface that records the constitutional
-position of Architecture Decision Canvas artefacts in relation to
-TOGAF artefacts, ArchiMate models, and EA tooling. Phase 6 is an
-**anti-feature** layer: it adds no decision logic, no derivation, no
-new portfolio fields, no new computed signals, and no new exports. It
-only documents and asserts what ADC artefacts must NOT be read as
-doing.
+A read-only constitutional / guardrail layer that records the
+position of Architecture Decision Canvas (ADC) artefacts in relation
+to TOGAF artefacts, ArchiMate models, EA tooling, and delivery
+pipelines. Phase 6 adds **no** new decision logic, derivation,
+portfolio fields, computed signals, or exports. It only documents
+and asserts what ADC artefacts must NOT be read as doing.
 
-### Files
+### Hard constraints (PH6-HC1..PH6-HC7)
 
-- `artifacts/canvas-ui/src/governance/togafContainment.ts` — the
-  verbatim mandatory non-authority disclaimer, the docking table
-  (artefact → `REFERENCE_ONLY` / `INTERPRETIVE_ATTACHMENT` /
-  `FORBIDDEN`), and the `validateReferenceOnlyDocking` /
-  `validateInterpretiveAttachmentDocking` validators. The disclaimer
-  is verified by spec-equality at module load (mirroring the Phase 1
-  banner pattern) because it intentionally negates two words —
-  `mandate` and `justify` — that the Phase 6 substring guard bans.
-- `artifacts/canvas-ui/src/governance/misusePlaybooks.ts` — the five
-  misuse intents (`MANDATING`, `JUSTIFYING`, `EVALUATING`,
-  `TRIGGERING`, `NORMALISING`), their detection keyword sets, and the
-  one re-anchoring sentence each intent emits. `detectMisuseIntent`
-  is a pure substring detector; nothing is recorded, escalated, or
-  fed back into the grammar.
-- `artifacts/canvas-ui/src/governance/togafContainmentInvariants.ts`
-  — module-load negative assertions that fail the bundle if any of
-  the following is re-introduced: a structured ADC export from
-  `governance/export.ts` beyond the existing five symbols
-  (`exportADSPdf`, `exportECPPdf`, `exportADSDocx`, `exportECPDocx`,
-  `sanitiseFilenameSegment`); any computed lifecycle field name
-  matching an authority-vocabulary pattern in `portfolioStore.ts`'s
-  `ALLOWED_FIELDS`; or any override mechanism named in the codebase.
-  This module is imported as a side effect from `App.tsx`.
-- `artifacts/canvas-ui/src/governance/staticTextGuard.ts` — adds the
-  `TOGAF_CONTAINMENT_FORBIDDEN` tier (strict superset of
-  `SCENARIO_READING_FORBIDDEN`, sibling of
-  `DECISION_REENTRY_FORBIDDEN`) and the `assertTogafContainmentLanguage`
-  / `assertAllTogafContainmentLanguage` helpers.
-- `artifacts/canvas-ui/src/pages/Containment.tsx` — the route
-  component at `/governance/containment`. Renders the disclaimer, the
-  docking table, the misuse playbook table with a try-phrase input,
-  and the ArchiMate containment statement. Every static label on the
-  page is asserted at module load against
-  `TOGAF_CONTAINMENT_FORBIDDEN`.
-- `artifacts/canvas-ui/src/components/wizard/FreezeMetadataForm.tsx`
-  — runs `detectMisuseIntent` on the live `projectName` and
-  `approvingAuthority` inputs and surfaces a single advisory
-  re-anchoring sentence beneath the form. The hint never blocks
-  submission, never invalidates input, and never persists anything.
-- `artifacts/canvas-ui/src/governance/export.ts` — injects the
-  verbatim mandatory non-authority disclaimer once on the first page
-  of every PDF (after the title and project line, italic) and once as
-  the paragraph after the project line in every DOCX (italic, muted
-  colour, matching the integrity footer's visual register).
+These are quoted verbatim from the brief. Each is enforced by one
+or more concrete modules / assertions listed at the end of this
+section.
 
-### Constitutional position
+- **PH6-HC1 — Non-authority.** No code path may allow ADC content to
+  recommend an action, mandate change, justify funding/sequencing,
+  trigger a workflow, or rank/score options. Any such surface is a
+  Phase 6 violation.
+- **PH6-HC2 — Reference-only serialisation.** ADC data may leave the
+  application only as: (a) the existing PDF/DOCX text artefacts, or
+  (b) the `ADC_REF: <adsId> · <date>` short-form token. No structured
+  export surface may be introduced.
+- **PH6-HC3 — Mandatory disclaimer.** Every external-facing surface
+  carrying ADC content must render the verbatim
+  `MANDATORY_NON_AUTHORITY_DISCLAIMER`. Asserted at module load and
+  at emission boundary.
+- **PH6-HC4 — Strictest vocabulary tier.** `TOGAF_CONTAINMENT_FORBIDDEN`
+  is a strict superset of `SCENARIO_READING_FORBIDDEN`. Every Phase 6
+  sentence is registered and asserted at module load.
+- **PH6-HC5 — Advisory only.** Misuse detection is advisory: it may
+  *suggest* re-anchoring language, never block, never escalate, never
+  invalidate input, never persist a violation record.
+- **PH6-HC6 — No override.** No constant, function, or flag in Phase 6
+  may permit bypassing PH6-HC1..PH6-HC5. The
+  `assertNoOverrideMechanism` invariant enforces this at build time.
+- **PH6-HC7 — Strictly removable.** Deleting `togafContainment.ts`,
+  `misusePlaybooks.ts`, `togafContainmentInvariants.test-shape.ts`,
+  the Containment page, the Wizard advisory affordance, and the
+  disclaimer lines from `export.ts` must restore Phase 5 behaviour
+  with no other code change required.
 
-ADC artefacts are not TOGAF artefacts and are not ArchiMate elements.
-They MAY be cited by reference from approved TOGAF deliverables in
-the `REFERENCE_ONLY` row of the docking table (Architecture Vision,
-Architecture Definition Document, Architecture Contract). They MAY
-appear as a non-directive appendix attached to a descriptive
-`INTERPRETIVE_ATTACHMENT` artefact (Business / Application / Data /
-Technology Architecture Catalogs). For every other TOGAF artefact
-type — and as the default for any artefact type not listed — docking
-is `FORBIDDEN`. Requirements specifications, Architecture Roadmaps,
-Implementation Governance Plans, Statements of Architecture Work,
-Migration Plans, and Architecture Change Management Plans are all
-`FORBIDDEN`: ADC artefacts do not authorise, order, commission, or
-direct the work those artefacts govern.
+### Mandatory disclaimer (verbatim)
 
-### Anti-feature guarantees
+> *This material references Architecture Decision Canvas artefacts
+> for contextual understanding only. It does not mandate action,
+> justify change, or substitute for human judgment.*
 
-The following negative invariants are asserted at module load and
-fail the bundle if violated:
+This is the only Phase 6 surface string that contains the bare
+words `mandate` and `justify`. Two complementary checks at module
+load lock it (PH6-HC3 + PH6-HC4):
 
-- **No structured ADC export.** `governance/export.ts` exports
-  exactly five symbols. Any added export, or any added export
-  serialiser that produces an ArchiMate-compatible model from ADC
-  state, fails the invariant in `togafContainmentInvariants.ts`.
-- **No computed lifecycle fields.** `portfolioStore.ts`'s
-  `ALLOWED_FIELDS` allow-list is checked against an
-  authority-vocabulary pattern set; any new field whose name suggests
-  mandate / justification / trigger / score / rank / sequence /
-  prioritisation / evaluation / enforcement fails the invariant. The
-  four pre-existing portfolio fields that name complexity, change
-  cost, operational overhead, and highest-risk severity are
-  grandfathered explicitly because Phase 1–5 derived and froze them
-  before Phase 6 was authored.
-- **No override mechanism.** No symbol in the codebase named
-  `override`, `bypass`, `force`, `enforce`, `mandate`, or `escalate`
-  is permitted to exist on the constitutional surface. The
-  invariants module enumerates the surface modules it scans.
+1. **Spec-equality.** The exported constant is compared to a literal
+   `SPEC_DISCLAIMER` copy of the brief wording.
+2. **Expected-throw substring scan.** The disclaimer is run through
+   `assertTogafContainmentLanguage`; the scan MUST throw, and that
+   throw is the proof the negated authority-vocabulary is still
+   present. If a future edit removes the bare words, the scan stops
+   throwing and a constitutional drift error is raised.
 
-### Misuse playbooks
+Together these are strictly stronger than a passing substring scan
+would be.
 
-Five misuse intents are recognised by purely-local substring
-detection. Each carries one re-anchoring sentence:
+### TOGAF artefact docking table
+
+| Artefact | Docking class |
+| --- | --- |
+| Architecture Vision | `REFERENCE_ONLY` |
+| Architecture Definition Document | `REFERENCE_ONLY` |
+| Architecture Contract | `REFERENCE_ONLY` |
+| Business Architecture Catalogs | `INTERPRETIVE_ATTACHMENT` |
+| Application Architecture Catalogs | `INTERPRETIVE_ATTACHMENT` |
+| Data Architecture Catalogs | `INTERPRETIVE_ATTACHMENT` |
+| Technology Architecture Catalogs | `INTERPRETIVE_ATTACHMENT` |
+| Requirements Specification | `FORBIDDEN` |
+| Architecture Roadmap | `FORBIDDEN` |
+| Implementation Governance Plan | `FORBIDDEN` |
+| Statement of Architecture Work | `FORBIDDEN` |
+| Migration Plan | `FORBIDDEN` |
+| Architecture Change Management Plan | `FORBIDDEN` |
+| *(any artefact not listed above)* | `FORBIDDEN` (default-deny) |
+
+`REFERENCE_ONLY` payloads may carry only `adsId` and `decisionDate`.
+`INTERPRETIVE_ATTACHMENT` payloads may additionally carry
+`narrativeParagraphs: string[]` and the verbatim disclaimer.
+`assertReferenceOnly` and `assertInterpretiveAttachment` throw on
+any field exceeding these shapes.
+
+### Misuse intents and correction sentences
 
 | Intent | Re-anchoring sentence |
 | --- | --- |
@@ -1024,25 +1013,79 @@ detection. Each carries one re-anchoring sentence:
 | `TRIGGERING` | This artefact does not initiate processes or set off downstream activity. |
 | `NORMALISING` | This artefact does not establish baselines or institutional defaults to be matched. |
 
-The detector returns the first matching intent or `null`. The
-Containment page renders the same five sentences in a static table
-plus a try-phrase input that surfaces the matched correction live.
-The wizard's `FreezeMetadataForm` reuses the same detector against
-its two free-text inputs and renders the same correction below the
-form when an intent is matched.
+`detectMisuseIntent(text)` returns the first matching intent or
+`null`. The Containment page renders the same five sentences in a
+static table plus a try-phrase input that surfaces the matched
+correction live. The wizard's `FreezeMetadataForm` reuses the same
+detector against its two free-text inputs and renders the same
+correction below the form when an intent is matched.
 
-### Mandatory disclaimer
+### Non-goals (explicit)
 
-A single verbatim non-authority disclaimer is the only string
-required to appear in three places:
+- No analytics, dashboards, charts, lifecycle states, or metrics on
+  ADC data.
+- No structured (JSON / CSV / XML / GraphQL / schema / YAML / TOML
+  / OpenAPI) export of ADC data.
+- No integration with a real TOGAF or ArchiMate tool — Phase 6 only
+  codifies how ADC behaves *if* such a tool consumes it.
+- No blocking / escalation / approval-workflow primitives in misuse
+  detection.
+- No server-side enforcement, organisational policy storage, or
+  remote validation. All checks are pure, local, module-load
+  assertions.
+- No change to the grammar engine, deriver outputs, portfolio entry
+  semantics, or signals store.
+- No override mechanism of any kind.
 
-> *This material references Architecture Decision Canvas artefacts
-> for contextual understanding only. It does not mandate action,
-> justify change, or substitute for human judgment.*
+### Acceptance criteria → enforcement mapping
 
-The disclaimer renders on the Containment page, on the first page of
-every exported PDF, and as the paragraph immediately after the
-project line in every exported DOCX. It is the only Phase 6 surface
-string that contains the bare words `mandate` and `justify`; it is
-therefore exempted from the substring guard and verified by
-spec-equality at module load.
+The five acceptance criteria from the brief each map to one or more
+Phase 6 modules:
+
+| Acceptance criterion | Enforced by |
+| --- | --- |
+| ADC cannot mandate action. | `MANDATING` re-anchoring sentence in `misusePlaybooks.ts`; `MANDATORY_NON_AUTHORITY_DISCLAIMER` (PH6-HC3); `TOGAF_CONTAINMENT_FORBIDDEN` substring guard banning `mandate` / `enforce`; `assertNoOverrideMechanism` banning `mandate`-named symbols. |
+| ADC cannot rank or score anything. | `TOGAF_CONTAINMENT_FORBIDDEN` substring guard banning `score` / `rank` / `prioritise` / `evaluate`; `assertNoComputedADCFields` banning new portfolio fields whose names contain `score` / `severity` / `metric` / `ranking` (Phase 5 baseline grandfathered). |
+| ADC cannot trigger workflows. | `TRIGGERING` re-anchoring sentence in `misusePlaybooks.ts`; `TOGAF_CONTAINMENT_FORBIDDEN` substring guard banning `trigger` / `sequence`; `assertNoComputedADCFields` banning new fields whose names contain `trigger` / `event`. |
+| ADC cannot justify funding or sequencing. | `JUSTIFYING` re-anchoring sentence in `misusePlaybooks.ts`; `TOGAF_CONTAINMENT_FORBIDDEN` substring guard banning `justify` / `sequence`; docking table marking Architecture Roadmap / Implementation Governance Plan / Statement of Architecture Work as `FORBIDDEN`. |
+| ADC remains readable, revisitable, and non-executable. | `formatADCReference` plus `assertReferenceOnly` / `assertInterpretiveAttachment` (PH6-HC2); `assertNoStructuredADCExport` (PH6-HC2) closing the export module to exactly four PDF/DOCX entrypoints; PH6-HC7 removability guarantee. |
+
+### Files
+
+- `artifacts/canvas-ui/src/governance/togafContainment.ts` — the
+  verbatim mandatory non-authority disclaimer (spec-equality +
+  expected-throw substring scan), the docking table, the
+  `formatADCReference` short-form formatter, and the
+  `assertReferenceOnly` / `assertInterpretiveAttachment` validators.
+- `artifacts/canvas-ui/src/governance/misusePlaybooks.ts` — the five
+  misuse intents, their detection keyword sets, and the one
+  re-anchoring sentence each. Every correction sentence is asserted
+  against `TOGAF_CONTAINMENT_FORBIDDEN` at module load.
+- `artifacts/canvas-ui/src/governance/togafContainmentInvariants.test-shape.ts`
+  — module-load negative assertions
+  (`assertNoStructuredADCExport(exportFns)`,
+  `assertNoComputedADCFields(entryShape)`,
+  `assertNoOverrideMechanism()`) imported as a side effect from
+  `App.tsx`. Closes the export module surface to exactly the four
+  PDF/DOCX entrypoints (`exportADSPdf`, `exportADSDocx`,
+  `exportECPPdf`, `exportECPDocx`); the internal
+  `sanitiseFilenameSegment` helper is module-private.
+- `artifacts/canvas-ui/src/governance/portfolioFields.ts` — extracted
+  `ALLOWED_FIELDS` constants module so the invariants do not
+  transitively import Phase 1–5 derivation modules at startup.
+- `artifacts/canvas-ui/src/governance/staticTextGuard.ts` — adds
+  `TOGAF_CONTAINMENT_FORBIDDEN` (strict superset of
+  `SCENARIO_READING_FORBIDDEN`, sibling of
+  `DECISION_REENTRY_FORBIDDEN`) plus the
+  `assertTogafContainmentLanguage` helper pair.
+- `artifacts/canvas-ui/src/pages/Containment.tsx` — read-only route
+  `/governance/containment` rendering the disclaimer, docking table,
+  misuse playbook table, try-phrase advisory input, and ArchiMate
+  containment statement. Every static label asserted at module load.
+- `artifacts/canvas-ui/src/components/wizard/FreezeMetadataForm.tsx`
+  — advisory-only misuse hint on project name / authority inputs;
+  never blocks submission, never persists.
+- `artifacts/canvas-ui/src/governance/export.ts` — injects the
+  verbatim disclaimer once on PDF first page (italic + muted grey
+  matching the integrity footer register) and once as the paragraph
+  after the project line in DOCX.

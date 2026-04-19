@@ -19,6 +19,8 @@
 // exemption pattern.
 import {
   assertAllTogafContainmentLanguage,
+  assertTogafContainmentLanguage,
+  GovernanceLanguageError,
   TOGAF_CONTAINMENT_FORBIDDEN,
 } from "./staticTextGuard";
 
@@ -40,6 +42,36 @@ const SPEC_DISCLAIMER =
 if (MANDATORY_NON_AUTHORITY_DISCLAIMER !== SPEC_DISCLAIMER) {
   throw new Error(
     "Phase 6 mandatory non-authority disclaimer has drifted from the brief wording.",
+  );
+}
+
+// PH6-HC4 — The brief requires every Phase 6 sentence (including the
+// disclaimer) to be registered against the strictest tier at module
+// load. The disclaimer is unique because it negates the very words
+// the tier bans (`mandate`, `justify`); a substring scan over the
+// disclaimer therefore MUST throw, and that throw is itself the
+// proof the disclaimer carries the negated authority-vocabulary.
+//
+// This expected-throw assertion (paired with the spec-equality check
+// above) gives a strictly stronger guarantee than a passing
+// substring scan would: the disclaimer is locked to the brief's
+// exact wording AND verified to still contain the negated
+// banned terms. If a future edit removes the bare words "mandate"
+// or "justify" from the disclaimer, the scan stops throwing and
+// this block raises a constitutional drift error.
+let _disclaimerSubstringThrew = false;
+try {
+  assertTogafContainmentLanguage(MANDATORY_NON_AUTHORITY_DISCLAIMER);
+} catch (e) {
+  if (e instanceof GovernanceLanguageError) {
+    _disclaimerSubstringThrew = true;
+  } else {
+    throw e;
+  }
+}
+if (!_disclaimerSubstringThrew) {
+  throw new Error(
+    "Phase 6 invariant violation (PH6-HC4): the mandatory non-authority disclaimer no longer contains the negated authority-vocabulary it must negate. The brief wording must be restored verbatim.",
   );
 }
 

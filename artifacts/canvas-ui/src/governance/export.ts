@@ -30,7 +30,10 @@ interface FlatSection {
   bullets?: string[];
 }
 
-export function sanitiseFilenameSegment(s: string): string {
+// Phase 6 (PH6-HC2) — kept module-private. The export module's
+// public surface is closed to exactly the four PDF/DOCX entrypoints,
+// enforced by `assertNoStructuredADCExport` at app-bundle load.
+function sanitiseFilenameSegment(s: string): string {
   return (
     s
       .normalize("NFKD")

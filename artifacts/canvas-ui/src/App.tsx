@@ -13,7 +13,7 @@ import Containment from "@/pages/Containment";
 // negative-invariant assertions that fail the application bundle if
 // any forbidden surface (structured ADC export, computed lifecycle
 // field, override mechanism) is re-introduced.
-import "@/governance/togafContainmentInvariants";
+import "@/governance/togafContainmentInvariants.test-shape";
 
 function DarkModeApplier() {
   useEffect(() => {
