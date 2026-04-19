@@ -18,6 +18,10 @@ import {
   type ExposurePayload,
 } from "@/governance/exposureDerive";
 import {
+  deriveExposureNarratives,
+  type ExposureNarratives,
+} from "@/governance/exposureNarratives";
+import {
   assertAllReflectiveLanguage,
 } from "@/governance/staticTextGuard";
 
@@ -38,6 +42,8 @@ const SECTION_IMPACT_PRODUCT = "Product";
 const SECTION_IMPACT_INFRASTRUCTURE = "Infrastructure";
 const SECTION_FUNCTIONS = "Organisational Functions Affected";
 const BACK_TO_PORTFOLIO = "Back to portfolio";
+// Phase 2 disclosure label — neutral, descriptive only.
+const DISCLOSURE_LABEL = "Why this exposure exists";
 
 // PH1-HC4: the Decision Exposure View must use the strictest available
 // language guard so no recommendation, ranking, or urgency vocabulary
@@ -68,6 +74,7 @@ assertAllReflectiveLanguage([
   SECTION_IMPACT_INFRASTRUCTURE,
   SECTION_FUNCTIONS,
   BACK_TO_PORTFOLIO,
+  DISCLOSURE_LABEL,
 ]);
 
 export default function Exposure() {
@@ -95,6 +102,12 @@ export default function Exposure() {
   const payload: ExposurePayload | null = useMemo(
     () => (entry ? deriveExposure(entry) : null),
     [entry],
+  );
+
+  const narratives: ExposureNarratives | null = useMemo(
+    () =>
+      entry && payload ? deriveExposureNarratives(entry, payload) : null,
+    [entry, payload],
   );
 
   return (
@@ -131,17 +144,23 @@ export default function Exposure() {
                 title={SECTION_GOVERNANCE}
                 testid="section-governance-domains"
                 items={payload.governanceDomains.map((d) => d.label)}
+                narrative={narratives?.governanceDomains ?? null}
               />
               <ListSection
                 title={SECTION_SCRUTINY}
                 testid="section-scrutiny-vectors"
                 items={payload.scrutinyVectors.map((d) => d.label)}
+                narrative={narratives?.scrutinyVectors ?? null}
               />
-              <ImpactSurfacesSection payload={payload.impactSurfaces} />
+              <ImpactSurfacesSection
+                payload={payload.impactSurfaces}
+                narrative={narratives?.impactSurfaces ?? null}
+              />
               <ListSection
                 title={SECTION_FUNCTIONS}
                 testid="section-functions-affected"
                 items={payload.functionsAffected.map((f) => f)}
+                narrative={narratives?.functionsAffected ?? null}
               />
             </div>
             <div className="pt-2">
@@ -197,10 +216,12 @@ function ListSection({
   title,
   items,
   testid,
+  narrative,
 }: {
   title: string;
   items: string[];
   testid: string;
+  narrative: string | null;
 }) {
   return (
     <Card data-testid={testid}>
@@ -221,6 +242,9 @@ function ListSection({
             ))}
           </ul>
         )}
+        {narrative !== null && (
+          <NarrativeDisclosure narrative={narrative} testid={`${testid}-narrative`} />
+        )}
       </CardContent>
     </Card>
   );
@@ -228,8 +252,10 @@ function ListSection({
 
 function ImpactSurfacesSection({
   payload,
+  narrative,
 }: {
   payload: ExposurePayload["impactSurfaces"];
+  narrative: string | null;
 }) {
   const allEmpty =
     payload.institutional.length === 0 &&
@@ -270,8 +296,50 @@ function ImpactSurfacesSection({
             />
           </>
         )}
+        {narrative !== null && (
+          <NarrativeDisclosure
+            narrative={narrative}
+            testid="section-impact-surfaces-narrative"
+          />
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+// Phase 2 — "Why this exposure exists" disclosure.
+//
+// Visually subordinate to the Phase 1 list above it: smaller font,
+// muted colour, single paragraph, no bolded phrases, no bullets, no
+// emphasis affordances, no warning / importance icons. The disclosure
+// toggle is the only new focusable element this component introduces
+// (PH2 visual subordination + non-interactive narrative requirement).
+//
+// Uses the native <details>/<summary> elements so the disclosure is
+// keyboard-operable by default and renders identically with no
+// JavaScript. Closed by default per spec.
+function NarrativeDisclosure({
+  narrative,
+  testid,
+}: {
+  narrative: string;
+  testid: string;
+}) {
+  return (
+    <details className="mt-3 text-[11px]" data-testid={testid}>
+      <summary
+        className="cursor-pointer text-muted-foreground/80 hover:text-muted-foreground select-none"
+        data-testid={`${testid}-toggle`}
+      >
+        {DISCLOSURE_LABEL}
+      </summary>
+      <p
+        className="mt-2 leading-relaxed text-muted-foreground/80"
+        data-testid={`${testid}-paragraph`}
+      >
+        {narrative}
+      </p>
+    </details>
   );
 }
 

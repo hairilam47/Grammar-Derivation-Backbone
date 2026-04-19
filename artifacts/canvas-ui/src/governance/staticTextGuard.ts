@@ -91,3 +91,36 @@ export function assertReflectiveLanguage(text: string): void {
 export function assertAllReflectiveLanguage(texts: string[]): void {
   for (const t of texts) assertReflectiveLanguage(t);
 }
+
+// Phase 2 (PH2-HC4) extends the SIGNALS vocabulary with a narrative-
+// specific tier for the "Why this exposure exists" disclosures rendered
+// inside the Decision Exposure View. The narrative composer must reject
+// any wording that could be read as judgement, prescription, or
+// urgency. EXPOSURE_NARRATIVE_FORBIDDEN is a strict superset of
+// SIGNALS_FORBIDDEN. It is a separate sibling tier from
+// REFLECTIVE_FORBIDDEN: the two layers extend SIGNALS in their own
+// directions (Reflection forbids "norm"/"target" framing; Narratives
+// forbid "must"/"high risk"/"severe"/"critical" framing). Neither is a
+// strict superset of the other and they are not interchangeable.
+//
+// Layering: PORTFOLIO ⊂ SIGNALS ⊂ EXPOSURE_NARRATIVE
+//           PORTFOLIO ⊂ SIGNALS ⊂ REFLECTIVE
+export const EXPOSURE_NARRATIVE_FORBIDDEN = [
+  ...SIGNALS_FORBIDDEN,
+  "must",
+  "improve",
+  "reduce",
+  "optimise",
+  "optimize",
+  "high risk",
+  "severe",
+  "critical",
+];
+
+export function assertExposureNarrativeLanguage(text: string): void {
+  checkAgainst(text, EXPOSURE_NARRATIVE_FORBIDDEN);
+}
+
+export function assertAllExposureNarrativeLanguage(texts: string[]): void {
+  for (const t of texts) assertExposureNarrativeLanguage(t);
+}

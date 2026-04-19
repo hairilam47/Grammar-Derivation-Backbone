@@ -370,12 +370,19 @@ only those constants, so the guard cannot be bypassed.
 | `PORTFOLIO_FORBIDDEN` | base set | `should`, `recommended`, `recommend`, `optimal`, `best practice`, `best-practice`, `preferred`, `ideal`, `ought to` |
 | `SIGNALS_FORBIDDEN` | strict superset of `PORTFOLIO_FORBIDDEN` | `priority`, `fix`, `resolve`, `escalate`, `mitigate` |
 | `REFLECTIVE_FORBIDDEN` | strict superset of `SIGNALS_FORBIDDEN` | `optimise`, `optimize`, `improve`, `reduce`, `urgent`, `critical`, `hotspot`, `hot-spot`, `attention required`, `target`, `norm` |
+| `EXPOSURE_NARRATIVE_FORBIDDEN` | strict superset of `SIGNALS_FORBIDDEN` (sibling of `REFLECTIVE_FORBIDDEN`, not interchangeable) | `must`, `improve`, `reduce`, `optimise`, `optimize`, `high risk`, `severe`, `critical` |
+
+`REFLECTIVE_FORBIDDEN` and `EXPOSURE_NARRATIVE_FORBIDDEN` both extend
+`SIGNALS_FORBIDDEN` in different directions: Reflection forbids
+target / norm framing; Exposure narratives forbid prescriptive and
+severity framing. Neither is a strict superset of the other.
 
 ### Helpers
 
 - `assertGovernanceLanguage`, `assertAllGovernanceLanguage` — used by `Portfolio.tsx`
 - `assertSignalsLanguage`, `assertAllSignalsLanguage` — used by `Signals.tsx` and by `Reflection.tsx` against the Step 6 taxonomy it echoes
-- `assertReflectiveLanguage`, `assertAllReflectiveLanguage` — used by `Reflection.tsx` for its own labels
+- `assertReflectiveLanguage`, `assertAllReflectiveLanguage` — used by `Reflection.tsx` and by `pages/Exposure.tsx` for its own labels
+- `assertExposureNarrativeLanguage`, `assertAllExposureNarrativeLanguage` — used by `governance/exposureNarratives.ts` for the composed Phase 2 narrative paragraphs
 
 ### Layering carve-out
 
@@ -495,3 +502,111 @@ Each layer reads strictly downward.
   rendered.
 - End-to-end Playwright runs are used during feature development to
   validate the full wizard → portfolio → signals → reflection flow.
+
+---
+
+## 16. Decision Exposure View (`/exposure/:adsId`)
+
+A read-only, derived view that surfaces — for one approved decision —
+where the decision places institutional exposure. The view is
+strictly observational: it does not assess, rank, recommend, or
+require action. It reads exclusively from a single portfolio entry
+and re-derives its content on every render.
+
+### Files
+
+- `artifacts/canvas-ui/src/governance/exposureCategories.ts` — the canonical 14-tag ECP constraint-category taxonomy and the freeze-time deriver
+- `artifacts/canvas-ui/src/governance/exposureDerive.ts` — Phase 1 pure derivation of the four baseline sections
+- `artifacts/canvas-ui/src/governance/exposureNarratives.ts` — Phase 2 pure derivation of the per-section narrative paragraphs
+- `artifacts/canvas-ui/src/pages/Exposure.tsx` — the route component
+
+### Phase 1 — Baseline exposure surfaces
+
+Four neutral sections rendered in fixed order with equal visual
+weight, no badges, no counts, no severity styling:
+
+1. **Governance Domains** — Data Protection & Privacy, Auditability & Record Integrity, Identity & Access Oversight, Financial & Reporting Controls, Jurisdictional / Cross-Border Considerations.
+2. **External Scrutiny Vectors** — External Audit Scrutiny Likely, Regulatory Inquiry Plausible, Third-Party Assurance Reliance Increases, Contractual / Partner Review Exposure.
+3. **Impact Surfaces** — three side-by-side sub-groups (Institutional, Product, Infrastructure) with no ordering cue.
+4. **Organisational Functions Affected** — alphabetical only.
+
+Two new frozen-at-freeze fields on each portfolio entry —
+`inScopeCapabilityIds` and `ecpConstraintCategories` — drive the
+derivation. They are written once at freeze and read-only thereafter;
+they never feed back into the grammar engine. Pre-existing entries
+without these fields continue to load and are normalised to empty
+arrays.
+
+A permanent banner at the top of the page reads, verbatim: *"This view
+shows where an approved decision places institutional exposure. It
+does not assess, rank, recommend, or require action."* The banner is
+checked by spec-equality, not by the substring guard, because it
+intentionally negates the forbidden vocabulary. Every other static
+label on the page passes the strictest reflective-language guard at
+module load.
+
+Several rules in `exposureDerive.ts` are kept structurally but stay
+dormant because the current `OrganisationContext` and ECP do not
+expose the signals they key on (multi-jurisdictional context,
+regulated reporting environment, Regulated Enterprise organisation
+type, inter-agency partner usage, residency tag). They will fire
+automatically when those signals are introduced upstream — no
+heuristic proxy is invented in the meantime.
+
+### Phase 2 — Exposure Narratives
+
+Each Phase 1 section renders a single collapsed disclosure beneath
+its list, labelled *"Why this exposure exists"* (closed by default).
+The disclosure expands to a single short paragraph following a strict
+four-clause grammar in fixed order:
+
+1. **Context Clause** — *"Because this decision involves …"* (organisation type, sensitivity level, system intent, expected lifespan, in-scope capabilities).
+2. **Structural Cause Clause** — *"and because …"* (ECP constraint categories, the architectural layers present).
+3. **Exposure Surface Clause** — *"this places sustained pressure on …"* (the items the same section's Phase 1 list contains).
+4. **Framing Boundary Clause** — verbatim, mandatory in every paragraph: *"This reflects structural exposure inherent to the approved decision, not a judgement or requirement."*
+
+Narratives are visually subordinate to the Phase 1 list above them
+(smaller font, muted colour, single paragraph, no bold, no bullets,
+no icons). They are non-interactive: not clickable, linkable,
+searchable, or exportable; they navigate nowhere. The disclosure
+toggle is the only new focusable element introduced.
+
+#### Placement rule
+
+Narratives render strictly inside an existing Phase 1 section, never
+as a new panel, never above the section's list, and never adjacent to
+multiple sections at once. One section, one disclosure, one paragraph.
+
+#### Empty states
+
+Two distinct empty-state sentences are emitted deterministically (no
+CTA, no link):
+
+- **PH2-EMPTY-A** — *"Exposure explanations are not yet available for this decision. This view describes exposure surfaces without additional interpretation."* — emitted per section when that section's Phase 1 list is empty but the decision still has the structural inputs (in-scope capabilities and / or ECP constraint categories) a four-clause narrative needs.
+- **PH2-EMPTY-B** — *"Exposure explanations are intentionally omitted for this decision."* — emitted for **all four sections** when the decision lacks both `inScopeCapabilityIds` and `ecpConstraintCategories`. With nothing to draw the Context and Structural Cause clauses from, the omission is decision-wide and intentional rather than per-section absence.
+
+Phase 2 never reactivates a Phase 1 dormant clause and never invents
+exposure surfaces beyond what its section's Phase 1 list already
+contains.
+
+#### Vocabulary tier
+
+`EXPOSURE_NARRATIVE_FORBIDDEN` (declared in `staticTextGuard.ts`) is
+a strict superset of `SIGNALS_FORBIDDEN` and a sibling of
+`REFLECTIVE_FORBIDDEN`. The narrative composer routes every produced
+paragraph through the guard before returning. The Framing Boundary
+Clause is also checked by spec-equality so silent paraphrasing is
+caught at module load.
+
+#### No persistence, no aggregation
+
+Narratives are regenerated on every render. There is no new storage
+key, no cache, no network call. The module accepts one decision and
+returns one set of narratives; it never accepts a list of decisions
+and never compares decisions.
+
+#### Strictly additive
+
+Removing `exposureNarratives.ts` and the `NarrativeDisclosure` block
+in `pages/Exposure.tsx` restores exact Phase 1 behaviour without any
+other change.
