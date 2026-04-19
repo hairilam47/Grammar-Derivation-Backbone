@@ -124,10 +124,20 @@ export type NarrativeSectionKey =
   | "functionsAffected";
 
 export interface ScenarioAnnotations {
-  // Keyed by the visible label string. Phase 1 item labels are
-  // unique within the rendered surface, as are Phase 3 pressure-type
-  // labels (each pressure type belongs to exactly one function), so a
-  // single flat map is sufficient and deterministic.
+  // Keyed by the visible label string. The task plan specifies
+  // structured keys (Phase 1 section + item, Phase 3 (function,
+  // pressure) tuple). The flat-key shape is a deliberate, behaviour-
+  // equivalent simplification: every rendered Phase 1 label across
+  // all four sections is globally unique (governance/scrutiny ids
+  // map to unique display labels; impact-surface labels and function
+  // names are unique union types), and every Phase 3 pressure-type
+  // belongs to exactly one function in the canonical mapping (see
+  // RULES table in responsibilityLens.ts). The page therefore can
+  // resolve any rendered label by a single lookup with no risk of
+  // collision. If a future change ever introduces a collision (e.g.
+  // a pressure-type literal reused across functions, or a Phase 1
+  // label colliding with a Phase 3 label), this shape MUST be
+  // tightened to structured keys before that change lands.
   itemQualifiers: Record<string, string>;
   // One optional qualifier per Phase 2 narrative section. Only emitted
   // when the section's narrative is the four-clause paragraph (i.e.
