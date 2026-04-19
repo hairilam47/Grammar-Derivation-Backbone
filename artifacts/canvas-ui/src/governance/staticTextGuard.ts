@@ -124,3 +124,66 @@ export function assertExposureNarrativeLanguage(text: string): void {
 export function assertAllExposureNarrativeLanguage(texts: string[]): void {
   for (const t of texts) assertExposureNarrativeLanguage(t);
 }
+
+// Phase 3 (PH3-HC4 / PH3-HC5 / PH3-HC6) extends the SIGNALS vocabulary
+// with a responsibility-lens-specific tier for the Cross-Functional
+// Responsibility Lens rendered inside the Decision Exposure View. The
+// lens describes where responsibility pressure resides; it must reject
+// every wording that could be read as ownership assignment, obligation,
+// severity, priority, or remediation framing.
+//
+// RESPONSIBILITY_LENS_FORBIDDEN is a strict superset of SIGNALS_FORBIDDEN.
+// It is a SIBLING tier of EXPOSURE_NARRATIVE_FORBIDDEN and of
+// REFLECTIVE_FORBIDDEN: each layers its own additional bans on top of
+// the shared SIGNALS base, and none is a strict superset of either of
+// the others.
+//
+// Layering: PORTFOLIO ⊂ SIGNALS ⊂ RESPONSIBILITY_LENS
+//           PORTFOLIO ⊂ SIGNALS ⊂ EXPOSURE_NARRATIVE
+//           PORTFOLIO ⊂ SIGNALS ⊂ REFLECTIVE
+//
+// Carve-out notes for substring matching:
+//   - "lead": would also match "leadership". The Phase 3 surface
+//     intentionally never uses leadership language, so this is fine
+//     for our texts. If an upstream label ever contains "leadership",
+//     it must be renamed at the source rather than carved out here.
+//   - "low": would also match "below" and "follow"/"following". Phase 3
+//     texts intentionally avoid both. Same renaming rule applies if a
+//     consumer label ever introduces those words.
+//   - "high": would match "highest" and "highlight". Phase 3 texts
+//     intentionally avoid both. Same renaming rule.
+//   - "owner": would match "ownership". The Phase 3 prefix sentence
+//     deliberately uses the negated phrase "does not assign ownership",
+//     so it cannot pass the substring scan and is instead checked by
+//     spec-equality at module load (mirroring the Phase 1 banner and
+//     Phase 2 framing-boundary exemption pattern). Every other Phase 3
+//     string passes this guard normally.
+export const RESPONSIBILITY_LENS_FORBIDDEN = [
+  ...SIGNALS_FORBIDDEN,
+  "owner",
+  "responsible",
+  "accountable",
+  "ensure",
+  "must",
+  "required",
+  "primary",
+  "secondary",
+  "lead",
+  "escalation",
+  "address",
+  "high",
+  "low",
+  "critical",
+  "significant",
+  "major",
+  "minor",
+  "urgent",
+];
+
+export function assertResponsibilityLensLanguage(text: string): void {
+  checkAgainst(text, RESPONSIBILITY_LENS_FORBIDDEN);
+}
+
+export function assertAllResponsibilityLensLanguage(texts: string[]): void {
+  for (const t of texts) assertResponsibilityLensLanguage(t);
+}

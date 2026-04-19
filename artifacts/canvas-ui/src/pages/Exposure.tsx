@@ -22,7 +22,12 @@ import {
   type ExposureNarratives,
 } from "@/governance/exposureNarratives";
 import {
+  deriveResponsibilityLens,
+  type ResponsibilityLens,
+} from "@/governance/responsibilityLens";
+import {
   assertAllReflectiveLanguage,
+  assertAllResponsibilityLensLanguage,
 } from "@/governance/staticTextGuard";
 
 // Permanent interpretation banner. Verbatim per the Phase 1 spec.
@@ -44,6 +49,34 @@ const SECTION_FUNCTIONS = "Organisational Functions Affected";
 const BACK_TO_PORTFOLIO = "Back to portfolio";
 // Phase 2 disclosure label — neutral, descriptive only.
 const DISCLOSURE_LABEL = "Why this exposure exists";
+
+// Phase 3 — Cross-Functional Responsibility Lens.
+//
+// Heading, prefix sentence, and empty-state sentence are spec-locked.
+// The prefix sentence intentionally uses the negated phrase "does not
+// assign ownership", which the substring guard would flag because
+// "ownership" contains "owner". It is therefore checked by spec
+// equality at module load instead of via the substring scan, mirroring
+// the Phase 1 banner / Phase 2 framing-boundary exemption pattern.
+const RESPONSIBILITY_LENS_HEADING = "Cross-Functional Responsibility Lens";
+const RESPONSIBILITY_LENS_PREFIX =
+  "This section describes where responsibility pressure resides as a result of the decision. It does not assign ownership or require action.";
+const RESPONSIBILITY_LENS_EMPTY =
+  "No cross-functional responsibility pressure is identified for this decision.";
+
+const RESPONSIBILITY_LENS_PREFIX_SPEC =
+  "This section describes where responsibility pressure resides as a result of the decision. It does not assign ownership or require action.";
+if (RESPONSIBILITY_LENS_PREFIX !== RESPONSIBILITY_LENS_PREFIX_SPEC) {
+  throw new Error(
+    "Cross-Functional Responsibility Lens prefix sentence has drifted from the Phase 3 spec wording.",
+  );
+}
+// Heading and empty-state sentence are token-clean and pass the
+// responsibility-lens substring guard normally.
+assertAllResponsibilityLensLanguage([
+  RESPONSIBILITY_LENS_HEADING,
+  RESPONSIBILITY_LENS_EMPTY,
+]);
 
 // PH1-HC4: the Decision Exposure View must use the strictest available
 // language guard so no recommendation, ranking, or urgency vocabulary
@@ -110,6 +143,12 @@ export default function Exposure() {
     [entry, payload],
   );
 
+  const responsibilityLens: ResponsibilityLens | null = useMemo(
+    () =>
+      entry && payload ? deriveResponsibilityLens(entry, payload) : null,
+    [entry, payload],
+  );
+
   return (
     <div className="min-h-[100dvh] bg-background text-foreground flex flex-col font-mono">
       <header className="border-b border-border/50 bg-card/50 backdrop-blur sticky top-0 z-10">
@@ -163,6 +202,7 @@ export default function Exposure() {
                 narrative={narratives?.functionsAffected ?? null}
               />
             </div>
+            <ResponsibilityLensSection lens={responsibilityLens ?? []} />
             <div className="pt-2">
               <Link href="/portfolio">
                 <Button
@@ -369,5 +409,64 @@ function ImpactSubgroup({
         </ul>
       )}
     </div>
+  );
+}
+
+// Phase 3 — Cross-Functional Responsibility Lens section.
+//
+// PH3-HC7 (strictly additive): rendered as its own card BENEATH the
+// Phase 1/2 grid; nothing in the four Phase 1 sections is replaced or
+// rearranged, no scoring or ordering is introduced, and no Phase 2
+// disclosure pattern is used here — the lens is directly visible and
+// has no toggle. The list is alphabetical at both levels (the deriver
+// guarantees it).
+function ResponsibilityLensSection({
+  lens,
+}: {
+  lens: ResponsibilityLens;
+}) {
+  return (
+    <Card data-testid="section-responsibility-lens">
+      <CardHeader>
+        <CardTitle className="text-sm font-semibold uppercase tracking-wider">
+          {RESPONSIBILITY_LENS_HEADING}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="text-xs space-y-3">
+        <p
+          className="text-muted-foreground leading-relaxed"
+          data-testid="responsibility-lens-prefix"
+        >
+          {RESPONSIBILITY_LENS_PREFIX}
+        </p>
+        {lens.length === 0 ? (
+          <p
+            className="text-muted-foreground"
+            data-testid="responsibility-lens-empty"
+          >
+            {RESPONSIBILITY_LENS_EMPTY}
+          </p>
+        ) : (
+          <ul
+            className="space-y-2"
+            data-testid="responsibility-lens-list"
+          >
+            {lens.map((row) => (
+              <li
+                key={row.functionName}
+                data-testid={`responsibility-lens-row-${row.functionName}`}
+              >
+                <div className="font-semibold">{row.functionName}</div>
+                <ul className="list-disc pl-5 mt-0.5 space-y-0.5 text-muted-foreground">
+                  {row.pressureTypes.map((p) => (
+                    <li key={p}>{p}</li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   );
 }

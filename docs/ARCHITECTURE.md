@@ -370,12 +370,16 @@ only those constants, so the guard cannot be bypassed.
 | `PORTFOLIO_FORBIDDEN` | base set | `should`, `recommended`, `recommend`, `optimal`, `best practice`, `best-practice`, `preferred`, `ideal`, `ought to` |
 | `SIGNALS_FORBIDDEN` | strict superset of `PORTFOLIO_FORBIDDEN` | `priority`, `fix`, `resolve`, `escalate`, `mitigate` |
 | `REFLECTIVE_FORBIDDEN` | strict superset of `SIGNALS_FORBIDDEN` | `optimise`, `optimize`, `improve`, `reduce`, `urgent`, `critical`, `hotspot`, `hot-spot`, `attention required`, `target`, `norm` |
-| `EXPOSURE_NARRATIVE_FORBIDDEN` | strict superset of `SIGNALS_FORBIDDEN` (sibling of `REFLECTIVE_FORBIDDEN`, not interchangeable) | `must`, `improve`, `reduce`, `optimise`, `optimize`, `high risk`, `severe`, `critical` |
+| `EXPOSURE_NARRATIVE_FORBIDDEN` | strict superset of `SIGNALS_FORBIDDEN` (sibling of `REFLECTIVE_FORBIDDEN` and `RESPONSIBILITY_LENS_FORBIDDEN`, not interchangeable) | `must`, `improve`, `reduce`, `optimise`, `optimize`, `high risk`, `severe`, `critical` |
+| `RESPONSIBILITY_LENS_FORBIDDEN` | strict superset of `SIGNALS_FORBIDDEN` (sibling of `REFLECTIVE_FORBIDDEN` and `EXPOSURE_NARRATIVE_FORBIDDEN`, not interchangeable) | `owner`, `responsible`, `accountable`, `ensure`, `must`, `required`, `primary`, `secondary`, `lead`, `escalation`, `address`, `high`, `low`, `critical`, `significant`, `major`, `minor`, `urgent` |
 
-`REFLECTIVE_FORBIDDEN` and `EXPOSURE_NARRATIVE_FORBIDDEN` both extend
-`SIGNALS_FORBIDDEN` in different directions: Reflection forbids
-target / norm framing; Exposure narratives forbid prescriptive and
-severity framing. Neither is a strict superset of the other.
+`REFLECTIVE_FORBIDDEN`, `EXPOSURE_NARRATIVE_FORBIDDEN`, and
+`RESPONSIBILITY_LENS_FORBIDDEN` all extend `SIGNALS_FORBIDDEN` in
+different directions: Reflection forbids target / norm framing;
+Exposure narratives forbid prescriptive and severity framing; the
+Responsibility Lens forbids ownership-assignment, obligation, severity,
+priority, and remediation framing. None is a strict superset of any
+other.
 
 ### Helpers
 
@@ -383,6 +387,7 @@ severity framing. Neither is a strict superset of the other.
 - `assertSignalsLanguage`, `assertAllSignalsLanguage` — used by `Signals.tsx` and by `Reflection.tsx` against the Step 6 taxonomy it echoes
 - `assertReflectiveLanguage`, `assertAllReflectiveLanguage` — used by `Reflection.tsx` and by `pages/Exposure.tsx` for its own labels
 - `assertExposureNarrativeLanguage`, `assertAllExposureNarrativeLanguage` — used by `governance/exposureNarratives.ts` for the composed Phase 2 narrative paragraphs
+- `assertResponsibilityLensLanguage`, `assertAllResponsibilityLensLanguage` — used by `governance/responsibilityLens.ts` and by `pages/Exposure.tsx` for the Phase 3 lens literals
 
 ### Layering carve-out
 
@@ -518,6 +523,7 @@ and re-derives its content on every render.
 - `artifacts/canvas-ui/src/governance/exposureCategories.ts` — the canonical 14-tag ECP constraint-category taxonomy and the freeze-time deriver
 - `artifacts/canvas-ui/src/governance/exposureDerive.ts` — Phase 1 pure derivation of the four baseline sections
 - `artifacts/canvas-ui/src/governance/exposureNarratives.ts` — Phase 2 pure derivation of the per-section narrative paragraphs
+- `artifacts/canvas-ui/src/governance/responsibilityLens.ts` — Phase 3 pure derivation of the Cross-Functional Responsibility Lens
 - `artifacts/canvas-ui/src/pages/Exposure.tsx` — the route component
 
 ### Phase 1 — Baseline exposure surfaces
@@ -604,6 +610,73 @@ Narratives are regenerated on every render. There is no new storage
 key, no cache, no network call. The module accepts one decision and
 returns one set of narratives; it never accepts a list of decisions
 and never compares decisions.
+
+### Phase 3 — Cross-Functional Responsibility Lens
+
+A single additional card rendered beneath the Phase 1/2 grid, headed
+*"Cross-Functional Responsibility Lens"*. The lens lists, for one
+approved decision, the cross-functional areas where structural
+responsibility pressure resides as a result of the decision.
+
+Each row is a function name (one of: Customer Support, Data
+Governance, Legal / Compliance, Platform / Infrastructure, Procurement
+/ Vendor Management, Security Operations) followed by an alphabetical
+list of noun-phrase pressure types attached to that function (e.g.
+*"access monitoring obligation"*, *"recovery preparedness expectation"*).
+Functions and pressure types are drawn from a fixed lookup table —
+never templated at runtime — and are sorted alphabetically at both
+levels. The lens makes no statement about precedence and assigns no
+ownership.
+
+The card opens with a fixed prefix sentence: *"This section describes
+where responsibility pressure resides as a result of the decision. It
+does not assign ownership or require action."* The prefix is checked
+by spec-equality at module load (the substring guard would otherwise
+flag the negated word "ownership" because it contains "owner"),
+mirroring the Phase 1 banner / Phase 2 framing-boundary exemption
+pattern.
+
+#### Derivation inputs
+
+`responsibilityLens.ts` reads only the entry's `organisationContext`,
+`layersPresent`, `inScopeCapabilityIds`, `ecpConstraintCategories`,
+and the Phase 1 `ExposurePayload`. Phase 2 narratives are not parsed.
+Each pressure-type rule is a predicate over those inputs; a function
+appears in the lens iff at least one of its rules fires.
+
+#### Empty state
+
+When no rule fires the lens renders a single neutral sentence:
+*"No cross-functional responsibility pressure is identified for this
+decision."* No CTA, no link, no fallback content.
+
+#### Strictly additive (PH3-HC7)
+
+Phase 3 is rendered as its own card beneath the existing four Phase 1
+sections. Nothing in those sections — labels, ordering, disclosure
+behaviour, empty-state sentences — is replaced or rearranged. The
+lens itself is directly visible (no Phase 2-style disclosure toggle)
+because it is a structural enumeration rather than an explanatory
+paragraph.
+
+#### Vocabulary tier
+
+`RESPONSIBILITY_LENS_FORBIDDEN` (declared in `staticTextGuard.ts`)
+is a strict superset of `SIGNALS_FORBIDDEN` and a sibling of
+`REFLECTIVE_FORBIDDEN` and `EXPOSURE_NARRATIVE_FORBIDDEN`. It bans
+ownership-assignment, obligation, severity, priority, and remediation
+framing (`owner`, `responsible`, `accountable`, `ensure`, `must`,
+`required`, `primary`, `secondary`, `lead`, `escalation`, `address`,
+`high`, `low`, `critical`, `significant`, `major`, `minor`, `urgent`).
+Every function name and pressure-type literal is asserted against this
+guard at module load.
+
+#### No persistence, no aggregation
+
+The lens is regenerated on every render. There is no new storage key,
+no cache, no network call. The module accepts one decision plus its
+Phase 1 payload and returns one alphabetically-sorted list of
+{functionName, pressureTypes} rows.
 
 #### Strictly additive
 
