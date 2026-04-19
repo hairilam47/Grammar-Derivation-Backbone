@@ -40,8 +40,15 @@ import {
   type ScenarioAnnotations,
 } from "@/governance/scenarioReading";
 import {
+  deriveReEntrySignals,
+  REENTRY_HEADING,
+  REENTRY_PREFIX,
+  REENTRY_EMPTY,
+} from "@/governance/decisionReentry";
+import {
   assertAllReflectiveLanguage,
   assertAllResponsibilityLensLanguage,
+  assertAllDecisionReentryLanguage,
 } from "@/governance/staticTextGuard";
 
 // Permanent interpretation banner. Verbatim per the Phase 1 spec.
@@ -73,6 +80,21 @@ const DISCLOSURE_LABEL = "Why this exposure exists";
 // them at module load.
 const RESPONSIBILITY_LENS_HEADING = "Cross-Functional Responsibility Lens";
 assertAllResponsibilityLensLanguage([RESPONSIBILITY_LENS_HEADING]);
+
+// Phase 5 — Decision Re-Entry Lens.
+//
+// The section heading and empty-state sentence are owned by
+// `decisionReentry.ts` (and asserted there). The interpretive prefix
+// is also owned and verified by spec-equality there. The page
+// re-asserts the heading and empty-state sentence here, against the
+// strictest tier, so a future accidental edit to either constant is
+// caught even if the deriving module's load-time guard is bypassed.
+//
+// The prefix is intentionally NOT included in this scan: it contains
+// the bare words "change" and "recommend" inside a negating phrase
+// and is exempted from substring matching (verified by spec-equality
+// in `decisionReentry.ts`). This mirrors the Phase 1 banner pattern.
+assertAllDecisionReentryLanguage([REENTRY_HEADING, REENTRY_EMPTY]);
 
 // PH1-HC4: the Decision Exposure View must use the strictest available
 // language guard so no recommendation, ranking, or urgency vocabulary
@@ -113,6 +135,12 @@ export default function Exposure() {
   // Phase 4 — selected scenario lens. Always defaults to Baseline so
   // the page's initial render is byte-identical to Phases 1–3.
   const [scenarioLens, setScenarioLens] = useState<ScenarioLens>("BASELINE");
+  // Phase 5 — captured "now" Date for re-entry derivation. Captured
+  // once on mount so the lens is stable for the lifetime of the
+  // page render (a re-mount picks up a fresh "now"). The deriver
+  // itself stays pure: same (entry, now) always yields the same
+  // signal set.
+  const [reEntryNow] = useState<Date>(() => new Date());
 
   useEffect(() => {
     setEntries(listEntries());
@@ -159,6 +187,15 @@ export default function Exposure() {
         ? deriveScenarioAnnotations(entry, payload, scenarioLens)
         : { itemQualifiers: {}, narrativeQualifiers: {} },
     [entry, payload, scenarioLens],
+  );
+
+  // Phase 5 — Decision Re-Entry signals. Derived purely from the
+  // entry plus the captured "now" Date. PH5-HC3: this useMemo
+  // intentionally has NO dependency on `scenarioLens` — Phase 5 is
+  // not derived from the page's lens-state.
+  const reEntrySignals: readonly string[] = useMemo(
+    () => (entry ? deriveReEntrySignals(entry, reEntryNow) : []),
+    [entry, reEntryNow],
   );
 
   return (
@@ -239,6 +276,7 @@ export default function Exposure() {
               onChange={setScenarioLens}
               annotations={scenarioAnnotations}
             />
+            <DecisionReentrySection signals={reEntrySignals} />
             <div className="pt-2">
               <Link href="/portfolio">
                 <Button
@@ -646,6 +684,57 @@ function ScenarioReadingSection({
           >
             {SCENARIO_EMPTY}
           </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Phase 5 — Decision Re-Entry Lens section.
+//
+// PH5-HC6 (strictly removable) / PH5-HC7 (human-initiated): rendered
+// as its own card BENEATH the Phase 4 scenario-reading section. The
+// card is non-interactive — there are no buttons, links, or
+// affordances of any kind. The reader sees the prefix sentence, then
+// either the closed-set signal lines or the empty-state sentence.
+// Acting on a signal is a procedural decision left entirely to the
+// reader; this section never writes anywhere and never navigates
+// anywhere.
+function DecisionReentrySection({
+  signals,
+}: {
+  signals: readonly string[];
+}) {
+  return (
+    <Card data-testid="section-decision-reentry">
+      <CardHeader>
+        <CardTitle className="text-sm font-semibold uppercase tracking-wider">
+          {REENTRY_HEADING}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="text-xs space-y-3">
+        <p
+          className="text-muted-foreground leading-relaxed"
+          data-testid="decision-reentry-prefix"
+        >
+          {REENTRY_PREFIX}
+        </p>
+        {signals.length === 0 ? (
+          <p
+            className="text-muted-foreground"
+            data-testid="decision-reentry-empty"
+          >
+            {REENTRY_EMPTY}
+          </p>
+        ) : (
+          <ul
+            className="list-disc pl-5 space-y-1"
+            data-testid="decision-reentry-list"
+          >
+            {signals.map((s) => (
+              <li key={s}>{s}</li>
+            ))}
+          </ul>
         )}
       </CardContent>
     </Card>

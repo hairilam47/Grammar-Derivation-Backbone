@@ -245,3 +245,68 @@ export function assertScenarioReadingLanguage(text: string): void {
 export function assertAllScenarioReadingLanguage(texts: string[]): void {
   for (const t of texts) assertScenarioReadingLanguage(t);
 }
+
+// Phase 5 (PH5-HC4 / PH5-HC5 / PH5-HC6) extends SCENARIO_READING with
+// the strictest tier in the system. Phase 5 — Decision Re-Entry Lens
+// signals when reconsideration of a decision becomes procedurally
+// legitimate, and must reject every wording that could be read as
+// recommending change, prescribing action, asserting urgency, or
+// judging correctness.
+//
+// DECISION_REENTRY_FORBIDDEN is a STRICT SUPERSET of
+// SCENARIO_READING_FORBIDDEN (which is itself a strict superset of
+// every preceding tier), unioned with the Phase 5-specific bans
+// (fix, change, update, revise, rework, should, must, need, urgent,
+// critical, failed, overdue). Several of these are already present
+// in lower tiers (should, must, urgent, critical, fix); the union
+// is taken anyway for documentary clarity and to make the dedup
+// behaviour explicit.
+//
+// Layering: PORTFOLIO ⊂ SIGNALS ⊂ {REFLECTIVE, EXPOSURE_NARRATIVE,
+//                                  RESPONSIBILITY_LENS} ⊂
+//           SCENARIO_READING ⊂ DECISION_REENTRY
+//
+// Carve-out notes for substring matching (Phase 5 surface):
+//   - "change" matches "exchange", "unchanged", "changes". Phase 5
+//     surface intentionally avoids every embedding above. The
+//     interpretive prefix sentence DOES contain the bare word
+//     "change" (in the negated phrase "does not recommend or
+//     initiate change") and DOES contain "recommend" (already in
+//     PORTFOLIO_FORBIDDEN). The prefix is therefore exempted from
+//     the substring scan and verified by spec-equality at module
+//     load (mirroring the Phase 1 banner / Phase 2 framing-boundary /
+//     Phase 3 prefix exemption pattern).
+//   - "update" matches "updated", "outdated". Phase 5 surface
+//     intentionally avoids both.
+//   - "need" matches "needed", "needs", "needless". Phase 5 surface
+//     intentionally avoids all three.
+//   - "fix" matches "prefix", "suffix", "fixture". Phase 5 surface
+//     intentionally avoids all three. (Carve-out also applies
+//     transitively from SIGNALS_FORBIDDEN.)
+//   - "revise", "rework", "overdue", "failed" have no common
+//     embedding in neutral English; safe.
+//   - All transitive carve-outs from lower tiers (lead/high/low/
+//     owner/address/best/must) apply unchanged.
+export const DECISION_REENTRY_FORBIDDEN = dedup([
+  ...SCENARIO_READING_FORBIDDEN,
+  "fix",
+  "change",
+  "update",
+  "revise",
+  "rework",
+  "should",
+  "must",
+  "need",
+  "urgent",
+  "critical",
+  "failed",
+  "overdue",
+]);
+
+export function assertDecisionReentryLanguage(text: string): void {
+  checkAgainst(text, DECISION_REENTRY_FORBIDDEN);
+}
+
+export function assertAllDecisionReentryLanguage(texts: string[]): void {
+  for (const t of texts) assertDecisionReentryLanguage(t);
+}

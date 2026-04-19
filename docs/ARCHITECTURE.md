@@ -755,3 +755,103 @@ existing render path takes its existing branch. Removing
 `scenarioReading.ts`, the `ScenarioReadingSection` component, and the
 optional qualifier props at each call site restores exact Phase 3
 behaviour without any other change.
+
+### Phase 5 — Decision Re-Entry Lens
+
+A single additional card rendered beneath the Phase 4 scenario-reading
+section, headed *"Legitimate Re-Entry"*. The lens signals — for one
+approved decision — when reconsideration of the decision becomes
+*procedurally* legitimate. It says nothing about correctness, urgency,
+quality, or what (if anything) the reader ought to do.
+
+The card opens with a fixed prefix sentence: *"This section indicates
+when reconsideration of a decision may be procedurally legitimate. It
+does not recommend or initiate change."* The prefix intentionally
+contains the bare words "change" and "recommend" inside a negating
+phrase, so it is verified by spec-equality at module load and exempt
+from the substring guard (mirroring the Phase 1 banner / Phase 2
+framing-boundary / Phase 3 prefix exemption pattern).
+
+Beneath the prefix, the card renders either an alphabetically-stable
+list of present-indicative signal sentences drawn from a closed set,
+or — when no condition fires — the empty-state sentence: *"No
+procedural conditions for reconsideration are currently evident."*
+
+#### Closed signal set (PH5-HC4)
+
+Two sentences, drawn verbatim, mutually exclusive (the more inclusive
+sentence subsumes the less inclusive one):
+
+1. *"The elapsed time since approval has reached the decision's originally expected lifespan."*
+2. *"The elapsed time since approval has crossed the midpoint of the decision's originally expected lifespan."*
+
+Sentences are never templated at runtime.
+
+#### Derivation inputs (PH5-HC2 / PH5-HC3)
+
+`decisionReentry.ts` accepts exactly one `PortfolioEntry` and one
+`now: Date`. Age is computed against `entry.decisionDate` and
+compared to `entry.organisationContext.expectedLifespanYears`. The
+deriver does NOT consume the Phase 4 scenario lens state, runtime
+metrics, viewing telemetry, incident data, or external feeds.
+
+The "now" Date is captured once on mount in `pages/Exposure.tsx`
+(`useState(() => new Date())`). The deriver itself stays pure: same
+`(entry, now)` always yields the same signal set.
+
+#### Dormant rules
+
+The Phase 5 spec describes additional re-entry conditions that the
+current data model cannot evaluate without violating PH5-HC3
+(derived-only from durable inputs). They stay structurally absent
+rather than fabricate signals from data the system does not have:
+
+- *Function shift* — would require an approval-time dominant-function
+  field on the `PortfolioEntry` allow-list.
+- *Scope divergence* — would require a delta between approval-time
+  and current-time exposure; the entry IS the freeze-time snapshot.
+- *Repeated non-baseline lens viewing* — would require viewing
+  telemetry, which Phase 5 is explicitly forbidden to consume.
+
+These rules will become implementable when the upstream schema
+records the necessary lifecycle metadata, mirroring the Phase 1
+dormant-rule pattern.
+
+#### Empty state
+
+When no condition fires the section renders one neutral sentence:
+*"No procedural conditions for reconsideration are currently evident."*
+No CTA, no link, no fallback content. The section never disappears;
+the empty-state sentence is itself the legitimate observation that
+no procedural condition is present.
+
+#### Vocabulary tier
+
+`DECISION_REENTRY_FORBIDDEN` (declared in `staticTextGuard.ts`) is
+now the strictest tier in the system: a strict superset of
+`SCENARIO_READING_FORBIDDEN` (which is itself a strict superset of
+every preceding tier) plus the Phase 5-specific bans (`fix`, `change`,
+`update`, `revise`, `rework`, `should`, `must`, `need`, `urgent`,
+`critical`, `failed`, `overdue`). The closed signal sentences, the
+section heading, and the empty-state sentence are asserted against
+this tier at module load AND re-asserted at the emission boundary
+inside the deriver. The interpretive prefix is exempted as documented
+above.
+
+#### No persistence, no aggregation, human-initiated (PH5-HC1 / PH5-HC7)
+
+The lens persists nothing, caches nothing, and makes no network call.
+The card itself is non-interactive — no buttons, no links, no
+affordances of any kind. Phase 5 produces no automatic transitions
+and never calls into the freeze flow, the wizard, or the signals
+store. Whether to act on a signal is a procedural decision left
+entirely to the reader.
+
+#### Strictly additive (PH5-HC6)
+
+Phase 5 is rendered as its own card beneath the Phase 4 section.
+Removing `decisionReentry.ts`, the `DecisionReentrySection`
+component, the `reEntrySignals` `useMemo`, the captured `reEntryNow`
+state, and the `assertAllDecisionReentryLanguage` import in
+`pages/Exposure.tsx` restores exact Phase 4 behaviour without any
+other change.
