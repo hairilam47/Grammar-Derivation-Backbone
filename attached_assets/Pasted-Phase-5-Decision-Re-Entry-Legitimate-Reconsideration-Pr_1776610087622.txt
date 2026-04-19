@@ -1,0 +1,191 @@
+Phase 5 — Decision Re‑Entry & Legitimate Reconsideration
+Procedural Closure (Legitimacy Signalling, Not Recommendation)
+
+SYSTEM ROLE
+You are implementing Phase 5 — Decision Re‑Entry & Legitimate Reconsideration in the Architecture Decision Canvas.
+The following components are COMPLETE, APPROVED, and FROZEN and MUST NOT be modified:
+
+Steps 1–7 (Architecture Decision Canvas core)
+Decision Exposure — Phase 1 (Baseline Exposure)
+Decision Exposure — Phase 2 (Exposure Narratives)
+Decision Exposure — Phase 3 (Cross‑Functional Responsibility Lens)
+Decision Exposure — Phase 4 (Scenario‑Conditioned Reading)
+
+Phase 5 adds a procedural governance lens that indicates when reconsideration of a decision becomes procedurally legitimate — without recommending, triggering, or automating change.
+
+PHASE 5 OBJECTIVE
+Implement a Decision Re‑Entry Lens that answers exactly one question:
+
+“Given what is now visible, is it procedurally legitimate to initiate a new decision?”
+
+Phase 5 governs legitimacy of reconsideration, not correctness of outcomes.
+Phase 5 must never decide what to change — only whether reconsideration is reasonably justified.
+
+ABSOLUTE NON‑GOALS
+Phase 5 MUST NEVER:
+
+recommend revisiting or changing a decision
+rank decisions by reconsideration priority
+express urgency, risk, or failure
+trigger workflows, tickets, or approvals
+auto‑spawn a new decision
+judge correctness or success
+instruct users on next steps
+
+If Phase 5 answers “what should we do now?”, it has failed.
+
+HARD CONSTRAINTS (NON‑NEGOTIABLE)
+PH5‑HC1: READ‑ONLY
+- Phase 5 MUST NOT create, edit, advance, or delete any artefact.
+
+PH5‑HC2: SINGLE‑DECISION SCOPE
+- Phase 5 renders for ONE decision only.
+- No cross‑decision aggregation, ranking, or comparison.
+
+PH5‑HC3: DERIVED‑ONLY
+- Inputs are limited to:
+  - ADS / ECP metadata
+  - Phase 1–4 outputs
+  - decision age and lifecycle markers
+- No runtime metrics, delivery data, incidents, or external feeds.
+
+PH5‑HC4: NO PRESCRIPTION
+- Phase 5 MUST NOT imply obligation, action, mitigation, or escalation.
+
+PH5‑HC5: NO URGENCY / SEVERITY
+- Forbidden terms include:
+  urgent, critical, severe, failed, priority,
+  overdue, risk level, must.
+
+PH5‑HC6: HUMAN‑INITIATED ONLY
+- Phase 5 MUST NOT initiate or automate decision re‑entry.
+
+PH5‑HC7: STRICT REMOVABILITY
+- Removing Phase 5 must leave Phases 1–4 unchanged byte‑for‑byte.
+
+
+POSITIONING & PLACEMENT
+Phase 5 renders inside the Decision Exposure View, after Phase 4.
+Decision Exposure View
+  ├─ Phase 1 — Baseline Exposure
+  ├─ Phase 2 — Exposure Narratives
+  ├─ Phase 3 — Responsibility Lens
+  ├─ Phase 4 — Scenario‑Conditioned Reading
+  └─ Phase 5 — Legitimate Re‑Entry   ← this task
+
+Phase 5 MUST NOT:
+
+introduce a new route
+introduce a new page
+change visibility or ordering of prior phases
+
+
+OUTPUT MODEL — RE‑ENTRY SIGNALS (NOT ACTIONS)
+Phase 5 outputs neutral Re‑Entry Signals, not recommendations.
+Characteristics
+
+Informational only
+No ranking or severity
+No call‑to‑action
+No automation
+
+Example Signals (Illustrative Only)
+
+“This decision is being interpreted under contexts beyond its original approval scope.”
+“Contextual divergence has been observed since the decision was approved.”
+“This decision remains aligned with its original usage assumptions.”
+
+Signals must never instruct or imply change.
+
+RE‑ENTRY LEGITIMACY CONDITIONS (DERIVATION LOGIC)
+Phase 5 may emit a re‑entry signal when procedural legitimacy conditions are met, such as:
+
+The decision is repeatedly viewed under non‑baseline Phase 4 lenses
+Phase 4 lenses materially differ from original approval assumptions
+Responsibility pressure appears in functions not dominant at approval
+Decision lifespan materially exceeds initial expectations
+
+These are conditions, not triggers.
+The absence of such conditions must also be representable.
+
+LANGUAGE GUARD REQUIREMENTS
+Introduce a new vocabulary tier:
+DECISION_REENTRY_FORBIDDEN
+
+This tier MUST be a strict superset of:
+
+SCENARIO_READING_FORBIDDEN
+RESPONSIBILITY_LENS_FORBIDDEN
+EXPOSURE_NARRATIVE_FORBIDDEN
+SIGNALS_FORBIDDEN
+
+Additionally forbid:
+fix*, change*, update*, revise*, rework*,
+should*, must*, need*,
+urgent*, critical*, failed*, overdue*
+
+All Phase 5 literals must pass this guard at module load.
+
+UI REQUIREMENTS
+
+Phase 5 appears as a simple, neutral section
+No icons, badges, colours, or emphasis
+No buttons, links, or CTAs
+No comparison with prior decisions or states
+
+Include a short interpretive prefix (spec‑locked):
+
+“This section indicates when reconsideration of a decision may be procedurally legitimate. It does not recommend or initiate change.”
+
+This text must pass the strictest language guard (use spec‑equality if necessary).
+
+EMPTY‑STATE BEHAVIOUR
+If no re‑entry signal is derived:
+
+“No procedural conditions for reconsideration are currently evident.”
+
+No implication that reconsideration is missing or required.
+
+IMPLEMENTATION MODULES
+1️⃣ Re‑Entry Signal Deriver (Pure)
+Create governance/decisionReentry.ts exporting:
+
+Fixed re‑entry signal strings (spec‑locked)
+deriveReEntrySignals(entry, phaseOutputs)
+
+Rules:
+
+Deterministic
+No mutation of inputs
+No auto‑creation of decisions
+No timeline or thresholds
+
+
+2️⃣ Exposure Page Integration
+In pages/Exposure.tsx:
+
+Render Phase 5 section beneath Phase 4
+Compute signals via useMemo
+Render zero or more neutral signal lines
+No interactive elements
+
+
+VERIFICATION CHECKS (MANDATORY)
+Before merging Phase 5, verify:
+
+✅ No forbidden vocabulary renders
+✅ No action language present
+✅ No CTA, button, or automation exists
+✅ Phase 5 removal restores Phases 1–4 exactly
+✅ A reader cannot conclude “we must fix this” from Phase 5 alone
+
+
+STOP CONDITION
+STOP IMPLEMENTATION WHEN:
+
+- Phase 5 signals legitimacy without prescribing change
+- All action authority remains human and procedural
+- Phase 5 is fully removable
+- The system remains a governance aid, not a decision engine
+
+END OF PHASE 5 EXECUTION PROMPT
