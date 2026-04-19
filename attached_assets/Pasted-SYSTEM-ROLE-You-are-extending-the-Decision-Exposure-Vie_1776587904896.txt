@@ -1,0 +1,205 @@
+SYSTEM ROLE
+You are extending the Decision Exposure View within the Architecture Decision Canvas.
+Steps 1–7 are COMPLETE, APPROVED, and FROZEN.
+Phase 1 of the Decision Exposure View (baseline exposure surfaces) is already implemented.
+This task implements Phase 2 — Exposure Narratives.
+Phase 2 adds descriptive explanations that clarify why exposure surfaces exist for an already‑approved decision.
+Phase 2 MUST NOT:
+
+recommend or imply action
+assess or evaluate correctness
+rank or score exposure
+predict outcomes or incidents
+assign ownership or responsibility
+introduce new data sources
+persist any narrative text
+
+All narratives are derived at render time from existing frozen artefacts.
+
+PHASE 2 OBJECTIVE
+Implement neutral, structural explanatory narratives that answer:
+
+“Why does this exposure exist, given the decision we already approved?”
+
+Phase 2 explains exposure backwards (from decision facts), never forwards (toward action).
+Phase 2 exists to support institutional understanding, not governance enforcement.
+
+HARD CONSTRAINTS (NON‑NEGOTIABLE)
+PH2‑HC1: DERIVED‑ONLY
+- Narratives MUST be derived exclusively from:
+  - ADS (context, capability scope, risk acknowledgement)
+  - ECP (constraint categories)
+  - Phase 1 exposure structures
+- No runtime data, delivery data, ownership data, or system inventory may be introduced.
+
+PH2‑HC2: READ‑ONLY
+- Phase 2 MUST NOT create, edit, advance, or delete any artefact.
+- Phase 2 introduces no mutation paths of any kind.
+
+PH2‑HC3: SINGLE‑DECISION SCOPE
+- Phase 2 narratives are rendered for ONE decision at a time.
+- No aggregation or comparison across decisions is permitted.
+
+PH2‑HC4: NO PRESCRIPTION
+- Narratives MUST NOT contain:
+  should, must, fix, mitigate, improve, reduce, optimise, optimize,
+  high risk, severe, critical, recommended.
+- The governance language guard applies in full.
+
+PH2‑HC5: STRUCTURAL EXPLANATION ONLY
+- Narratives explain:
+  context → cause → exposure
+- Narratives MUST NOT express:
+  judgement, urgency, desirability, or expectation.
+
+PH2‑HC6: NO PERSISTENCE
+- Narratives are NOT stored.
+- They are regenerated deterministically from frozen artefacts on every render.
+
+
+STANDARD NARRATIVE GRAMMAR (MANDATORY)
+All Phase 2 narratives MUST follow this exact structure:
+Context Clause
+→ Structural Cause Clause
+→ Exposure Surface Clause
+→ Framing Boundary Clause
+
+1. Context Clause
+Anchors explanation in decision facts.
+Pattern:
+
+“Because this decision involves …”
+
+Allowed inputs:
+
+organisation type
+sensitivity level
+system intent
+expected lifespan
+capability scope
+
+
+2. Structural Cause Clause
+Explains why exposure is inevitable, not optional.
+Pattern:
+
+“…and because it requires …”
+
+Allowed inputs:
+
+ECP constraint categories
+component categories (abstracted, not technical)
+
+
+3. Exposure Surface Clause
+Names where pressure appears, not outcomes.
+Pattern:
+
+“…this places sustained pressure on …”
+
+Allowed inputs:
+
+governance domains
+impact surfaces
+organisational functions
+
+
+4. Framing Boundary Clause (MANDATORY)
+Closes interpretation and prevents action bias.
+Pattern:
+
+“This reflects structural exposure inherent to the approved decision, not a judgement or requirement.”
+
+This clause MUST be present in every narrative.
+
+ALLOWED NARRATIVE PLACEMENT
+Phase 2 narratives MUST be rendered inside existing Phase 1 sections, never as new panels.
+— Governance Domains
+   • list
+   ◦ Phase 2 narrative (collapsed by default)
+
+— External Scrutiny Vectors
+   • list
+   ◦ Phase 2 narrative (collapsed by default)
+
+— Impact Surfaces
+   • clusters
+   ◦ Phase 2 narrative (collapsed by default)
+
+— Organisational Functions Affected
+   • list
+   ◦ Phase 2 narrative (collapsed by default)
+
+No separate “Narratives” section is allowed.
+
+UI BEHAVIOUR REQUIREMENTS
+PH2‑UI1: COLLAPSED BY DEFAULT
+- Narratives are collapsed by default.
+- User may expand via neutral affordance labeled:
+  “Why this exposure exists”
+
+PH2‑UI2: VISUAL SUBORDINATION
+- Narrative text must appear visually secondary to Phase 1 lists:
+  - smaller font
+  - lighter color
+  - single paragraph only
+
+PH2‑UI3: NO EMPHASIS
+- No bolding of phrases
+- No bullet points
+- No highlights
+- No icons implying warning or importance
+
+PH2‑UI4: NO INTERACTION
+- Narratives are not clickable, linkable, searchable, or exportable.
+- They do not navigate to other screens.
+
+
+EMPTY‑STATE HANDLING
+PH2‑EMPTY‑A: FEATURE NOT YET AVAILABLE
+Text:
+“Exposure explanations are not yet available for this decision.
+This view describes exposure surfaces without additional interpretation.”
+
+PH2‑EMPTY‑B: INTENTIONALLY OMITTED
+Text:
+“Exposure explanations are intentionally omitted for this decision.”
+
+No CTA, no suggestion of incompleteness, no prompt to act.
+
+Empty‑state messaging must be neutral and non‑actionable.
+
+CANONICAL EXAMPLE (REFERENCE ONLY)
+Because this decision involves externally accessible, high‑sensitivity data
+with long expected lifespan, and because it requires continuous identity
+verification and immutable audit logging, this places sustained pressure
+on data protection oversight and audit readiness functions.
+This reflects structural exposure inherent to the approved decision,
+not a judgement or requirement.
+
+This example demonstrates tone, structure, and boundary language.
+
+EXPLICIT NON‑GOALS
+Phase 2 MUST NEVER:
+- Rank exposure
+- Score exposure
+- Suggest mitigations
+- Predict incidents
+- Assign ownership
+- Compare decisions
+- Show “most impacted” elements
+- Introduce timelines or trends
+- Replace audit or EA tooling
+
+If a narrative could justify action without returning to the decision process, it is out of scope by definition.
+
+STOP CONDITION
+STOP IMPLEMENTATION WHEN:
+
+- Phase 2 narratives render only as collapsed, derived explanations
+- All narratives strictly follow the standard grammar
+- All text passes governance language guards
+- No new authority pathways exist
+- Phase 2 can be removed without affecting Phase 1 or other layers
+
+END OF PHASE 2 PROMPT
