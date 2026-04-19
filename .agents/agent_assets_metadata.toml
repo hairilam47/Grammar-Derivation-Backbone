@@ -1,0 +1,26 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "u5n7RuYq_uPp4GFoE1Bzp"
+uri = "file://screenshots/01-step1-context.jpg"
+type = "image"
+title = "Step 1 — System Context (Wizard Screen 1)"
+
+[[outputs]]
+id = "ugTeP_jWwEe0kzKe7KhPA"
+uri = "file://screenshots/05-portfolio.jpg"
+type = "image"
+title = "Step 5 — Portfolio Governance"
+
+[[outputs]]
+id = "qOGhojvcy2NfDv1hhJCsC"
+uri = "file://screenshots/06-signals.jpg"
+type = "image"
+title = "Step 6 — Policy Signals"
+
+[[outputs]]
+id = "anseHajNoO6RpHfR4FCCt"
+uri = "file://screenshots/07-reflection.jpg"
+type = "image"
+title = "Step 7 — Reflective Governance View"
