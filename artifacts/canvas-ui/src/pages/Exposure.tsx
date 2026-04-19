@@ -23,6 +23,8 @@ import {
 } from "@/governance/exposureNarratives";
 import {
   deriveResponsibilityLens,
+  RESPONSIBILITY_LENS_PREFIX,
+  RESPONSIBILITY_LENS_EMPTY,
   type ResponsibilityLens,
 } from "@/governance/responsibilityLens";
 import {
@@ -52,31 +54,13 @@ const DISCLOSURE_LABEL = "Why this exposure exists";
 
 // Phase 3 — Cross-Functional Responsibility Lens.
 //
-// Heading, prefix sentence, and empty-state sentence are spec-locked.
-// The prefix sentence intentionally uses the negated phrase "does not
-// assign ownership", which the substring guard would flag because
-// "ownership" contains "owner". It is therefore checked by spec
-// equality at module load instead of via the substring scan, mirroring
-// the Phase 1 banner / Phase 2 framing-boundary exemption pattern.
+// Section heading is owned by the page (it is purely a UI label, not a
+// derivation product). The prefix sentence and the empty-state
+// sentence are owned by `responsibilityLens.ts`, which co-locates them
+// with the deriver and runs both spec-equality and substring guards on
+// them at module load.
 const RESPONSIBILITY_LENS_HEADING = "Cross-Functional Responsibility Lens";
-const RESPONSIBILITY_LENS_PREFIX =
-  "This section describes where responsibility pressure resides as a result of the decision. It does not assign ownership or require action.";
-const RESPONSIBILITY_LENS_EMPTY =
-  "No cross-functional responsibility pressure is identified for this decision.";
-
-const RESPONSIBILITY_LENS_PREFIX_SPEC =
-  "This section describes where responsibility pressure resides as a result of the decision. It does not assign ownership or require action.";
-if (RESPONSIBILITY_LENS_PREFIX !== RESPONSIBILITY_LENS_PREFIX_SPEC) {
-  throw new Error(
-    "Cross-Functional Responsibility Lens prefix sentence has drifted from the Phase 3 spec wording.",
-  );
-}
-// Heading and empty-state sentence are token-clean and pass the
-// responsibility-lens substring guard normally.
-assertAllResponsibilityLensLanguage([
-  RESPONSIBILITY_LENS_HEADING,
-  RESPONSIBILITY_LENS_EMPTY,
-]);
+assertAllResponsibilityLensLanguage([RESPONSIBILITY_LENS_HEADING]);
 
 // PH1-HC4: the Decision Exposure View must use the strictest available
 // language guard so no recommendation, ranking, or urgency vocabulary

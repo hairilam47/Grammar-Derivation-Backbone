@@ -67,10 +67,40 @@ const FUNCTION_NAMES: readonly ResponsibilityFunctionName[] = [
   "Security Operations",
 ] as const;
 
+// Spec-locked surface strings owned by this module. The page imports
+// these directly so the canonical wording lives next to the deriver
+// that produces the rest of the lens, not next to the route component.
+//
+// PH3 prefix sentence — checked by spec-equality at module load (the
+// substring guard would otherwise flag the negated phrase "does not
+// assign ownership", because "ownership" contains the forbidden token
+// "owner"). Mirrors the Phase 1 banner / Phase 2 framing-boundary
+// exemption pattern.
+export const RESPONSIBILITY_LENS_PREFIX =
+  "This section describes where responsibility pressure resides as a result of the decision. It does not assign ownership or require action.";
+
+export const RESPONSIBILITY_LENS_EMPTY =
+  "No cross-functional responsibility pressure is identified for this decision.";
+
+const RESPONSIBILITY_LENS_PREFIX_SPEC =
+  "This section describes where responsibility pressure resides as a result of the decision. It does not assign ownership or require action.";
+if (RESPONSIBILITY_LENS_PREFIX !== RESPONSIBILITY_LENS_PREFIX_SPEC) {
+  throw new Error(
+    "Cross-Functional Responsibility Lens prefix sentence has drifted from the Phase 3 spec wording.",
+  );
+}
+
 // PH3-HC4: every static literal that this module can render must pass
 // the responsibility-lens language guard. Run at module load so any
-// drift fails loudly the moment the bundle is imported.
-for (const literal of [...PRESSURE_TYPES, ...FUNCTION_NAMES]) {
+// drift fails loudly the moment the bundle is imported. The empty-
+// state sentence is included; the prefix sentence is intentionally
+// excluded from the substring scan and verified by spec-equality
+// above (see carve-out comment in staticTextGuard.ts).
+for (const literal of [
+  ...PRESSURE_TYPES,
+  ...FUNCTION_NAMES,
+  RESPONSIBILITY_LENS_EMPTY,
+]) {
   assertResponsibilityLensLanguage(literal);
 }
 
@@ -253,13 +283,25 @@ export function deriveResponsibilityLens(
 
   // PH3-HC5: alphabetical at both levels. Function ordering uses
   // localeCompare; pressure-type ordering inside each row likewise.
+  //
+  // PH3-HC4 (per-emission re-assertion): every emitted function name
+  // and pressure-type string is routed through the language guard
+  // before being returned. The fixed lookup table is also asserted at
+  // module load above, so this pass is structurally redundant in a
+  // healthy build — but it pins the contract at the actual emission
+  // boundary so any future refactor that introduces dynamic strings
+  // here cannot silently bypass the guard.
   const rows: ResponsibilityLensRow[] = [];
   for (const functionName of [...grouped.keys()].sort((a, b) =>
     a.localeCompare(b),
   )) {
+    assertResponsibilityLensLanguage(functionName);
     const pressureTypes = [...(grouped.get(functionName) ?? [])].sort(
       (a, b) => a.localeCompare(b),
     );
+    for (const p of pressureTypes) {
+      assertResponsibilityLensLanguage(p);
+    }
     rows.push({ functionName, pressureTypes });
   }
   return rows;
