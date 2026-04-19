@@ -1,0 +1,196 @@
+SYSTEM ROLE
+You are building STEP 6 of the Architecture Decision Canvas.
+STEP 1 (Architecture Grammar Engine), STEP 2 (Context & Capability Declaration),
+STEP 3 (Trade‑Off Exploration), STEP 4 (Freeze Decision & Export — ADS / ECP),
+and STEP 5 (Portfolio Governance View)
+are COMPLETE, APPROVED, and FROZEN.
+STEP 6 is a POLICY SIGNALS & INSTITUTIONAL MEMORY LAYER.
+It exists to allow leadership bodies (Board, Risk Committee, Architecture Board, etc.)
+to record, preserve, and review governance‑level patterns they have noticed
+across already‑approved architecture decisions.
+STEP 6 MUST NOT:
+
+make or change decisions
+recommend or prescribe actions
+claim compliance or non‑compliance
+rank, score, or prioritise concerns
+block, gate, or escalate anything
+integrate with delivery, PMO, or operational systems
+
+STEP 6 is descriptive memory only, not authority.
+
+STEP 6 OBJECTIVE
+Implement a quiet, read‑only‑adjacent governance layer where leadership can:
+
+record policy signals (observed patterns across decisions),
+preserve how those signals were discussed and interpreted, and
+retain institutional memory of what leadership considered important at a given time.
+
+STEP 6 answers exactly one question:
+
+“Which decision patterns were important enough for leadership to notice and remember?”
+
+STEP 6 does not answer:
+
+what should be done
+whether something is compliant
+whether something is acceptable
+who should act
+
+
+SECTION 3 — HARD CONSTRAINTS (NON‑NEGOTIABLE)
+HARD CONSTRAINTS — MUST BE ENFORCED
+
+S6‑HC1: DERIVED‑ONLY
+- STEP 6 MAY import data ONLY from the Step 5 portfolio read‑model
+  (e.g. listEntries).
+- STEP 6 MUST NOT import from:
+  grammar engine, wizard, freeze flow, ADS/ECP builders.
+
+S6‑HC2: NO DECISION AUTHORITY
+- No Step 1–4 module may import the signals store.
+- Wizard and Freeze flows MUST behave identically
+  whether or not signals exist.
+
+S6‑HC3: NO ENFORCEMENT / NO BLOCKING
+- STEP 6 MUST NOT surface:
+  alerts, warnings, banners, badges, modals, or required acknowledgements
+  outside the signals page.
+- STEP 6 MUST NOT block or gate any user flow.
+
+S6‑HC4: STRICT FIELD ALLOW‑LIST
+- Signals must persist ONLY an explicit allow‑list of fields.
+- Writing unknown fields MUST throw.
+- Reading unknown fields MUST silently drop them.
+- Nested objects are also allow‑listed.
+
+S6‑HC5: FIXED TAXONOMY
+- Exactly seven signal categories are allowed:
+  1. Risk Accumulation
+  2. Complexity Accumulation
+  3. Dependency Concentration
+  4. Posture Drift
+  5. Control Load
+  6. Decision Volatility
+  7. Exception Normalisation
+- No “Other”.
+- No extension or sub‑typing.
+
+S6‑HC6: FIXED LIFECYCLE
+- Exactly three states:
+  Observed → Under Discussion → Acknowledged
+- Transitions are:
+  forward‑only,
+  human‑initiated,
+  one‑way.
+- Each transition stamps lastReviewedAt.
+
+S6‑HC7: NO OPTIMISATION OR RANKING
+- No severity grading.
+- No scoring.
+- No priority ordering.
+- Sorting is presentation‑only and must say so explicitly.
+
+S6‑HC8: GOVERNANCE LANGUAGE GUARD
+- Extend staticTextGuard forbidden vocabulary with:
+  priority, fix, resolve, escalate, mitigate.
+- Every static label on the signals page
+  MUST pass through the guard.
+
+S6‑HC9: INTERPRETATION GUIDANCE AS QUESTIONS ONLY
+- Interpretation guidance entries MUST end with “?”.
+- Non‑question phrasing MUST be rejected.
+
+
+SECTION 4 — DATA MODEL & PERSISTENCE
+DATA MODEL & PERSISTENCE — MUST BE ENFORCED
+
+Each Policy Signal has the following allow‑listed fields only:
+
+PolicySignal {
+  signalId: string
+  signalCategory: one of the 7 fixed categories
+  signalTitle: string
+  signalDescription: string
+
+  evidenceSummary: {
+    observationWindow: string
+    relatedDecisionCount: number
+    qualitativePattern: string
+    relatedEntries?: Array<{ adsId, adsVersion }>
+  }
+
+  interpretationGuidance: Array<string>   // questions only
+  regulatoryContext?: string
+  reviewingBody: string
+
+  status: "Observed" | "Under Discussion" | "Acknowledged"
+  createdAt: ISODate
+  lastReviewedAt: ISODate
+}
+
+Persistence:
+- Store in localStorage under key: adc.policy-signals.v1
+- No server storage.
+- No multi‑user behaviour.
+
+
+SECTION 5 — ALLOWED UI SURFACES
+ALLOWED UI — STRICTLY LIMITED
+
+1. SIGNALS PAGE (/signals)
+   - Quiet, audit‑style layout.
+   - Always shows interpretation guidance panel at the top.
+   - List view shows:
+     category, title, status, reviewing body,
+     createdAt, lastReviewedAt.
+
+2. CREATE SIGNAL FORM
+   - Fixed category dropdown (7 items).
+   - Neutral title + description.
+   - Evidence fields:
+     observation window,
+     number of related ADS,
+     qualitative description,
+     optional related ADS selector (adsId + adsVersion).
+   - Interpretation guidance:
+     list of questions only.
+   - Optional regulatory context.
+   - Reviewing body.
+   - New signals start in Observed.
+
+3. SIGNAL DETAIL VIEW
+   - Read‑only display of all persisted fields.
+   - Single lifecycle action button
+     (advance to next state only).
+
+4. NAVIGATION
+   - Signals link in Portfolio header.
+   - Signals link in Wizard header (for consistency).
+
+
+SECTION 6 — EXPLICIT NON‑GOALS
+STEP 6 MUST NEVER:
+
+- Auto‑generate signals (heuristics or AI).
+- Score, rank, or prioritise signals.
+- Claim compliance or non‑compliance.
+- Trigger alerts, escalations, or actions.
+- Block or gate any flow.
+- Modify or annotate ADS or ECP.
+- Integrate with delivery tools, tickets, or timelines.
+- Allow editing or deletion of signals.
+- Provide exports.
+
+
+STOP CONDITION
+STOP IMPLEMENTATION WHEN:
+
+- Signals persist locally and reload correctly.
+- Lifecycle transitions are enforced and one‑way.
+- Forbidden language is rejected.
+- No other module reads from signals store.
+- Wizard, Freeze, and Portfolio flows are unchanged.
+
+END OF STEP 6 PROMPT
+
