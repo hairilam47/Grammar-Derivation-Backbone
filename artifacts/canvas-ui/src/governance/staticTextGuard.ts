@@ -28,6 +28,25 @@ const SIGNALS_FORBIDDEN = [
   "mitigate",
 ];
 
+// Step 7 (S7-HC5) extends the SIGNALS vocabulary with terms that would
+// imply optimisation, urgency, or normative targets. The Reflective
+// Governance View is descriptive only and must reject any wording that
+// could be read as guidance or judgement.
+export const REFLECTIVE_FORBIDDEN = [
+  ...SIGNALS_FORBIDDEN,
+  "optimise",
+  "optimize",
+  "improve",
+  "reduce",
+  "urgent",
+  "critical",
+  "hotspot",
+  "hot-spot",
+  "attention required",
+  "target",
+  "norm",
+];
+
 export class GovernanceLanguageError extends Error {
   constructor(term: string, sample: string) {
     super(
@@ -61,4 +80,12 @@ export function assertSignalsLanguage(text: string): void {
 
 export function assertAllSignalsLanguage(texts: string[]): void {
   for (const t of texts) assertSignalsLanguage(t);
+}
+
+export function assertReflectiveLanguage(text: string): void {
+  checkAgainst(text, REFLECTIVE_FORBIDDEN);
+}
+
+export function assertAllReflectiveLanguage(texts: string[]): void {
+  for (const t of texts) assertReflectiveLanguage(t);
 }

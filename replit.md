@@ -35,13 +35,14 @@ Main function: `deriveArchitecture(context, capabilitySelections, tradeOffs) →
 
 ## Architecture Decision Canvas UI
 
-`artifacts/canvas-ui` is a React + Vite web app (preview path: `/`) with three top-level routes, all reachable from a shared header navigation (`PortfolioHeaderNav`):
+`artifacts/canvas-ui` is a React + Vite web app (preview path: `/`) with four top-level routes, all reachable from a shared header navigation (`PortfolioHeaderNav`):
 
 | Route | Page | Purpose |
 |-------|------|---------|
 | `/` | Wizard | Five-screen flow that produces an approved Architecture Decision (Steps 1–4 of the project) |
 | `/portfolio` | Portfolio Governance | Read-only board of all approved decisions across the organisation (Step 5) |
 | `/signals` | Policy Signals | Leadership-recorded patterns observed across the portfolio over time (Step 6) |
+| `/reflection` | Reflective Governance View | Read-only observational view of how decisions and recorded attention have evolved over time (Step 7) |
 
 The Wizard, Portfolio, and Signals layers are strictly stratified — each upper layer only reads from the layer below it; no upper layer can influence the derivation of a lower one.
 
@@ -100,8 +101,19 @@ Every static label rendered by the Portfolio and Signals pages is registered thr
 
 - `PORTFOLIO_FORBIDDEN` — Step 5: `should`, `recommended`, `recommend`, `optimal`, `best practice`, `best-practice`, `preferred`, `ideal`, `ought to`. These would imply judgement or recommendation.
 - `SIGNALS_FORBIDDEN` — Step 5 set plus `priority`, `fix`, `resolve`, `escalate`, `mitigate`. These would imply ranking, remediation, or escalation.
+- `REFLECTIVE_FORBIDDEN` — Step 6 set plus `optimise`, `optimize`, `improve`, `reduce`, `urgent`, `critical`, `hotspot`, `hot-spot`, `attention required`, `target`, `norm`. These would imply optimisation, urgency, or normative targets and have no place in a purely descriptive reflective view.
 
-The split exists because the Portfolio interpretation panel must be able to say *"does not imply priority"*, while the Signals page must reject the bare word `priority` in any of its labels. Each layer asserts its own vocabulary independently via `assertAllGovernanceLanguage` / `assertAllSignalsLanguage`.
+The split exists because the Portfolio interpretation panel must be able to say *"does not imply priority"*, while the Signals page must reject the bare word `priority` in any of its labels. Each layer asserts its own vocabulary independently via `assertAllGovernanceLanguage` / `assertAllSignalsLanguage` / `assertAllReflectiveLanguage`.
+
+### Reflective Governance View (Step 7)
+
+`/reflection` (`src/pages/Reflection.tsx`) is a pure read-only observational layer. It answers the single question *"How does this institution's decision-making and governance attention change over time?"* without assessment, ranking, recommendation, or required action.
+
+- **Decision Lineage** — for each `adsId` present in the portfolio, lists its frozen versions chronologically by `decisionDate` with date and truncated version hash. Single-version decisions are rendered the same way as multi-version ones; no churn or stability framing.
+- **Governance Attention Over Time** — recorded policy signals bucketed by month of `createdAt`, then by `signalCategory` in the fixed taxonomy order. Each row shows title, current state, and creation date. Months are listed chronologically; no peaks or critical periods are highlighted.
+- **Memory Overview** — plain counts only: total signals, count per `SignalStatus`, count per `SignalCategory`. No thresholds, percentages, or comparisons.
+- **Silence Awareness** (sub-list within Memory Overview) — lists portfolio entries by `adsId` that are not currently referenced by any policy signal. Presented as a plain alphabetical list with no labels like "uncovered" or "gap".
+- **Architectural isolation** — the Reflection module imports only `listEntries` from `portfolioStore` and `listSignals` (plus the `SIGNAL_CATEGORIES` and `SIGNAL_STATUSES` constants and types) from `signalsStore`. It imports nothing from the grammar engine, the wizard, the freeze flow, or the ADS/ECP builders. No Step 1–6 module imports the Reflection page. The page mutates nothing and persists nothing.
 
 ## States & Persistence Reference
 
@@ -127,8 +139,9 @@ A single decision moves through the system as follows:
 6. **Exports.** PDF and DOCX exports for ADS and ECP are generated client-side at fixed A4 with the integrity footer on every page. The exported files are immutable artefacts of the frozen decision.
 7. **Step 5 — Portfolio Governance View.** The decision now appears as a row at `/portfolio`. The read-only ADS / ECP viewers render from the persisted entry directly — never by re-running the grammar.
 8. **Step 6 — Policy Signals.** Over time, leadership may notice patterns across the portfolio (for example, repeated Posture Drift across decisions of a given approving authority) and record them at `/signals`. A signal can optionally reference one or more portfolio entries by `adsId` + `adsVersion`. The signal then moves through `Observed → Under Discussion → Acknowledged` via human-initiated transitions, each stamping `lastReviewedAt`. Acknowledged is terminal.
+9. **Step 7 — Reflective Governance View.** At any time, leadership may visit `/reflection` to see how the institution's recorded decisions and recorded attention have evolved. The page reads from the portfolio and signals stores only and renders Decision Lineage, Governance Attention Over Time, and Memory Overview (with an optional Silence Awareness sub-list). It produces no judgement, recommendation, or required action; it persists nothing.
 
-At no point in this flow does Step 6 affect Step 5, Step 5 affect the wizard, or the wizard alter the grammar. Each layer reads strictly downward.
+At no point in this flow does Step 7 affect Step 6, Step 6 affect Step 5, Step 5 affect the wizard, or the wizard alter the grammar. Each layer reads strictly downward.
 
 ## Key Commands
 
