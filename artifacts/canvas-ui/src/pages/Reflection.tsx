@@ -50,14 +50,14 @@ const T = {
   interpretation1:
     "This view is descriptive only. It shows how recorded decisions and recorded policy signals have evolved over time.",
   interpretation2:
-    "It does not assess, rank, or require action. Sequence and grouping are presentation conveniences only.",
+    "It does not assess, rank, recommend, or require action. Sequence and grouping are presentation conveniences only.",
   interpretation3:
     "Every figure on this page is a plain count or a chronological listing of records already present in the portfolio and signals stores.",
   lineageHeading: "Decision Lineage",
   lineageCaption:
     "For each logical decision (ADS ID), the chronological sequence of frozen versions is shown. A single-version decision is shown the same way as a multi-version one.",
   lineageEmpty: "No frozen decisions are recorded yet.",
-  lineageEmptyCta: "Open the canvas",
+  lineageEmptyCta: "Open Canvas",
   lineageVersionLabel: "Revision sequence",
   lineageVersionHashLabel: "Version hash",
   lineageDateLabel: "Decision date",
@@ -68,6 +68,7 @@ const T = {
   memoryHeading: "Memory Overview",
   memoryCaption:
     "Plain counts derived from the policy signals store. No thresholds, percentages, or comparisons.",
+  memoryEmpty: "No policy signals are recorded yet.",
   memoryTotalLabel: "Total recorded signals",
   memoryByStateLabel: "Count by current state",
   memoryByCategoryLabel: "Count by category",
@@ -406,11 +407,20 @@ function MemoryPanel({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-5">
-        <p className="text-[11px] italic text-muted-foreground">
-          {T.memoryCaption}
-        </p>
+        {total === 0 ? (
+          <div
+            className="py-6 text-center text-xs text-muted-foreground"
+            data-testid="memory-empty"
+          >
+            {T.memoryEmpty}
+          </div>
+        ) : (
+          <>
+            <p className="text-[11px] italic text-muted-foreground">
+              {T.memoryCaption}
+            </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div>
             <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
               {T.memoryTotalLabel}
@@ -486,6 +496,8 @@ function MemoryPanel({
             </ul>
           )}
         </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );
