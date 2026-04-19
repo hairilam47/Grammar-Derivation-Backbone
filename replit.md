@@ -2,6 +2,8 @@
 
 This project is a pnpm workspace monorepo using TypeScript, centered around the **Architecture Decision Canvas**. This system provides a deterministic, grammar-based approach to map organizational context, capability selections, and trade-off settings to a required set of architecture components, risks, and complexity indicators. Upon approval, it generates immutable governance artifacts (Architecture Decision Snapshot - ADS, and Execution Constraint Profile - ECP), records them in a portfolio, and allows for referencing by leadership-recorded policy signals, forming an institutional memory layer. The system is descriptive, not prescriptive, and does not make recommendations.
 
+> For the canonical, full architecture reference — including the layer diagram, every module path, persistence contracts, and the end-to-end flow — see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
 # User Preferences
 
 I prefer iterative development. Ask before making major changes. I prefer detailed explanations. I do not want any changes to the `lib/architecture-grammar` library that would alter the 7 canonical Capabilities or the 18 canonical Components, or the core derivation rules (Rule A, B, C, D, and risk detection mechanisms).
