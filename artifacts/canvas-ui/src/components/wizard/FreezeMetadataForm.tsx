@@ -11,6 +11,10 @@ import {
 } from "@/components/ui/card";
 import { ArrowLeft, ArrowRight, Lock } from "lucide-react";
 import type { ProjectMetadata } from "@/governance/types";
+import {
+  detectMisuseIntent,
+  CORRECTION_LANGUAGE,
+} from "@/governance/misusePlaybooks";
 
 interface FreezeMetadataFormProps {
   initial: ProjectMetadata;
@@ -30,6 +34,14 @@ export function FreezeMetadataForm({
 
   const ready =
     projectName.trim().length > 0 && approvingAuthority.trim().length > 0;
+
+  // Phase 6 (PH6-HC5) — advisory-only misuse hint. The first matching
+  // intent across either field surfaces a single re-anchoring
+  // sentence below the form. Detection never blocks submission, never
+  // invalidates input, never persists anything; the hint is purely a
+  // reminder of the artefact's constitutional position.
+  const misuseIntent =
+    detectMisuseIntent(projectName) ?? detectMisuseIntent(approvingAuthority);
 
   return (
     <div className="max-w-xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-6">
@@ -83,6 +95,15 @@ export function FreezeMetadataForm({
           </div>
         </CardContent>
       </Card>
+
+      {misuseIntent !== null && (
+        <p
+          className="text-xs text-muted-foreground italic px-1"
+          data-testid="freeze-misuse-hint"
+        >
+          {CORRECTION_LANGUAGE[misuseIntent]}
+        </p>
+      )}
 
       <div className="flex justify-between items-center">
         <Button

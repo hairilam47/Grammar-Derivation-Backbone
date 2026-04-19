@@ -39,32 +39,14 @@ const STORAGE_KEY = "adc.portfolio.v1";
 // `approvalFunctionsAffected` and `approvalDominantFunctions` —
 // snapshotting the live Phase 1 / Phase 3 derivation outputs at
 // freeze. Same write-once / read-only / no-feedback semantics.
-const ALLOWED_FIELDS = [
-  "adsId",
-  "adsVersion",
-  "projectName",
-  "approvingAuthority",
-  "decisionDate",
-  "organisationContext",
-  "baselinePosture",
-  "complexityScore",
-  "operationalOverheadScore",
-  "changeCostLaterScore",
-  "highestRiskSeverity",
-  "riskCategoriesPresent",
-  "layersPresent",
-  "inScopeCapabilityIds",
-  "ecpConstraintCategories",
-  // Phase 5 (PH5-HC3) approval-time markers. Both are written ONCE at
-  // freeze, read-only thereafter, and never feed back into the grammar
-  // engine. They snapshot what the live derivers (Phase 1 exposure,
-  // Phase 3 responsibility lens) produced AT freeze time. The
-  // Decision Re-Entry Lens compares current derivation output against
-  // these snapshots to recognise drift introduced by future derivation
-  // upgrades or future upstream-context evolution.
-  "approvalFunctionsAffected",
-  "approvalDominantFunctions",
-] as const;
+//
+// Phase 6 (PH6-HC2) — the allow-list itself was moved into a
+// lightweight constants module (`portfolioFields.ts`) so the
+// constitutional-containment invariants can import it without
+// transitively loading the derivation modules. Re-exported here so
+// existing callers keep working unchanged.
+export { ALLOWED_FIELDS } from "./portfolioFields";
+import { ALLOWED_FIELDS } from "./portfolioFields";
 
 export interface PortfolioEntry {
   adsId: string;

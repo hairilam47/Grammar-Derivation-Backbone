@@ -380,6 +380,9 @@ only those constants, so the guard cannot be bypassed.
 | `REFLECTIVE_FORBIDDEN` | strict superset of `SIGNALS_FORBIDDEN` | `optimise`, `optimize`, `improve`, `reduce`, `urgent`, `critical`, `hotspot`, `hot-spot`, `attention required`, `target`, `norm` |
 | `EXPOSURE_NARRATIVE_FORBIDDEN` | strict superset of `SIGNALS_FORBIDDEN` (sibling of `REFLECTIVE_FORBIDDEN` and `RESPONSIBILITY_LENS_FORBIDDEN`, not interchangeable) | `must`, `improve`, `reduce`, `optimise`, `optimize`, `high risk`, `severe`, `critical` |
 | `RESPONSIBILITY_LENS_FORBIDDEN` | strict superset of `SIGNALS_FORBIDDEN` (sibling of `REFLECTIVE_FORBIDDEN` and `EXPOSURE_NARRATIVE_FORBIDDEN`, not interchangeable) | `owner`, `responsible`, `accountable`, `ensure`, `must`, `required`, `primary`, `secondary`, `lead`, `escalation`, `address`, `high`, `low`, `critical`, `significant`, `major`, `minor`, `urgent` |
+| `SCENARIO_READING_FORBIDDEN` | strict superset of all three sibling tiers above | `predict`, `forecast`, `probability`, `likelihood`, `worst`, `best`, `severe`, `escalate`, `urgent` |
+| `DECISION_REENTRY_FORBIDDEN` | strict superset of `SCENARIO_READING_FORBIDDEN` (sibling of `TOGAF_CONTAINMENT_FORBIDDEN`, not interchangeable) | `fix`, `change`, `update`, `revise`, `rework`, `should`, `must`, `need`, `urgent`, `critical`, `failed`, `overdue` |
+| `TOGAF_CONTAINMENT_FORBIDDEN` | strict superset of `SCENARIO_READING_FORBIDDEN` (sibling of `DECISION_REENTRY_FORBIDDEN`, not interchangeable) | `mandate`, `justify`, `trigger`, `score`, `rank`, `sequence`, `prioritise`, `prioritize`, `evaluate`, `enforce` |
 
 `REFLECTIVE_FORBIDDEN`, `EXPOSURE_NARRATIVE_FORBIDDEN`, and
 `RESPONSIBILITY_LENS_FORBIDDEN` all extend `SIGNALS_FORBIDDEN` in
@@ -389,6 +392,16 @@ Responsibility Lens forbids ownership-assignment, obligation, severity,
 priority, and remediation framing. None is a strict superset of any
 other.
 
+`DECISION_REENTRY_FORBIDDEN` and `TOGAF_CONTAINMENT_FORBIDDEN` both
+extend `SCENARIO_READING_FORBIDDEN` in different directions: Phase 5
+forbids change-vocabulary (fix / change / update / revise / rework,
+etc.) so the Re-Entry Lens cannot read as recommending change; Phase 6
+forbids authority-vocabulary (mandate / justify / trigger / score /
+rank / sequence / prioritise / evaluate / enforce) so the
+constitutional containment surface cannot read as conferring authority
+on ADC artefacts. Neither is a strict superset of the other and they
+are not interchangeable.
+
 ### Helpers
 
 - `assertGovernanceLanguage`, `assertAllGovernanceLanguage` — used by `Portfolio.tsx`
@@ -396,6 +409,9 @@ other.
 - `assertReflectiveLanguage`, `assertAllReflectiveLanguage` — used by `Reflection.tsx` and by `pages/Exposure.tsx` for its own labels
 - `assertExposureNarrativeLanguage`, `assertAllExposureNarrativeLanguage` — used by `governance/exposureNarratives.ts` for the composed Phase 2 narrative paragraphs
 - `assertResponsibilityLensLanguage`, `assertAllResponsibilityLensLanguage` — used by `governance/responsibilityLens.ts` and by `pages/Exposure.tsx` for the Phase 3 lens literals
+- `assertScenarioReadingLanguage`, `assertAllScenarioReadingLanguage` — used by `governance/scenarioReading.ts` for Phase 4 qualifier and lens literals
+- `assertDecisionReentryLanguage`, `assertAllDecisionReentryLanguage` — used by `governance/decisionReentry.ts` and by `pages/Exposure.tsx` for the Phase 5 re-entry surface
+- `assertTogafContainmentLanguage`, `assertAllTogafContainmentLanguage` — used by `governance/togafContainment.ts`, `governance/misusePlaybooks.ts`, and `pages/Containment.tsx` for the Phase 6 constitutional surface
 
 ### Layering carve-out
 
@@ -419,9 +435,11 @@ Wouter, configured in `artifacts/canvas-ui/src/App.tsx` with
 | `/portfolio` | `Portfolio` | Read-only board of all approved decisions |
 | `/signals` | `Signals` | Leadership-recorded patterns observed across the portfolio |
 | `/reflection` | `Reflection` | Read-only observational view |
+| `/exposure/:adsId` | `Exposure` | Decision Exposure View for one approved decision |
+| `/governance/containment` | `Containment` | TOGAF / ArchiMate constitutional containment layer |
 
 Header navigation (`components/governance/PortfolioHeaderNav.tsx`) is
-shared across all four routes.
+shared across all routes.
 
 ---
 
@@ -894,3 +912,137 @@ component, the `reEntrySignals` `useMemo`, the captured `reEntryNow`
 state, and the `assertAllDecisionReentryLanguage` import in
 `pages/Exposure.tsx` restores exact Phase 4 behaviour without any
 other change.
+
+---
+
+## 17. TOGAF / ArchiMate Constitutional Layer (Phase 6)
+
+A read-only governance surface that records the constitutional
+position of Architecture Decision Canvas artefacts in relation to
+TOGAF artefacts, ArchiMate models, and EA tooling. Phase 6 is an
+**anti-feature** layer: it adds no decision logic, no derivation, no
+new portfolio fields, no new computed signals, and no new exports. It
+only documents and asserts what ADC artefacts must NOT be read as
+doing.
+
+### Files
+
+- `artifacts/canvas-ui/src/governance/togafContainment.ts` — the
+  verbatim mandatory non-authority disclaimer, the docking table
+  (artefact → `REFERENCE_ONLY` / `INTERPRETIVE_ATTACHMENT` /
+  `FORBIDDEN`), and the `validateReferenceOnlyDocking` /
+  `validateInterpretiveAttachmentDocking` validators. The disclaimer
+  is verified by spec-equality at module load (mirroring the Phase 1
+  banner pattern) because it intentionally negates two words —
+  `mandate` and `justify` — that the Phase 6 substring guard bans.
+- `artifacts/canvas-ui/src/governance/misusePlaybooks.ts` — the five
+  misuse intents (`MANDATING`, `JUSTIFYING`, `EVALUATING`,
+  `TRIGGERING`, `NORMALISING`), their detection keyword sets, and the
+  one re-anchoring sentence each intent emits. `detectMisuseIntent`
+  is a pure substring detector; nothing is recorded, escalated, or
+  fed back into the grammar.
+- `artifacts/canvas-ui/src/governance/togafContainmentInvariants.ts`
+  — module-load negative assertions that fail the bundle if any of
+  the following is re-introduced: a structured ADC export from
+  `governance/export.ts` beyond the existing five symbols
+  (`exportADSPdf`, `exportECPPdf`, `exportADSDocx`, `exportECPDocx`,
+  `sanitiseFilenameSegment`); any computed lifecycle field name
+  matching an authority-vocabulary pattern in `portfolioStore.ts`'s
+  `ALLOWED_FIELDS`; or any override mechanism named in the codebase.
+  This module is imported as a side effect from `App.tsx`.
+- `artifacts/canvas-ui/src/governance/staticTextGuard.ts` — adds the
+  `TOGAF_CONTAINMENT_FORBIDDEN` tier (strict superset of
+  `SCENARIO_READING_FORBIDDEN`, sibling of
+  `DECISION_REENTRY_FORBIDDEN`) and the `assertTogafContainmentLanguage`
+  / `assertAllTogafContainmentLanguage` helpers.
+- `artifacts/canvas-ui/src/pages/Containment.tsx` — the route
+  component at `/governance/containment`. Renders the disclaimer, the
+  docking table, the misuse playbook table with a try-phrase input,
+  and the ArchiMate containment statement. Every static label on the
+  page is asserted at module load against
+  `TOGAF_CONTAINMENT_FORBIDDEN`.
+- `artifacts/canvas-ui/src/components/wizard/FreezeMetadataForm.tsx`
+  — runs `detectMisuseIntent` on the live `projectName` and
+  `approvingAuthority` inputs and surfaces a single advisory
+  re-anchoring sentence beneath the form. The hint never blocks
+  submission, never invalidates input, and never persists anything.
+- `artifacts/canvas-ui/src/governance/export.ts` — injects the
+  verbatim mandatory non-authority disclaimer once on the first page
+  of every PDF (after the title and project line, italic) and once as
+  the paragraph after the project line in every DOCX (italic, muted
+  colour, matching the integrity footer's visual register).
+
+### Constitutional position
+
+ADC artefacts are not TOGAF artefacts and are not ArchiMate elements.
+They MAY be cited by reference from approved TOGAF deliverables in
+the `REFERENCE_ONLY` row of the docking table (Architecture Vision,
+Architecture Definition Document, Architecture Contract). They MAY
+appear as a non-directive appendix attached to a descriptive
+`INTERPRETIVE_ATTACHMENT` artefact (Business / Application / Data /
+Technology Architecture Catalogs). For every other TOGAF artefact
+type — and as the default for any artefact type not listed — docking
+is `FORBIDDEN`. Requirements specifications, Architecture Roadmaps,
+Implementation Governance Plans, Statements of Architecture Work,
+Migration Plans, and Architecture Change Management Plans are all
+`FORBIDDEN`: ADC artefacts do not authorise, order, commission, or
+direct the work those artefacts govern.
+
+### Anti-feature guarantees
+
+The following negative invariants are asserted at module load and
+fail the bundle if violated:
+
+- **No structured ADC export.** `governance/export.ts` exports
+  exactly five symbols. Any added export, or any added export
+  serialiser that produces an ArchiMate-compatible model from ADC
+  state, fails the invariant in `togafContainmentInvariants.ts`.
+- **No computed lifecycle fields.** `portfolioStore.ts`'s
+  `ALLOWED_FIELDS` allow-list is checked against an
+  authority-vocabulary pattern set; any new field whose name suggests
+  mandate / justification / trigger / score / rank / sequence /
+  prioritisation / evaluation / enforcement fails the invariant. The
+  four pre-existing portfolio fields that name complexity, change
+  cost, operational overhead, and highest-risk severity are
+  grandfathered explicitly because Phase 1–5 derived and froze them
+  before Phase 6 was authored.
+- **No override mechanism.** No symbol in the codebase named
+  `override`, `bypass`, `force`, `enforce`, `mandate`, or `escalate`
+  is permitted to exist on the constitutional surface. The
+  invariants module enumerates the surface modules it scans.
+
+### Misuse playbooks
+
+Five misuse intents are recognised by purely-local substring
+detection. Each carries one re-anchoring sentence:
+
+| Intent | Re-anchoring sentence |
+| --- | --- |
+| `MANDATING` | This artefact records institutional context; it does not direct what people are obliged to do. |
+| `JUSTIFYING` | This artefact does not provide the basis for funding decisions or delivery ordering. |
+| `EVALUATING` | This artefact does not assess, compare, or judge options. |
+| `TRIGGERING` | This artefact does not initiate processes or set off downstream activity. |
+| `NORMALISING` | This artefact does not establish baselines or institutional defaults to be matched. |
+
+The detector returns the first matching intent or `null`. The
+Containment page renders the same five sentences in a static table
+plus a try-phrase input that surfaces the matched correction live.
+The wizard's `FreezeMetadataForm` reuses the same detector against
+its two free-text inputs and renders the same correction below the
+form when an intent is matched.
+
+### Mandatory disclaimer
+
+A single verbatim non-authority disclaimer is the only string
+required to appear in three places:
+
+> *This material references Architecture Decision Canvas artefacts
+> for contextual understanding only. It does not mandate action,
+> justify change, or substitute for human judgment.*
+
+The disclaimer renders on the Containment page, on the first page of
+every exported PDF, and as the paragraph immediately after the
+project line in every exported DOCX. It is the only Phase 6 surface
+string that contains the bare words `mandate` and `justify`; it is
+therefore exempted from the substring guard and verified by
+spec-equality at module load.

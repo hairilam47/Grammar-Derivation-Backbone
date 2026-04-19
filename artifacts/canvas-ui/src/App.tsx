@@ -8,6 +8,12 @@ import Portfolio from "@/pages/Portfolio";
 import Signals from "@/pages/Signals";
 import Reflection from "@/pages/Reflection";
 import Exposure from "@/pages/Exposure";
+import Containment from "@/pages/Containment";
+// Phase 6 — module-load side effect: importing this module runs the
+// negative-invariant assertions that fail the application bundle if
+// any forbidden surface (structured ADC export, computed lifecycle
+// field, override mechanism) is re-introduced.
+import "@/governance/togafContainmentInvariants";
 
 function DarkModeApplier() {
   useEffect(() => {
@@ -24,6 +30,7 @@ function Router() {
       <Route path="/signals" component={Signals} />
       <Route path="/reflection" component={Reflection} />
       <Route path="/exposure/:adsId" component={Exposure} />
+      <Route path="/governance/containment" component={Containment} />
       <Route component={NotFound} />
     </Switch>
   );

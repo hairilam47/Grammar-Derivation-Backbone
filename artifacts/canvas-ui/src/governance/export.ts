@@ -11,6 +11,7 @@ import {
   PageNumber,
 } from "docx";
 import type { ADS, ECP } from "./types";
+import { MANDATORY_NON_AUTHORITY_DISCLAIMER } from "./togafContainment";
 
 const INTEGRITY_FOOTER =
   "This artefact was system-generated from an approved Architecture Decision Snapshot.";
@@ -206,6 +207,17 @@ function exportPdf(
   writeWrapped(documentTitle, 18, "bold");
   y += 8;
   writeWrapped(`Project: ${meta.projectName}`, 11, "normal");
+  y += 8;
+  // Phase 6 (PH6-HC3) — verbatim mandatory non-authority disclaimer
+  // appears once on the first page of every exported artefact, after
+  // the title and project line. Italic + muted grey (matching the
+  // integrity footer's `setTextColor(120)` register) so it carries
+  // no emphasis affordance and reads as ambient, non-directive
+  // documentation. Restore black text colour afterwards so subsequent
+  // section content is unaffected.
+  doc.setTextColor(120);
+  writeWrapped(MANDATORY_NON_AUTHORITY_DISCLAIMER, 9, "italic");
+  doc.setTextColor(0);
   y += 14;
 
   for (const section of sections) {
@@ -245,6 +257,20 @@ async function exportDocx(
     }),
     new Paragraph({
       children: [new TextRun({ text: `Project: ${meta.projectName}`, size: 22 })],
+      spacing: { after: 120 },
+    }),
+    // Phase 6 (PH6-HC3) — verbatim mandatory non-authority disclaimer
+    // as the paragraph immediately after the project line. Italic +
+    // muted colour matches the integrity footer's visual register.
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: MANDATORY_NON_AUTHORITY_DISCLAIMER,
+          italics: true,
+          size: 18,
+          color: "808080",
+        }),
+      ],
       spacing: { after: 240 },
     }),
   );

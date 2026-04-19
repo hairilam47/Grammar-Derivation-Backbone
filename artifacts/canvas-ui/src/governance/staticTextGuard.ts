@@ -310,3 +310,82 @@ export function assertDecisionReentryLanguage(text: string): void {
 export function assertAllDecisionReentryLanguage(texts: string[]): void {
   for (const t of texts) assertDecisionReentryLanguage(t);
 }
+
+// Phase 6 (PH6-HC4) extends SCENARIO_READING with a constitutional /
+// containment-specific tier for the TOGAF / ArchiMate Constitutional
+// Layer. Phase 6 surface text describes only what ADC artefacts must
+// NOT do (mandate, justify, trigger, score/rank, sequence/prioritise,
+// evaluate, enforce). Every label, helper sentence, table rationale,
+// and re-anchoring sentence is checked against this tier at module
+// load.
+//
+// TOGAF_CONTAINMENT_FORBIDDEN is a STRICT SUPERSET of
+// SCENARIO_READING_FORBIDDEN. It is a SIBLING of
+// DECISION_REENTRY_FORBIDDEN: each layer extends SCENARIO_READING in
+// its own direction. Phase 5 forbids change-vocabulary
+// (fix/change/update/revise/rework, etc.); Phase 6 forbids
+// authority-vocabulary (mandate/justify/trigger/score/rank/sequence/
+// prioritise/evaluate/enforce). Neither is a superset of the other
+// and they are not interchangeable. Phase 6's surface deliberately
+// uses the bare word "change" inside the verbatim mandatory
+// non-authority disclaimer (which negates it), so adding "change" to
+// Phase 6 would force a second exemption with no governance benefit.
+//
+// Layering: PORTFOLIO ⊂ SIGNALS ⊂ {REFLECTIVE, EXPOSURE_NARRATIVE,
+//                                  RESPONSIBILITY_LENS} ⊂
+//           SCENARIO_READING ⊂ {DECISION_REENTRY, TOGAF_CONTAINMENT}
+//
+// Carve-out notes for substring matching (Phase 6 surface):
+//   - "mandate" matches "mandates", "mandated", but NOT "mandatory"
+//     (which ends in "-ory" rather than "-e"). Phase 6 surface uses
+//     "mandatory" (in the disclaimer label) deliberately and that
+//     passes the scan.
+//   - "justify" matches "justified", "justifying", but NOT
+//     "justifies" (which ends in "-ifies" not "-ify"). Phase 6
+//     surface intentionally uses neither.
+//   - "trigger" matches "triggered", "triggering", "triggers".
+//     Phase 6 surface intentionally avoids all four.
+//   - "score" matches "scored", "scoring", "scores", "scoreboard".
+//     Phase 6 surface intentionally avoids all five.
+//   - "rank" matches "ranked", "ranking", "ranks". Phase 6 surface
+//     intentionally avoids all four.
+//   - "sequence" matches "sequenced", "sequencing", "sequences".
+//     Phase 6 surface intentionally avoids all four.
+//   - "prioritise" / "prioritize" match their inflected forms;
+//     Phase 6 surface intentionally avoids both.
+//   - "evaluate" matches "evaluated", but NOT "evaluation"
+//     (which ends in "-ation" rather than retaining the trailing "e")
+//     and NOT "evaluating" (same reason). Phase 6 surface
+//     intentionally avoids every "evaluate"-rooted word regardless;
+//     callers that need to discuss assessment activity should use
+//     the verb "assess" or the noun "assessment", neither of which
+//     embeds the banned root.
+//   - "enforce" matches "enforced", "enforcement". Phase 6 surface
+//     intentionally avoids both.
+//   - The verbatim mandatory non-authority disclaimer DOES contain
+//     the bare words "mandate" and "justify" (in the negated phrase
+//     "does not mandate action, justify change"). The disclaimer is
+//     therefore exempted from this substring scan and verified by
+//     spec-equality at module load inside `togafContainment.ts`,
+//     mirroring the Phase 1 banner / Phase 5 prefix exemption pattern.
+export const TOGAF_CONTAINMENT_FORBIDDEN = dedup([
+  ...SCENARIO_READING_FORBIDDEN,
+  "mandate",
+  "justify",
+  "trigger",
+  "score",
+  "rank",
+  "sequence",
+  "prioritise",
+  "prioritize",
+  "evaluate",
+  "enforce",
+]);
+
+export function assertTogafContainmentLanguage(text: string): void {
+  checkAgainst(text, TOGAF_CONTAINMENT_FORBIDDEN);
+}
+
+export function assertAllTogafContainmentLanguage(texts: string[]): void {
+  for (const t of texts) assertTogafContainmentLanguage(t);
+}
