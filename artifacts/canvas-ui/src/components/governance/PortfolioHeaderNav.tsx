@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { LayoutGrid, Layout } from "lucide-react";
+import { LayoutGrid, Layout, Radio } from "lucide-react";
 
 export function PortfolioHeaderNav() {
   const [location] = useLocation();
@@ -23,6 +23,16 @@ export function PortfolioHeaderNav() {
         data-testid="link-portfolio"
       >
         <LayoutGrid className="w-3.5 h-3.5" /> Portfolio
+      </Link>
+      <span className="text-muted-foreground/40">·</span>
+      <Link
+        href="/signals"
+        className={`flex items-center gap-1.5 hover:text-primary transition-colors ${
+          location === "/signals" ? "text-primary" : "text-muted-foreground"
+        }`}
+        data-testid="link-signals"
+      >
+        <Radio className="w-3.5 h-3.5" /> Signals
       </Link>
     </nav>
   );

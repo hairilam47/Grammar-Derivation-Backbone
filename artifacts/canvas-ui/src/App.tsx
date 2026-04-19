@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Wizard from "@/pages/Wizard";
 import Portfolio from "@/pages/Portfolio";
+import Signals from "@/pages/Signals";
 
 function DarkModeApplier() {
   useEffect(() => {
@@ -18,6 +19,7 @@ function Router() {
     <Switch>
       <Route path="/" component={Wizard} />
       <Route path="/portfolio" component={Portfolio} />
+      <Route path="/signals" component={Signals} />
       <Route component={NotFound} />
     </Switch>
   );
