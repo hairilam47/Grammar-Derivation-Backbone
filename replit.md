@@ -101,7 +101,7 @@ Every static label rendered by the Portfolio and Signals pages is registered thr
 
 - `PORTFOLIO_FORBIDDEN` — Step 5: `should`, `recommended`, `recommend`, `optimal`, `best practice`, `best-practice`, `preferred`, `ideal`, `ought to`. These would imply judgement or recommendation.
 - `SIGNALS_FORBIDDEN` — Step 5 set plus `priority`, `fix`, `resolve`, `escalate`, `mitigate`. These would imply ranking, remediation, or escalation.
-- `REFLECTIVE_FORBIDDEN` — Step 6 set plus `optimise`, `optimize`, `improve`, `reduce`, `urgent`, `critical`, `hotspot`, `hot-spot`, `attention required`, `target`, `norm`. These would imply optimisation, urgency, or normative targets and have no place in a purely descriptive reflective view. The Step 7 layer deliberately omits the inherited tokens `recommend` and `recommended` — mirroring the `priority` carve-out between PORTFOLIO and SIGNALS — so the Reflection interpretation panel can state that the view *"does not assess, rank, recommend, or require action"* (an explicit negation of system behaviour).
+- `REFLECTIVE_FORBIDDEN` — strict superset of `SIGNALS_FORBIDDEN`, additionally rejecting `optimise`, `optimize`, `improve`, `reduce`, `urgent`, `critical`, `hotspot`, `hot-spot`, `attention required`, `target`, `norm`. These would imply optimisation, urgency, or normative targets and have no place in a purely descriptive reflective view.
 
 The split exists because the Portfolio interpretation panel must be able to say *"does not imply priority"*, while the Signals page must reject the bare word `priority` in any of its labels. Each layer asserts its own vocabulary independently via `assertAllGovernanceLanguage` / `assertAllSignalsLanguage` / `assertAllReflectiveLanguage`.
 

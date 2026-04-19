@@ -50,7 +50,7 @@ const T = {
   interpretation1:
     "This view is descriptive only. It shows how recorded decisions and recorded policy signals have evolved over time.",
   interpretation2:
-    "It does not assess, rank, recommend, or require action. Sequence and grouping are presentation conveniences only.",
+    "It does not assess, rank, prescribe, or require action. Sequence and grouping are presentation conveniences only.",
   interpretation3:
     "Every figure on this page is a plain count or a chronological listing of records already present in the portfolio and signals stores.",
   lineageHeading: "Decision Lineage",

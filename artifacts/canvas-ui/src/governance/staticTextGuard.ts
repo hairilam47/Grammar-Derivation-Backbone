@@ -31,23 +31,11 @@ const SIGNALS_FORBIDDEN = [
 // Step 7 (S7-HC5) extends the SIGNALS vocabulary with terms that would
 // imply optimisation, urgency, or normative targets. The Reflective
 // Governance View is descriptive only and must reject any wording that
-// could be read as guidance or judgement.
-//
-// One deliberate carve-out: the inherited tokens "recommend" and
-// "recommended" are intentionally OMITTED. This mirrors the existing
-// PORTFOLIO -> SIGNALS layering, where PORTFOLIO forbids "priority"
-// only at the SIGNALS layer so the Portfolio interpretation panel can
-// still say "does not imply priority". In the same way, the Reflection
-// interpretation panel must be able to declare that the view "does not
-// assess, rank, recommend, or require action" — using the word inside
-// an explicit negation of system behaviour. Any prescriptive use of
-// "recommend" in actual guidance text remains rejected by the SIGNALS
-// guard at the layer below.
-const SIGNALS_FORBIDDEN_FOR_REFLECTIVE = SIGNALS_FORBIDDEN.filter(
-  (t) => t !== "recommend" && t !== "recommended",
-);
+// could be read as guidance or judgement. REFLECTIVE_FORBIDDEN is a
+// strict superset of SIGNALS_FORBIDDEN (which is itself a strict
+// superset of PORTFOLIO_FORBIDDEN).
 export const REFLECTIVE_FORBIDDEN = [
-  ...SIGNALS_FORBIDDEN_FOR_REFLECTIVE,
+  ...SIGNALS_FORBIDDEN,
   "optimise",
   "optimize",
   "improve",
