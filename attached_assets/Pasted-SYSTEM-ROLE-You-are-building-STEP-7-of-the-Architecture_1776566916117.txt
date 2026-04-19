@@ -1,0 +1,170 @@
+SYSTEM ROLE
+You are building STEP 7 of the Architecture Decision Canvas.
+STEP 1 (Architecture Grammar Engine), STEP 2 (Context & Capability Declaration),
+STEP 3 (Trade‑Off Exploration), STEP 4 (Freeze Decision & Export — ADS / ECP),
+STEP 5 (Portfolio Governance View), and STEP 6 (Policy Signals & Institutional Memory)
+are COMPLETE, APPROVED, and FROZEN.
+STEP 7 is a READ‑ONLY REFLECTIVE GOVERNANCE VIEW.
+It exists to help an institution observe how its decisions and governance attention evolve over time.
+STEP 7 MUST NOT:
+
+make or change decisions
+recommend actions or interventions
+encode standards or targets
+imply urgency, necessity, or correctness
+enforce compliance or optimisation
+grant new authority to any role
+
+STEP 7 reflects institutional cognition, not institutional intent.
+
+STEP 7 OBJECTIVE
+Implement a reflective, observational layer that allows leadership to see:
+
+how often architectural decisions are revised,
+how governance attention (Policy Signals) changes over time,
+where attention is concentrated, diffused, or absent.
+
+STEP 7 answers exactly one question:
+
+“How does this institution’s decision‑making and governance attention change over time?”
+
+STEP 7 does not answer:
+
+what should be changed,
+which decisions are wrong,
+which concerns are most important,
+what actions must follow.
+
+
+SECTION 3 — HARD CONSTRAINTS (NON‑NEGOTIABLE)
+HARD CONSTRAINTS — MUST BE ENFORCED
+
+S7‑HC1: STRICTLY DERIVED‑ONLY
+- STEP 7 MAY read ONLY from:
+  - frozen ADS (via portfolio store)
+  - Policy Signals (Step 6 store)
+- STEP 7 MUST NOT import:
+  - grammar engine
+  - wizard logic
+  - freeze logic
+  - ADS/ECP builders
+
+S7‑HC2: NO UPSTREAM COUPLING
+- No Step 1–6 module may import Step 7.
+- STEP 7 has zero influence on decision, portfolio, or signals flows.
+
+S7‑HC3: READ‑ONLY, NO MUTATION
+- STEP 7 MUST NOT create, edit, advance, or delete any artefact.
+- STEP 7 provides no lifecycle controls of any kind.
+
+S7‑HC4: NO AGGREGATION WITH JUDGEMENT
+- Aggregation is limited to:
+  counts, timelines, lineage sequences.
+- STEP 7 MUST NOT compute:
+  scores, thresholds, health indicators, hot‑spots.
+
+S7‑HC5: NO OPTIMISATION OR PRESCRIPTION
+- STEP 7 MUST NOT express:
+  recommendations, guidance, or expectations.
+- Forbidden language includes:
+  should, recommended, priority, fix, optimise, reduce, improve.
+
+S7‑HC6: NO NEW AUTHORITY
+- STEP 7 MUST NOT expand who may author Policy Signals.
+- Authorship legitimacy remains governed by Step 6 conventions.
+
+S7‑HC7: GOVERNANCE LANGUAGE ONLY
+- All visible text MUST pass the governance language guard.
+- Language must be neutral, reflective, and audit‑appropriate.
+
+
+SECTION 4 — ALLOWED OBSERVATIONS
+ALLOWED OBSERVATIONS — DESCRIPTIVE ONLY
+
+STEP 7 MAY observe and display:
+
+1. Decision Lineage
+   - Revisions of a single adsId over time
+   - Temporal spacing of revisions
+   - Count of versions per logical decision
+
+2. Governance Attention Over Time
+   - Policy Signals displayed by category across time
+   - State progression (Observed → Under Discussion → Acknowledged)
+   - No ranking, no urgency framing
+
+3. Memory Density
+   - Count of acknowledged signals
+   - Distribution by category (descriptive only)
+
+4. Silence Awareness (Optional)
+   - Areas with repeated decisions but no signals
+   - Displayed without interpretation or labels
+
+
+SECTION 5 — ALLOWED VIEWS (ILLUSTRATIVE)
+ALLOWED VIEWS — ILLUSTRATIVE, NOT EXHAUSTIVE
+
+1. DECISION LINEAGE VIEW
+   - Timeline or list showing how a decision evolved
+   - No judgement on frequency or stability
+
+2. GOVERNANCE ATTENTION TIMELINE
+   - Neutral display of signals over time by category
+   - No highlighting of peaks or “critical periods”
+
+3. MEMORY OVERVIEW
+   - Snapshot of institutional memory accumulation
+   - Focus on what was acknowledged, not what was acted upon
+
+
+SECTION 6 — EXPLICIT NON‑GOALS
+STEP 7 MUST NEVER:
+
+- Recommend decisions or changes
+- Rank or score decisions or signals
+- Define targets, norms, or expectations
+- Highlight “problem areas” or “hot spots”
+- Generate alerts or follow‑ups
+- Act as a compliance or audit engine
+- Justify mandated architectural changes
+
+If a visualization could be used to mandate action,
+it is OUT OF SCOPE by definition.
+
+
+SECTION 7 — INTERPRETIVE SAFEGUARD
+INTERPRETIVE SAFEGUARD — NON‑NEGOTIABLE
+
+Before any Step 7 feature is accepted,
+it must pass this test:
+
+“Could this display be used to justify
+a required architectural change?”
+
+- If YES → Reject the feature
+- If NO  → Feature remains governance‑safe
+
+
+SECTION 8 — PRECONDITIONS FOR IMPLEMENTATION
+STEP 7 SHOULD ONLY BE IMPLEMENTED WHEN:
+
+- Step 6 (Policy Signals) is in sustained use
+- Signals exist across meaningful time windows
+- Leadership begins asking reflective,
+  meta‑governance questions organically
+
+If these conditions are not met,
+STEP 7 SHOULD REMAIN CONCEPTUAL ONLY.
+
+
+STOP CONDITION
+STOP IMPLEMENTATION WHEN:
+
+- Step 7 renders as read‑only only
+- No authority pathways exist
+- No upstream behavior is affected
+- All displays remain descriptive
+- Step 7 can be removed without breaking Steps 1–6
+
+END OF STEP 7 PROMPT
