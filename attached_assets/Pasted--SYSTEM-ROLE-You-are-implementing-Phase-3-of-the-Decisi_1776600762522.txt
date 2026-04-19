@@ -1,0 +1,241 @@
+
+SYSTEM ROLE
+You are implementing Phase 3 of the Decision Exposure View in the Architecture Decision Canvas.
+The following components are COMPLETE, APPROVED, and FROZEN:
+
+Steps 1–7 (Architecture Decision Canvas core)
+Decision Exposure — Phase 1 (Baseline Exposure)
+Decision Exposure — Phase 2 (Exposure Narratives)
+
+Phase 3 introduces a read‑only, descriptive lens that makes visible where responsibility pressure will reside across institutional functions as a result of an approved architectural decision.
+Phase 3 must remain non‑authoritative, non‑prescriptive, and non‑operational.
+
+PHASE 3 OBJECTIVE
+Implement a Cross‑Functional Responsibility Lens that answers exactly one question:
+
+“Which institutional functions will need to live with the consequences of this decision over time?”
+
+Phase 3 shows where pressure resides, not who must act, what must be done, or when.
+
+ABSOLUTE NON‑GOALS
+Phase 3 MUST NOT:
+
+assign ownership or accountability
+imply obligation, action, or escalation
+estimate effort, workload, cost, or urgency
+prioritise or rank functions
+introduce severity, risk level, or timelines
+resemble a RACI, delivery plan, or coordination tool
+
+If Phase 3 could reasonably be used to justify a mandated action, it has failed.
+
+HARD CONSTRAINTS (NON‑NEGOTIABLE)
+PH3‑HC1: READ‑ONLY
+- Phase 3 MUST NOT create, edit, advance, or delete any artefact.
+
+PH3‑HC2: SINGLE‑DECISION SCOPE
+- Phase 3 renders for ONE decision only.
+- No aggregation or comparison across decisions.
+
+PH3‑HC3: DERIVED‑ONLY
+- Inputs are limited to:
+  - Phase 1 exposure surfaces
+  - Phase 2 narratives
+  - Frozen ADS/ECP metadata via portfolio read‑model
+- No new data sources of any kind.
+
+PH3‑HC4: NO OWNERSHIP LANGUAGE
+- Forbidden terms include:
+  owner, responsible, accountable, ensure, must, required,
+  primary, secondary, lead, escalation, fix, address.
+
+PH3‑HC5: NO SEVERITY / PRIORITY
+- Forbidden terms include:
+  high, low, critical, significant, major, minor, urgent, priority.
+
+PH3‑HC6: NO PRESCRIPTION
+- Phase 3 MUST NOT imply remediation, mitigation, or follow‑up.
+
+PH3‑HC7: REMOVABLE
+- Removing Phase 3 must leave Phase 1 and Phase 2 rendering unchanged.
+
+
+POSITIONING & PLACEMENT
+Phase 3 is rendered inside the existing Decision Exposure View, after Phase 2 narratives.
+Decision Exposure View
+  ├─ Phase 1 — Baseline Exposure
+  ├─ Phase 2 — Exposure Narratives
+  └─ Phase 3 — Cross‑Functional Responsibility Lens   ← this task
+
+Phase 3 MUST NOT introduce:
+
+a new route
+a new page
+a standalone panel
+
+It is a lens, not a layer of control.
+
+OUTPUT STRUCTURE (MANDATORY)
+Render a plain, non‑ranked list of organisational functions.
+For each function, show one or more responsibility pressure types.
+Structure
+Organisational Function
+  · responsibility pressure type (noun phrase)
+  · responsibility pressure type (noun phrase)
+
+Ordering Rules
+
+Organisational functions: alphabetical only
+Responsibility pressure types: alphabetical only
+No ordering by magnitude, importance, or frequency
+
+
+RESPONSIBILITY PRESSURE GRAMMAR (MANDATORY)
+Every responsibility pressure item MUST be a noun phrase.
+✅ Allowed Examples
+
+access monitoring obligation
+incident response preparedness
+regulatory interpretation load
+assurance defensibility consideration
+operational resilience obligation
+recovery preparedness expectation
+
+❌ Forbidden Examples
+
+must monitor access
+responsible for compliance
+owns audit risk
+needs improvement
+high operational burden
+
+Verbs, imperatives, ownership, and evaluation are not permitted.
+
+DERIVATION LOGIC (STRUCTURAL)
+Phase 3 pressure types MUST be derived structurally, not heuristically, from:
+
+Governance Domains (Phase 1)
+Impact Surfaces (Phase 1)
+External Scrutiny Vectors (Phase 1)
+ECP constraint categories
+Phase 2 narratives (as contextual justification only, not as text source)
+
+Canonical Mapping (Illustrative)
+
+
+Legal / Compliance
+
+Data Protection & Privacy domain present
+Regulatory scrutiny vector present
+→ pressure types:
+
+regulatory interpretation load
+assurance defensibility consideration
+
+
+
+
+
+Security Operations
+
+Identity & Access Oversight present
+Infrastructure impact surface includes monitoring / resilience
+→ pressure types:
+
+access monitoring obligation
+incident response preparedness
+
+
+
+
+
+Data Governance
+
+Data Protection & Privacy present
+→ pressure types:
+
+personal data stewardship obligation
+
+
+
+
+
+Platform / Infrastructure
+
+Infrastructure impact surface present
+ECP includes availability / recovery constraints
+→ pressure types:
+
+operational resilience obligation
+recovery preparedness expectation
+
+
+
+
+
+Customer Support
+
+External Access capability present
+Product impact surface present
+→ pressure types:
+
+user inquiry handling obligation
+incident communication expectation
+
+
+
+
+
+Procurement / Vendor Management
+
+ECP includes third‑party / integration constraints
+→ pressure types:
+
+vendor assurance coordination expectation
+
+
+
+
+
+Pressure exists because of decision structure, not because action is required.
+
+UI REQUIREMENTS
+
+Neutral styling consistent with Phase 1 and Phase 2
+No icons, colours, badges, or emphasis
+No links or CTAs
+No expand/collapse tied to action flows
+
+Render a short interpretive prefix above the list:
+
+“This section describes where responsibility pressure resides as a result of the decision. It does not assign ownership or require action.”
+
+This text MUST pass the strictest governance language guard.
+
+EMPTY‑STATE BEHAVIOUR
+If no organisational functions derive:
+
+“No cross‑functional responsibility pressure is identified for this decision.”
+
+No CTA. No implication of incompleteness.
+
+VERIFICATION CHECKS (MANDATORY)
+Before Phase 3 is merged, verify:
+
+✅ No forbidden vocabulary renders (guard enforced)
+✅ No verbs appear in responsibility pressure items
+✅ Alphabetical ordering enforced at both levels
+✅ No visual dominance or emphasis
+✅ Removing Phase 3 leaves Phase 1 & 2 untouched
+✅ A reader cannot reasonably infer “this team must act” from the UI alone
+
+
+STOP CONDITION
+STOP IMPLEMENTATION WHEN:
+
+- Phase 3 renders neutrally and descriptively
+- No ownership, obligation, or priority is implied
+- Phase 3 is removable without side‑effects
+- The system remains a guide, not a director
+
+END OF PHASE 3 PROMPT
