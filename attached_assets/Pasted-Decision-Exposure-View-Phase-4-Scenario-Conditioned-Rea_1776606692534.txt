@@ -1,0 +1,218 @@
+Decision Exposure View — Phase 4
+Scenario‑Conditioned Reading (Contextual Re‑Reading, Not Prediction)
+
+SYSTEM ROLE
+You are implementing Phase 4 — Scenario‑Conditioned Reading inside the Decision Exposure View of the Architecture Decision Canvas.
+The following are COMPLETE, APPROVED, and FROZEN and must not be modified:
+
+Steps 1–7 (Architecture Decision Canvas core)
+Decision Exposure — Phase 1 (Baseline Exposure)
+Decision Exposure — Phase 2 (Exposure Narratives)
+Decision Exposure — Phase 3 (Cross‑Functional Responsibility Lens)
+
+Phase 4 introduces a non‑predictive, non‑prescriptive reading lens that allows an already‑approved decision to be re‑read under alternate usage contexts.
+Phase 4 MUST NOT simulate, forecast, rank, evaluate, or recommend.
+
+PHASE 4 OBJECTIVE
+Implement a Scenario‑Conditioned Reading lens that answers exactly one question:
+
+“How does the same, already‑known exposure read under a different usage context?”
+
+Phase 4 changes context, not content.
+It allows mental re‑reading, not system reasoning.
+
+ABSOLUTE NON‑GOALS
+Phase 4 MUST NEVER:
+
+predict outcomes, incidents, or failures
+introduce probability, likelihood, or severity
+rank or compare scenarios
+compare lenses side‑by‑side
+recommend action, mitigation, or response
+introduce urgency, priority, or timelines
+add new exposure surfaces or responsibilities
+
+If Phase 4 answers “which scenario is worse?”, it has failed.
+
+HARD CONSTRAINTS (NON‑NEGOTIABLE)
+PH4‑HC1: READ‑ONLY
+- Phase 4 MUST NOT create, edit, advance, or delete any artefact.
+
+PH4‑HC2: SINGLE‑DECISION SCOPE
+- Phase 4 renders for ONE decision only.
+- No aggregation or comparison across decisions.
+
+PH4‑HC3: DERIVED‑ONLY
+- Inputs are limited to:
+  - Phase 1 exposure surfaces
+  - Phase 2 exposure narratives
+  - Phase 3 responsibility pressure
+  - Frozen ADS / ECP metadata via portfolio read‑model
+- No new data sources of any kind.
+
+PH4‑HC4: NO NEW CONTENT
+- Phase 4 MUST NOT introduce new exposure items,
+  responsibility pressures, or governance domains.
+
+PH4‑HC5: NO SEVERITY / PRIORITY LANGUAGE
+- Forbidden terms include:
+  high, low, critical, severe, major, minor, urgent,
+  priority, risk level, likelihood.
+
+PH4‑HC6: NO PRESCRIPTION
+- Phase 4 MUST NOT imply obligation, remediation,
+  escalation, or follow‑up.
+
+PH4‑HC7: REMOVABLE
+- Removing Phase 4 must leave Phases 1–3 unchanged.
+
+
+PLACEMENT & VISIBILITY
+Phase 4 is rendered inside the existing Decision Exposure View, below Phase 3.
+Decision Exposure View
+  ├─ Phase 1 — Baseline Exposure
+  ├─ Phase 2 — Exposure Narratives
+  ├─ Phase 3 — Responsibility Lens
+  └─ Phase 4 — Scenario‑Conditioned Reading   ← this task
+
+Phase 4 MUST NOT:
+
+introduce a new route
+introduce a new page
+replace or hide baseline content
+
+
+SCENARIO LENS SET (FIXED)
+Phase 4 supports only the following scenario lenses:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+LensDescriptionBaseline (Approved Context)Decision as originally approvedLimited‑Scale UseNarrow deployment or restricted audienceOrganisation‑Wide UseBroad internal adoptionExternal Partner ExposureUse beyond organisational boundaryExtended LifespanUse significantly longer than initially planned
+Additional lenses must not be added without governance review.
+
+USER INTERACTION MODEL
+
+Phase 4 is opt‑in
+Default state is Baseline (Approved Context)
+Only one lens active at a time
+No side‑by‑side comparison
+Switching lenses does not animate or highlight deltas
+
+Scenario selection must feel reflective, not analytical.
+
+OUTPUT MODEL (ANNOTATION‑ONLY)
+Phase 4 MUST NOT add new sections.
+Instead, it annotates existing Phase 1–3 elements with contextual qualifiers.
+Example (Illustrative)
+
+Security Operations
+· access monitoring obligation (becomes more continuous under organisation‑wide use)
+
+The underlying exposure does not change.
+
+ANNOTATION GRAMMAR (MANDATORY)
+All Phase 4 annotations MUST follow this grammar:
+Existing element
+→ contextual qualifier (non‑comparative noun phrase)
+
+✅ Allowed Qualifiers (Illustrative)
+
+persists
+broadens
+concentrates
+becomes more continuous
+remains episodic
+becomes more distributed
+
+❌ Forbidden Qualifiers
+
+increases risk
+worsens
+becomes critical
+must be mitigated
+requires action
+escalates
+
+Qualifiers must never imply evaluation or obligation.
+
+LANGUAGE GUARD REQUIREMENTS
+Introduce a new vocabulary tier:
+SCENARIO_READING_FORBIDDEN
+
+This must be a strict superset of:
+
+RESPONSIBILITY_LENS_FORBIDDEN
+EXPOSURE_NARRATIVE_FORBIDDEN
+SIGNALS_FORBIDDEN
+
+Additionally forbid:
+predict*, forecast*, probability*, likelihood*,
+worst*, best*, severe*, escalate*, urgent*
+
+All annotations, selectors, labels, and helper text MUST pass this guard at module load.
+
+EMPTY‑STATE BEHAVIOUR
+If a selected scenario introduces no contextual qualifiers:
+
+“This scenario does not change how the existing exposure reads.”
+
+No CTA. No implication of missing data.
+
+INTERPRETIVE SAFEGUARD (MANDATORY)
+Every Phase 4 element must pass this test:
+
+Could a reader say “this scenario means we must act” based on this view alone?
+
+
+If yes → reject implementation
+If no → design remains governance‑safe
+
+This safeguard overrides perceived usefulness.
+
+VERIFICATION CHECKS (REQUIRED)
+Before merging Phase 4, verify:
+
+✅ No forbidden vocabulary renders
+✅ No new exposure or responsibility elements appear
+✅ Only contextual qualifiers change between lenses
+✅ No visual emphasis or delta indicators
+✅ Removing Phase 4 restores Phases 1–3 exactly
+✅ Users cannot compare scenarios side‑by‑side
+✅ Baseline context remains the default
+
+
+STOP CONDITION
+STOP IMPLEMENTATION WHEN:
+
+- Phase 4 re‑contextualises exposure without altering it
+- No prediction, comparison, or prescription exists
+- Phase 4 is fully removable
+- The system remains a thinking aid, not a decision engine
+
+END OF PHASE 4 PROMPT
