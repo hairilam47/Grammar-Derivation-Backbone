@@ -1,0 +1,119 @@
+
+Phase 6 (ADC × TOGAF × ArchiMate)
+This prompt is used to guide Replit (or any implementation agent) to implement Phase 6 of the Architecture Decision Canvas (ADC). Phase 6 is governance‑critical and must be treated as constraint‑first, not feature‑first.
+The goal is not to build new analytics or UI capabilities. The goal is to ensure that the existing ADC system survives real institutional environments when deployed alongside TOGAF, ArchiMate, and EA tooling.
+
+
+System Positioning (Read Carefully)
+You are implementing Phase 6 only.
+Phase 6:
+
+Adds no new decision logic
+Adds no automation
+Adds no optimisation, scoring, or recommendation
+Adds no execution or workflow ties
+Phase 6 consists of guardrails, constraints, and enforcement of non‑authority.
+If at any point your implementation would allow the system to:
+
+recommend actions
+rank or score options
+trigger reviews automatically
+justify funding, sequencing, or delivery
+👉 STOP. That implementation is invalid.
+
+
+Phase 6 Scope Overview
+Phase 6 is composed of three sub‑phases:
+
+Phase 6A — TOGAF Artefact Docking (Constraints)
+Phase 6B — Misuse Playbooks (Human Interventions)
+Phase 6C — ArchiMate & EA Tooling Containment
+All three must be implemented.
+
+
+Phase 6A — TOGAF Artefact Docking (Implementation Rules)
+Objective
+Ensure ADC artefacts can be referenced by TOGAF artefacts without becoming authoritative inputs.
+Implementation Requirements
+
+Artefact Docking ClassificationEach TOGAF artefact type must be classified as one of: REFERENCE_ONLY
+INTERPRETIVE_ATTACHMENT
+FORBIDDEN
+This classification is static and enforced.
+Enforcement LogicIf an artefact is marked FORBIDDEN, ADC artefacts must not be attachable, linkable, or embeddable in any form.
+If REFERENCE_ONLY, only ADS ID and decision date may appear.
+If INTERPRETIVE_ATTACHMENT, ADC narratives may appear only as non‑directive appendices.
+Mandatory Disclaimer Injection Whenever ADC content appears (where allowed), inject verbatim:
+
+"This material references Architecture Decision Canvas artefacts for contextual understanding only. It does not mandate action, justify change, or substitute for human judgment."
+
+
+
+Validation FailuresAny attempt to: derive scope
+generate requirements
+justify sequencing must produce a hard validation error.
+No override mechanisms are permitted.
+
+
+Phase 6B — Misuse Playbooks (Implementation Rules)
+Objective
+Support human governance correction, not enforcement or policing.
+Implementation Requirements
+
+Misuse Category Detection The system must recognise the following misuse intents (textual / contextual):Mandating
+Justifying
+Evaluating
+Triggering
+Normalising
+Detection is advisory only.
+
+Correction Language RegistryMaintain a registry of approved correction language.
+When misuse is detected, the system may: suggest correction language
+provide contextual guidance
+It must never block user actions automatically.
+No Escalation PathsDo not implement warnings, rule violations, or escalation flows.
+The only permitted response is suggested re‑anchoring language.
+If the system can stop a user, it has exceeded Phase 6 authority.
+
+
+Phase 6C — ArchiMate & EA Tooling Containment
+Objective
+Prevent ADC from being absorbed into models, schemas, analytics, or workflows.
+Implementation Requirements
+
+Reference‑Only PolicyADC may only appear as static text references (e.g., ADC_REF: ADS‑xxxx).
+ADC must never become a model element, relation, attribute, or state.
+Prohibited Constructs (Hard Fail) The system must reject any attempt to create:ADC lifecycle fields
+ADC‑driven metrics or charts
+Exposure severity or scoring
+Re‑entry triggers or events
+Tool Interaction SafeguardsADC data must be exportable only as text.
+Disable joins, queries, filters, or analytics using ADC data.
+If ADC can be computed on, the implementation is invalid.
+
+
+Non‑Functional Requirements (Critical)
+
+Explainability over cleverness
+Legitimacy over optimisation
+Human interpretation always required
+Do not attempt to "improve" Phase 6. Its strength lies in restraint.
+
+
+Acceptance Criteria (Must All Pass)
+✅ ADC cannot mandate action
+✅ ADC cannot rank or score anything
+✅ ADC cannot trigger workflows
+✅ ADC cannot justify funding or sequencing
+✅ ADC remains readable, revisitable, and non‑executable
+Failure of any criterion invalidates Phase 6.
+
+
+Final Instruction to Replit
+You are not implementing a feature layer.
+You are implementing a constitutional layer.
+If unsure, default to exclusion, not inclusion.
+If a feature feels useful, it is probably violating legitimacy.
+
+
+End of Phase 6 Replit Execution Prompt
