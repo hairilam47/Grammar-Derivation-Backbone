@@ -1,0 +1,158 @@
+Replit Master Prompt — ACW Progressive Diagram Builder
+Grammar‑Based → 2D → 3D (v1–v3)
+
+Mode: Workspace Builder (Claude Opus 4.7)
+Purpose: Build the Architecture Composition Workspace (ACW) in three explicit, progressive stages while preserving all constitutional rules, grammars, and constraints.
+
+
+This prompt is normative. Claude must treat it as a hard contract.
+
+
+0. Non‑Negotiable Principles (Lock These First)
+Before building anything, adopt these invariants:
+
+ACW diagrams are grammar‑based — they enforce structural syntax only, never meaning.
+No semantics, no evaluation, no optimisation at any stage (v1–v3).
+All upgrades are additive. v2 and v3 must not weaken or bypass v1 grammar rules.
+Rules only change via explicit rule upgrades, never silently via UI features.
+ACW remains isolated from ADC, Portfolio, Signals, Reflection, and Phase 6.
+If any requested feature violates these, Claude must refuse and explain why.
+
+
+1. Architecture Vision
+The ACW implementation proceeds in three versions:
+
+v1 — Grammar Diagram (structural correctness)
+v2 — Full‑scale 2D Diagram (usability and clarity)
+v3 — Full‑scale 3D Diagram (exploration and decomposition)
+Each version builds on top of the previous one.
+
+
+VERSION 1 — GRAMMAR DIAGRAM (FOUNDATION)
+2. v1 Goal
+Implement a grammar‑constrained diagramming system that allows EA/SA to express well‑formed architecture sentences.
+v1 is about correctness, not beauty.
+
+
+3. v1 Required Capabilities
+Claude must implement:
+
+A canonical ACW element registry (from ACW Specification v1)
+A grammar validator that enforces: allowed element types
+allowed relationships
+allowed containment
+A refusal mechanism when an invalid grammar expression is attempted
+No layout optimisation is allowed in v1.
+
+
+4. v1 User Interaction Model
+Users can:
+
+create nodes (Zone, System, Component, etc.)
+create edges (CONTAINS, CONNECTS, INTERFACES_WITH, DATA_FLOW)
+System behaviour:
+
+validate every operation against the grammar
+refuse invalid connections neutrally ("This connection is not allowed")
+No auto‑creation, no suggestions, no examples.
+
+
+VERSION 2 — FULL‑SCALE 2D DIAGRAM
+5. v2 Goal
+Layer visual usability on top of the grammar‑correct foundation without adding meaning.
+v2 is still grammar‑first; visuals are secondary.
+
+
+6. v2 Additions (Must Not Break v1)
+Claude may now add:
+
+2D canvas with: pan / zoom
+manual grouping
+collapse / expand containers
+visual containment cues
+snap‑to‑grid or alignment helpers
+All rendering must still obey v1 grammar validation.
+
+
+7. v2 Forbidden Features
+Claude must not add:
+
+colour semantics (no red/green meaning)
+size semantics (no bigger = more important)
+temporal cues (no arrows implying future)
+labels implying judgement
+If an interaction implies judgment, it is invalid.
+
+
+VERSION 3 — FULL‑SCALE 3D DIAGRAM
+8. v3 Goal
+Enable structural exploration in depth — not emphasis, not priority.
+3D is for inside vs outside, nothing else.
+
+
+9. v3 Additions (Strictly Additive)
+Claude may add:
+
+3D scene engine (e.g. React Three Fiber)
+depth‑based containment
+zoom‑through for: Zone → ComputeNode → System
+System → Component
+3D must render exactly the same structure as 2D.
+
+
+10. v3 Forbidden Semantics
+Claude must not allow:
+
+height = priority
+depth = risk
+motion = timeline
+animation implying change
+3D adds detail, never meaning.
+
+
+CROSS‑VERSION GUARANTEES
+11. Grammar Supremacy Rule
+At all times:
+
+If a diagram is visually valid but grammatically invalid, it must be refused.
+
+
+Grammar always wins over visuals.
+
+
+12. Persistence Compatibility
+All v1–v3 diagrams must:
+
+persist using AcwWorkspace (schemaVersion: acw-1.0)
+share one structureGraph across views
+never fork structure between 2D and 3D
+If structure diverges, the implementation is invalid.
+
+
+13. Rule Upgrade Protocol (Future‑Proofing)
+If rules or constraints must change:
+
+create acw-2.0 spec
+migrate explicitly
+never back‑port semantics into acw-1.0
+Silent rule drift is forbidden.
+
+
+14. Acceptance Criteria
+The implementation is complete only if:
+✅ v1 enforces grammar correctness ✅ v2 improves usability without changing meaning ✅ v3 adds depth without adding semantics ✅ All layers remain isolated from ADC ✅ Any rule violation causes refusal, not auto‑correction
+
+
+15. Claude Instruction (Final)
+
+You are not building architecture.
+You are building a grammar‑governed workspace.
+
+
+
+If a feature makes architecture easier to judge, do not implement it.
+
+
+
+
+End of Replit Master Prompt — ACW Progressive Diagram Builder
