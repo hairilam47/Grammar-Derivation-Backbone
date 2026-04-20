@@ -28,6 +28,12 @@ import "@/acw/acwIsolationInvariants.test-shape";
 // element registry, validator, or schema version drifts from the
 // constitutional shape locked at v1 (Task #49 / master prompt §13).
 import "@/acw/acwGrammarInvariants.test-shape";
+// ACW v3 — structural-identity + forbidden-semantics invariants for
+// the 3D canvas. They fail the bundle if 2D and 3D ever diverge in
+// what they enumerate, or if the 3D renderer regresses toward
+// judgemental / animated semantics.
+import "@/acw/acw3DStructureInvariants.test-shape";
+import "@/acw/acw3DForbiddenSemantics.test-shape";
 
 function DarkModeApplier() {
   useEffect(() => {

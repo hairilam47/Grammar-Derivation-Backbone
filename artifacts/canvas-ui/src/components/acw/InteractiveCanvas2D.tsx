@@ -44,6 +44,12 @@ import {
   subscribeViewState,
   toggleCollapsed,
 } from "@/acw/acwViewState";
+// v3 — structural enumeration is shared with the 3D renderer so
+// neither canvas can fabricate visibility the other does not also
+// surface. The build-time structural-identity invariant
+// (`acw3DStructureInvariants.test-shape.ts`) verifies both
+// renderers consume this helper.
+import { enumerateLensVisibility } from "@/acw/acwLensStructure";
 
 const EMPTY_TITLE = "Empty 2D canvas";
 const EMPTY_SUBTITLE = "Add systems to begin";
@@ -189,59 +195,57 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
   );
   const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n] as const)), [nodes]);
 
-  // childrenOf: O(n) for the focused level
-  const directSiblings = useMemo(
-    () => nodes.filter((n) => n.parentId === focusedParentId),
-    [nodes, focusedParentId],
+  // Visibility comes from the v3 shared enumerator. Both 2D and 3D
+  // renderers consume this helper, which is the build-time
+  // guarantee that they cannot diverge on what is shown at a
+  // given depth + collapse state.
+  const visibility = useMemo(
+    () => enumerateLensVisibility(nodes, edges, focusedParentId, collapsedIds),
+    [nodes, edges, focusedParentId, collapsedIds],
   );
+  const directSiblings = visibility.directSiblings;
 
-  // For containment cues we render two passes: containers (which
-  // expand to fit their direct children's bounding box) and leaf
-  // nodes. A container is any sibling that has at least one child
-  // in `nodes`.
-  const childCount = useMemo(() => {
+  // Total-children-by-parent count used only for the collapsed
+  // container's "+N" label — this is total descendants directly
+  // parented to the container, regardless of the collapse state
+  // (so the label always tells the truth about what is hidden).
+  const totalChildCount = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const n of nodes) {
-      if (n.parentId !== null) {
-        counts.set(n.parentId, (counts.get(n.parentId) ?? 0) + 1);
+    for (const m of nodes) {
+      if (m.parentId !== null) {
+        counts.set(m.parentId, (counts.get(m.parentId) ?? 0) + 1);
       }
     }
     return counts;
   }, [nodes]);
 
-  // Determine which sibling rectangles to draw. For a non-collapsed
-  // container we also render its direct children inside it.
+  // Drawable view-model: the enumerator's per-sibling record plus
+  // the live drag override so the in-flight node renders at its
+  // current pointer position rather than its persisted coords.
   interface Drawable {
     node: AcwNode;
     x: number;
     y: number;
     isContainer: boolean;
     isCollapsedHere: boolean;
-    childRefs: AcwNode[];
+    childRefs: readonly AcwNode[];
   }
   const drawables = useMemo<Drawable[]>(() => {
-    const out: Drawable[] = [];
-    for (const sib of directSiblings) {
-      const hasChildren = (childCount.get(sib.id) ?? 0) > 0;
-      const collapsedHere = collapsedIds.has(sib.id);
+    return visibility.drawables.map((d) => {
       const live =
-        drag !== null && drag.nodeId === sib.id
+        drag !== null && drag.nodeId === d.node.id
           ? { x: drag.snapX, y: drag.snapY }
-          : { x: sib.x, y: sib.y };
-      out.push({
-        node: sib,
+          : { x: d.node.x, y: d.node.y };
+      return {
+        node: d.node,
         x: live.x,
         y: live.y,
-        isContainer: hasChildren,
-        isCollapsedHere: collapsedHere,
-        childRefs:
-          hasChildren && !collapsedHere
-            ? nodes.filter((n) => n.parentId === sib.id)
-            : [],
-      });
-    }
-    return out;
-  }, [directSiblings, childCount, collapsedIds, drag, nodes]);
+        isContainer: d.isContainer,
+        isCollapsedHere: d.isCollapsedHere,
+        childRefs: d.childRefs,
+      };
+    });
+  }, [visibility, drag]);
 
   // Compute a container's bounding box from its visible direct
   // children. If a container has no laid-out children it falls back
@@ -724,7 +728,7 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
               .map((d) => {
                 const box = containerBox(d);
                 const collapsed = d.isCollapsedHere;
-                const total = childCount.get(d.node.id) ?? 0;
+                const total = totalChildCount.get(d.node.id) ?? 0;
                 return (
                   <g key={`container-${d.node.id}`} data-testid={`${testId}-container-${d.node.id}`}>
                     {/* Bounding rect and header strip are pure

@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { WorkspaceShell } from "../WorkspaceShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { InteractiveCanvas2D } from "@/components/acw/InteractiveCanvas2D";
+import { LensCanvas } from "@/components/acw/LensCanvas";
 import { LiveStructurePanel } from "@/components/acw/LiveStructurePanel";
 import { useAcwWorkspace } from "@/acw/acwGrammarHooks";
 import { ACW_ELEMENT_TYPE_LABEL } from "@/acw/acwGrammar";
@@ -155,7 +155,7 @@ export default function SystemLandscape() {
         ) : null}
       </div>
 
-      <InteractiveCanvas2D
+      <LensCanvas
         lensId={LENS_PATH}
         nodes={lensNodes}
         edges={lensEdges}

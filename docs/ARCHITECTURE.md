@@ -749,6 +749,8 @@ fails the bundle. There is no runtime fallback, retry, or override.
 | `governance/togafContainmentInvariants.test-shape.ts` (`assertNoStructuredADCExport`, `assertNoComputedADCFields`, `assertNoOverrideMechanism`) | `App.tsx` (side-effect import) | Phase 6 PH6-HC1 / PH6-HC2 / PH6-HC6: no structured export surface, no new computed/severity/score/lifecycle/trigger/event/metric/chart/ranking field on the portfolio entry, no override / bypass / force / escalate symbol on the Phase 6 surface. |
 | `acw/acwIsolationInvariants.test-shape.ts` (denylist scan + positive allowlist over raw ACW sources via three Vite globs — `/src/acw/**/*.{ts,tsx}`, `/src/pages/acw/**/*.tsx`, `/src/components/acw/**/*.tsx` — loaded with `{ eager: true, query: '?raw', import: 'default' }`) | `App.tsx` and `pages/acw/WorkspaceShell.tsx` (side-effect imports) | The ACW workspace imports nothing from the Decision Canvas decision pipeline (`portfolioStore`, `signalsStore`, `adsBuilder`, `ecpBuilder`, `ecpSections`, `exposureDerive`, `exposureNarratives`, `responsibilityLens`, `scenarioReading`, `decisionReentry`, `export`, `hash`, `identity`, the architecture grammar package). |
 | `acw/acwGrammarInvariants.test-shape.ts` (synchronous module-load assertions over the v1 grammar registry, validator, and store) | `App.tsx` and `pages/acw/WorkspaceShell.tsx` (side-effect imports) | ACW v1 grammar shape is locked: schema version is exactly `acw-1.0`; every element type carries a containment rule with at least one permitted parent; every explicit edge kind carries an edge rule with at least one permitted pair; the validator refuses unknown element types, root-only-violations, parent-type mismatches, edge-pair mismatches, and self-loop edges; one positive sanity case (Zone at the workspace root) passes. Drift in any of these surfaces fails the bundle synchronously. |
+| `acw/acw3DStructureInvariants.test-shape.ts` (behavioural probe of the shared visibility enumerator + source-scan over both renderers) | `App.tsx` (side-effect import) | ACW v3 structural identity: 2D and 3D renderers consume the SAME `enumerateLensVisibility(nodes, edges, focusedParentId, collapsedIds)` helper, so neither can fabricate visibility the other does not surface. Source scan asserts both `InteractiveCanvas2D.tsx` and `Canvas3DStructural.tsx` import the helper and call it; neither reads the canonical workspace via `useAcwWorkspace`. The behavioural probe walks a Zone → ComputeNode → System → Component fixture at every depth and asserts dangling-endpoint edges are dropped and collapse correctly hides children. |
+| `acw/acw3DForbiddenSemantics.test-shape.ts` (case-insensitive substring scan, comment-stripped, against `Canvas3DStructural.tsx`) | `App.tsx` (side-effect import) | ACW v3 forbidden semantics: the 3D canvas source contains no animation primitive (`useFrame`, `useSpring`, `setInterval`, `requestAnimationFrame`, `easing`, `tween`, `keyframe`, `animate`), no judgement / weighting token (`priority`, `risk`, `severity`, `score`, `weight`, `urgency`, `importance`), no time token (`timeline`, `duration`, `elapsed`), and no traffic-light colour name (`warning`, `danger`). Comments are stripped before scanning so documentation that NAMES the forbidden tokens does not trip the assertion. |
 | `governance/portfolioStore.ts` (`assertAllowedFields` at write, `isValidEntry` at read) | called from the freeze flow and on every portfolio read | The 17-field allow-list is the only shape that ever reaches storage; corrupted entries are silently dropped at read time. |
 | `governance/signalsStore.ts` (`assertAllowedTopLevel`, `assertAllowedEvidenceInput`, `endsWithQuestionMark` validator, `isValidSignal`) | called from the signals create / advance flow and on every read | The 11-field top-level allow-list, the nested `evidenceSummary` / `relatedEntries` allow-lists, and the question-mark constraint on `interpretationGuidance` are enforced both at write and at read. |
 
@@ -1720,3 +1722,120 @@ synchronously.
   collapse state, and selection live entirely outside the
   workspace document; group inference reduces to validator-gated
   `createNode` + `updateNodeParent` calls.
+
+---
+
+## 18C. ACW v3 — Full-Scale 3D Diagram (depth-as-containment, zoom-through)
+
+v3 adds a per-lens 3D rendering of the SAME structure that the v2
+2D canvas already shows, plus a per-lens 2D/3D toggle. Master
+prompt v3 brief: depth represents decomposition only — never
+priority, risk, severity, or any computed weight. The 3D canvas
+must therefore be visually as inert as its 2D twin.
+
+### Single source of truth — `acw/acwLensStructure.ts`
+
+A pure function `enumerateLensVisibility(nodes, edges,
+focusedParentId, collapsedIds)` produces, for a given lens depth
+and collapse set, the canonical `(directSiblings, drawables,
+visibleNodeIds, visibleEdges)` triple that both renderers consume.
+This is the build-time guarantee that 2D and 3D cannot diverge:
+both `InteractiveCanvas2D.tsx` and `Canvas3DStructural.tsx`
+import the helper and call it; the structural-identity invariant
+(see Section 15A) verifies the import and behaviour.
+
+Visibility rules:
+
+1. Direct siblings of the focused parent.
+2. For each direct sibling that has children AND is not collapsed
+   in this lens: the direct children too.
+3. Edges whose endpoints are both in (1) ∪ (2). Dangling edges
+   are silently dropped.
+
+The helper performs no IO, owns no state, and depends only on the
+workspace types — so invariant modules can call it from a
+synchronous module-load context.
+
+### View-mode slice — `acw/acwViewState.ts`
+
+The per-lens 2D/3D selection lives in the existing `acw-view-1.0`
+view-state document under a new optional field `viewModeByLens:
+Record<string, "2d" | "3d">`. `getViewMode(lensId)` returns `"2d"`
+when no entry exists (default), so v2-persisted documents read
+cleanly under v3. `setViewMode(lensId, mode)` validates the mode
+against `["2d", "3d"]` and persists.
+
+The schema version stays `acw-view-1.0`. The brief explicitly
+forbids introducing a new schema in v3, and the field is strictly
+additive: presence is forwards-compatible, absence is backwards-
+compatible. The view-state document continues to contain NO graph
+fields; the read-validator drops any document that contains
+`nodes`, `edges`, or `parentId` (proven by the v2 invariants).
+
+### 3D structural canvas — `components/acw/Canvas3DStructural.tsx`
+
+Containment rendered as translucent rectangular volumes whose
+extent is derived from their visible direct children's bounding
+box. Children sit deeper on the z axis inside their parent's
+volume. Leaves are uniform cubes regardless of type, child
+count, or any computed quantity. Edges between visible endpoints
+are straight `THREE.Line` segments with no arrowheads (which
+would imply direction / sequence / time).
+
+Camera is fixed at `[0, 0, 8]` with a 50° FOV (the constant from
+the v2 `Canvas3D` primitive). There is no camera animation, no
+useFrame loop, no easing, no tween. Lighting is a single
+directional light plus the primitive's ambient light. The
+forbidden-semantics invariant (Section 15A) source-scans this
+file for any animation primitive, judgement token, or
+traffic-light colour name.
+
+Zoom-through (`Zone → ComputeNode → System → Component`):
+clicking a container's mesh invokes `onDrillDown(nodeId)`, which
+the host lens uses to advance its depth path. The next render
+simply shows that container's children at the focus level —
+direct, no transition. Because both renderers share the depth
+model and the visibility enumerator, drilling in via 3D produces
+exactly the same focus state as drilling in via 2D.
+
+### Lens-canvas wrapper — `components/acw/LensCanvas.tsx`
+
+Hosts the per-lens 2D/3D toggle and dispatches to either
+`InteractiveCanvas2D` or `Canvas3DStructural`, passing the
+IDENTICAL `(lensId, nodes, edges, focusedParentId, onDrillDown,
+emptyHint, height, permitContainerType)` props to whichever
+branch renders. This is what makes the structural-identity
+invariant meaningful at runtime: there is exactly one place where
+the props originate, so neither branch can be handed a different
+graph slice.
+
+Headless / no-WebGL fallback: the wrapper probes WebGL on mount
+via the `detectWebGL` helper exported from `Canvas3D.tsx`. When
+WebGL is unavailable, the effective mode is forced to `"2d"`
+silently regardless of the user's stored preference. The toggle
+still surfaces the user's pick so it persists across devices.
+
+### Wired lenses
+
+`SystemLandscape.tsx` (TOGAF Application) and `Deployment.tsx`
+(TOGAF Technology) replace their direct `<InteractiveCanvas2D>`
+mount with `<LensCanvas>`. The other three lenses (Context &
+Domain, Integration, Operations & Continuity) remain on their v1
+placeholder layouts; they will adopt the canvas in a future
+iteration if needed.
+
+### What v3 still does **not** do
+
+- No new schema. Persistence stays `acw-1.0`; view-state stays
+  `acw-view-1.0` with one strictly-additive optional field.
+- No 3D-only primitive. Every node, edge, and container shown in
+  3D is also visible in 2D at the same depth.
+- No animation, no camera flight, no easing, no transition.
+  Mode flips and depth changes are instantaneous.
+- No semantic colour. Containers and leaves use neutral hex
+  codes; the forbidden-semantics invariant rejects any
+  traffic-light name.
+- No coupling to the Decision Canvas pipeline. The isolation
+  invariant continues to scan v3 source files; the only new
+  external imports are `three` and `@react-three/fiber`, both
+  already on the ACW allowlist.

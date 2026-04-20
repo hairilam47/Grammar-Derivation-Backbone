@@ -1,11 +1,14 @@
-// ACW v2 — per-lens visual view-state (collapse / expand).
+// ACW v2/v3 — per-lens visual view-state (collapse / expand + 2D/3D mode).
 //
 // View-state is *not* part of the canonical workspace document.
 // Master prompt §11 (grammar always wins over visuals) and the v2
 // task brief require collapse / expand to leave the underlying
-// `structureGraph` untouched. Persisting view-state alongside (not
-// inside) the workspace makes that separation a build-time fact
-// rather than a habit:
+// `structureGraph` untouched. v3 adds a per-lens 2D/3D viewing
+// mode to this same slice — the mode is also a visual-only choice
+// and must never appear in the canonical workspace.
+//
+// Persisting view-state alongside (not inside) the workspace makes
+// that separation a build-time fact rather than a habit:
 //   - Two distinct localStorage keys: `acw.workspace.v1` for the
 //     graph, `acw.workspace.view.v1` for the view-state.
 //   - Two distinct schema versions: `acw-1.0` and `acw-view-1.0`.
@@ -14,27 +17,39 @@
 //     read-validator drops the document if a future commit slips a
 //     graph field in.
 //
-// This module is intentionally tiny — collapse state is the only
-// view-state concern v2 introduces.
+// v3 schema-version note: adding `viewModeByLens` is a strictly
+// additive optional field on `acw-view-1.0`. Documents persisted by
+// v2 (which lack the field) still read cleanly — the validator
+// treats absence as "no per-lens mode set" and `getViewMode` then
+// returns the default ("2d"). No "acw-view-2.0" version is
+// introduced; per the task brief, v3 introduces no new schema.
 import { assertAllAcwPlaceholderLanguage } from "../governance/staticTextGuard";
 
 export const ACW_VIEW_SCHEMA_VERSION = "acw-view-1.0" as const;
 const STORAGE_KEY = "acw.workspace.view.v1";
 
-// Per-lens collapse state. Lens identity = the lens path (e.g.
-// "/workspace/landscape"). Each lens tracks the set of node ids
-// whose containers are currently collapsed.
+export type AcwLensViewMode = "2d" | "3d";
+const ALLOWED_VIEW_MODES: readonly AcwLensViewMode[] = ["2d", "3d"];
+const DEFAULT_VIEW_MODE: AcwLensViewMode = "2d";
+
+// Per-lens view-state. Lens identity = the lens path (e.g.
+// "/workspace/landscape").
+//   - collapseByLens: which container ids are collapsed in this lens.
+//   - viewModeByLens: which canvas mode (2D or 3D) the lens displays.
+// Both are visual-only; neither references workspace content.
 export interface AcwViewState {
   readonly schemaVersion: typeof ACW_VIEW_SCHEMA_VERSION;
   readonly collapseByLens: Readonly<Record<string, readonly string[]>>;
+  readonly viewModeByLens: Readonly<Record<string, AcwLensViewMode>>;
 }
 
-const ALLOWED_TOP = ["schemaVersion", "collapseByLens"] as const;
+const ALLOWED_TOP = ["schemaVersion", "collapseByLens", "viewModeByLens"] as const;
 
 function emptyView(): AcwViewState {
   return Object.freeze({
     schemaVersion: ACW_VIEW_SCHEMA_VERSION,
     collapseByLens: Object.freeze({}),
+    viewModeByLens: Object.freeze({}),
   });
 }
 
@@ -80,6 +95,25 @@ function assertValid(raw: unknown): asserts raw is AcwViewState {
       }
     }
   }
+  // viewModeByLens is optional for backward compat with v2-persisted
+  // documents. When present it must be an object with string lens
+  // ids and "2d" | "3d" values.
+  if (r.viewModeByLens !== undefined) {
+    if (r.viewModeByLens === null || typeof r.viewModeByLens !== "object") {
+      throw new Error("ACW view-state viewModeByLens must be an object.");
+    }
+    const vm = r.viewModeByLens as Record<string, unknown>;
+    for (const [lensId, mode] of Object.entries(vm)) {
+      if (typeof lensId !== "string" || lensId.length === 0) {
+        throw new Error("ACW view-state lens id must be a non-empty string.");
+      }
+      if (typeof mode !== "string" || !ALLOWED_VIEW_MODES.includes(mode as AcwLensViewMode)) {
+        throw new Error(
+          `ACW view-state viewModeByLens value must be one of ${ALLOWED_VIEW_MODES.join(" | ")}. Got: ${JSON.stringify(mode)}.`,
+        );
+      }
+    }
+  }
 }
 
 function isValid(raw: unknown): raw is AcwViewState {
@@ -104,6 +138,17 @@ function notify(): void {
   }
 }
 
+function normalize(raw: AcwViewState): AcwViewState {
+  // Backfill optional v3 field for v2-persisted documents so callers
+  // never have to null-check.
+  if (raw.viewModeByLens !== undefined) return raw;
+  return Object.freeze({
+    schemaVersion: raw.schemaVersion,
+    collapseByLens: raw.collapseByLens,
+    viewModeByLens: Object.freeze({}),
+  });
+}
+
 function readFromStorage(): AcwViewState {
   if (typeof window === "undefined") return emptyView();
   try {
@@ -111,7 +156,7 @@ function readFromStorage(): AcwViewState {
     if (!raw) return emptyView();
     const parsed = JSON.parse(raw);
     if (!isValid(parsed)) return emptyView();
-    return parsed;
+    return normalize(parsed);
   } catch {
     return emptyView();
   }
@@ -156,15 +201,40 @@ export function toggleCollapsed(lensId: string, nodeId: string): void {
       ...prev.collapseByLens,
       [lensId]: Object.freeze(nextIds),
     }),
+    viewModeByLens: prev.viewModeByLens,
   });
   writeToStorage(next);
   cache = next;
   notify();
 }
 
-// Test / maintenance affordance: clear all view-state. Not bound to
-// any UI; provided so test harnesses can reset state without
-// touching localStorage directly.
+// v3 — per-lens 2D/3D viewing mode.
+export function getViewMode(lensId: string): AcwLensViewMode {
+  const map = getViewState().viewModeByLens;
+  return map[lensId] ?? DEFAULT_VIEW_MODE;
+}
+
+export function setViewMode(lensId: string, mode: AcwLensViewMode): void {
+  if (!ALLOWED_VIEW_MODES.includes(mode)) {
+    throw new Error(
+      `ACW view-state setViewMode rejected mode "${mode}". Permitted: ${ALLOWED_VIEW_MODES.join(" | ")}.`,
+    );
+  }
+  const prev = getViewState();
+  const next: AcwViewState = Object.freeze({
+    schemaVersion: ACW_VIEW_SCHEMA_VERSION,
+    collapseByLens: prev.collapseByLens,
+    viewModeByLens: Object.freeze({
+      ...prev.viewModeByLens,
+      [lensId]: mode,
+    }),
+  });
+  writeToStorage(next);
+  cache = next;
+  notify();
+}
+
+// Test / maintenance affordance: clear all view-state.
 export function clearViewState(): void {
   const next = emptyView();
   writeToStorage(next);
@@ -177,17 +247,12 @@ export const __acwViewStateInternals = Object.freeze({
   isValid,
   assertValid,
   emptyView,
-  // Force the in-memory cache to drop and re-read from
-  // localStorage on the next access. The v2 invariants use this
-  // to restore the user's persisted view-state after running
-  // snapshot-and-restore probes against the live singleton.
+  ALLOWED_VIEW_MODES,
+  DEFAULT_VIEW_MODE,
   reloadFromStorageForTest(): void {
     cache = null;
     notify();
   },
 });
 
-// Vocabulary assertion. The view-state module surfaces no static
-// labels into the DOM today; the module-load assertion runs against
-// an empty list so any future literal added here is guarded.
 assertAllAcwPlaceholderLanguage([]);

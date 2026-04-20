@@ -15,7 +15,7 @@ import { Canvas } from "@react-three/fiber";
 // synchronously when WebGL context creation fails (headless
 // screenshots, locked-down browsers); the probe lets us render the
 // fallback hint instead of attempting Canvas mount.
-function detectWebGL(): boolean {
+export function detectWebGL(): boolean {
   if (typeof window === "undefined" || typeof document === "undefined") return false;
   try {
     const canvas = document.createElement("canvas");
