@@ -9,11 +9,21 @@ import Signals from "@/pages/Signals";
 import Reflection from "@/pages/Reflection";
 import Exposure from "@/pages/Exposure";
 import Containment from "@/pages/Containment";
+import ContextDomain from "@/pages/acw/views/ContextDomain";
+import SystemLandscape from "@/pages/acw/views/SystemLandscape";
+import IntegrationView from "@/pages/acw/views/Integration";
+import Deployment from "@/pages/acw/views/Deployment";
+import OperationsContinuity from "@/pages/acw/views/OperationsContinuity";
 // Phase 6 — module-load side effect: importing this module runs the
 // negative-invariant assertions that fail the application bundle if
 // any forbidden surface (structured ADC export, computed lifecycle
 // field, override mechanism) is re-introduced.
 import "@/governance/togafContainmentInvariants.test-shape";
+// ACW Workspace Builder — module-load side effects: hook stubs and
+// the build-time isolation invariant that fails the bundle if any
+// ACW source file imports from the Decision Canvas decision pipeline.
+import "@/acw/acwGrammarHooks";
+import "@/acw/acwIsolationInvariants.test-shape";
 
 function DarkModeApplier() {
   useEffect(() => {
@@ -31,6 +41,12 @@ function Router() {
       <Route path="/reflection" component={Reflection} />
       <Route path="/exposure/:adsId" component={Exposure} />
       <Route path="/governance/containment" component={Containment} />
+      <Route path="/workspace" component={ContextDomain} />
+      <Route path="/workspace/context" component={ContextDomain} />
+      <Route path="/workspace/landscape" component={SystemLandscape} />
+      <Route path="/workspace/integration" component={IntegrationView} />
+      <Route path="/workspace/deployment" component={Deployment} />
+      <Route path="/workspace/operations" component={OperationsContinuity} />
       <Route component={NotFound} />
     </Switch>
   );

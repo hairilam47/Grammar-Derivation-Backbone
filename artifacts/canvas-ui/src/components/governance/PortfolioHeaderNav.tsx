@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { LayoutGrid, Layout, Radio, Eye, Shield } from "lucide-react";
+import { LayoutGrid, Layout, Radio, Eye, Shield, Workflow } from "lucide-react";
 
 export function PortfolioHeaderNav() {
   const [location] = useLocation();
@@ -55,6 +55,18 @@ export function PortfolioHeaderNav() {
         data-testid="link-containment"
       >
         <Shield className="w-3.5 h-3.5" /> Containment
+      </Link>
+      <span className="text-muted-foreground/40">·</span>
+      <Link
+        href="/workspace/context"
+        className={`flex items-center gap-1.5 hover:text-primary transition-colors ${
+          location.startsWith("/workspace")
+            ? "text-primary"
+            : "text-muted-foreground"
+        }`}
+        data-testid="link-workspace"
+      >
+        <Workflow className="w-3.5 h-3.5" /> Workspace
       </Link>
     </nav>
   );

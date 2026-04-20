@@ -39,6 +39,8 @@ The project is structured as a pnpm workspace monorepo.
 - **`/portfolio` (Portfolio Governance)**: A read-only board of all approved decisions, offering sortable columns, filters, cross-portfolio summaries (Risk Concentration, Indicator Distribution), and viewers for ADS and ECP.
 - **`/signals` (Policy Signals)**: A leadership-only interface for recording and tracking patterns observed across the approved portfolio using seven fixed signal categories with a three-state lifecycle (`Observed → Under Discussion → Acknowledged`). Signals can optionally link to portfolio entries.
 - **`/reflection` (Reflective Governance View)**: A read-only observational view showing decision lineage, governance attention over time, and memory overview (including silence awareness), without making judgments or recommendations.
+- **`/governance/containment` (Phase 6 Constitutional Layer)**: Read-only documentation of the TOGAF / ArchiMate non-authority position of ADC artefacts (docking table, mandatory disclaimer, advisory misuse playbook).
+- **`/workspace/*` (ACW — Architecture Composition Workspace)**: An empty TOGAF-aligned workspace shell with five lens views (Context & Domain, System Landscape, Integration, Deployment & Infrastructure, Operations & Continuity) plus reusable 2D and 3D canvas primitives. Strictly isolated from the Decision Canvas pipeline by a build-time invariant; ships no architecture content.
 
 ## Governance & Persistence
 

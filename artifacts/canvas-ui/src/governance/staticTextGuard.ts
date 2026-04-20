@@ -389,3 +389,59 @@ export function assertTogafContainmentLanguage(text: string): void {
 export function assertAllTogafContainmentLanguage(texts: string[]): void {
   for (const t of texts) assertTogafContainmentLanguage(t);
 }
+
+// ACW Workspace Builder — placeholder-first vocabulary tier.
+//
+// The Architecture Composition Workspace (ACW) is an empty
+// scaffolding layer (per its brief: "you are building an empty
+// architectural workspace, not architecture"). Every static label
+// rendered by an ACW view, container, or canvas primitive is asserted
+// against this tier at module load.
+//
+// ACW_PLACEHOLDER_FORBIDDEN is a STRICT SUPERSET of
+// TOGAF_CONTAINMENT_FORBIDDEN. The brief names four words that must
+// be banned from ACW surface text — `optimise`, `recommend`,
+// `target`, `best`. Three of those (`optimise`/`optimize`, `target`,
+// `best`) are already present transitively via the
+// REFLECTIVE / SCENARIO_READING chain, and `recommend` /
+// `recommended` are present from PORTFOLIO_FORBIDDEN; restating them
+// explicitly here makes the brief's ban literal at the source level
+// and documents the layering for future readers. The dedup() pass
+// keeps the surface tier identical to its theoretical union.
+//
+// Layering: ... ⊂ SCENARIO_READING ⊂ TOGAF_CONTAINMENT ⊂
+//           ACW_PLACEHOLDER
+//
+// Carve-out notes for substring matching (ACW surface):
+//   - "best" already carries the same carve-out documented in
+//     SCENARIO_READING_FORBIDDEN (matches "bestow", "asbestos");
+//     ACW surface text intentionally avoids both.
+//   - "target" matches "targeted", "targets". ACW surface text
+//     intentionally avoids both. Same renaming rule applies if a
+//     consumer label ever introduces those words.
+//   - "recommend" matches "recommendation", "recommended",
+//     "recommends". ACW surface text intentionally avoids all
+//     embeddings.
+//   - All transitive carve-outs from lower tiers (mandate / justify /
+//     trigger / score / rank / sequence / prioritise / evaluate /
+//     enforce / lead / high / low / owner / address / must) apply
+//     unchanged. ACW surface text uses generic structural nouns
+//     (`Domain`, `System`, `Connection`, `Zone`, `Interface`) and
+//     neutral instructional empty-state copy only.
+export const ACW_PLACEHOLDER_FORBIDDEN = dedup([
+  ...TOGAF_CONTAINMENT_FORBIDDEN,
+  "optimise",
+  "optimize",
+  "recommend",
+  "recommended",
+  "target",
+  "best",
+]);
+
+export function assertAcwPlaceholderLanguage(text: string): void {
+  checkAgainst(text, ACW_PLACEHOLDER_FORBIDDEN);
+}
+
+export function assertAllAcwPlaceholderLanguage(texts: string[]): void {
+  for (const t of texts) assertAcwPlaceholderLanguage(t);
+}

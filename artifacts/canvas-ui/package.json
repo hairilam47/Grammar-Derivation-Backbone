@@ -10,9 +10,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@react-three/fiber": "^9.6.0",
     "@workspace/architecture-grammar": "workspace:*",
     "docx": "^9.6.1",
-    "jspdf": "^4.2.1"
+    "jspdf": "^4.2.1",
+    "three": "^0.184.0"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -52,6 +54,7 @@
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
+    "@types/three": "^0.184.0",
     "@vitejs/plugin-react": "catalog:",
     "@workspace/api-client-react": "workspace:*",
     "class-variance-authority": "catalog:",

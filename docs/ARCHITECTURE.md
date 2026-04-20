@@ -1089,3 +1089,116 @@ Phase 6 modules:
   verbatim disclaimer once on PDF first page (italic + muted grey
   matching the integrity footer register) and once as the paragraph
   after the project line in DOCX.
+
+---
+
+## 18. ACW Workspace Builder (Architecture Composition Workspace)
+
+A separate, structurally-only workspace shell for assembling and
+viewing architecture *structure*. The ACW is **a sibling lens**, not
+a successor of the Decision Canvas. It is empty by default and ships
+no architecture content, no recommendations, no derivation logic.
+
+### Non-goals (intentional, documentary)
+
+- The ACW does **not** generate, recommend, score, rank, or evaluate
+  architecture. It does not consult the grammar engine. It does not
+  read the portfolio, signals, or freeze pipeline.
+- The ACW does **not** introduce new persistence. No new
+  `localStorage` key, no cache, no network call.
+- The ACW does **not** influence Phase 6 constitutional containment.
+  It does not export, serialise, or attach ADC content. The ACW
+  surface carries no ADC narrative and would not require the
+  mandatory non-authority disclaimer because there is nothing to
+  reference.
+
+### Files
+
+- `artifacts/canvas-ui/src/pages/acw/WorkspaceShell.tsx` — workspace
+  shell + lens-style sub-navigation across the five lenses.
+- `artifacts/canvas-ui/src/pages/acw/views/ContextDomain.tsx` —
+  Context & Domain lens (TOGAF Business, structural only).
+- `artifacts/canvas-ui/src/pages/acw/views/SystemLandscape.tsx` —
+  System Landscape lens (TOGAF Application; embeds 2D canvas).
+- `artifacts/canvas-ui/src/pages/acw/views/Integration.tsx` —
+  Integration lens (Application + Data; empty interfaces and
+  data-exchange placeholders).
+- `artifacts/canvas-ui/src/pages/acw/views/Deployment.tsx` —
+  Deployment & Infrastructure lens (TOGAF Technology; embeds 3D
+  canvas; empty zones).
+- `artifacts/canvas-ui/src/pages/acw/views/OperationsContinuity.tsx`
+  — Operations & Continuity lens (cross-layer, descriptive only).
+- `artifacts/canvas-ui/src/components/acw/Canvas2D.tsx` — reusable
+  2D canvas primitive with pan / zoom; renders empty by default.
+- `artifacts/canvas-ui/src/components/acw/Canvas3D.tsx` — reusable
+  3D canvas primitive (React Three Fiber); inert by default; falls
+  back to a neutral hint when WebGL is unavailable.
+- `artifacts/canvas-ui/src/acw/acwGrammarHooks.ts` — empty
+  extension-point stubs for canonical-structure schema, forbidden-
+  element checks, and Phase 6 authority hook. No logic today.
+- `artifacts/canvas-ui/src/acw/acwIsolationInvariants.test-shape.ts`
+  — build-time decoupling invariant. Loads every ACW source as a
+  raw string via `import.meta.glob` and fails the bundle if any
+  ACW file imports from the Decision Canvas decision pipeline.
+
+### Five lenses (TOGAF-aligned, lens-only — no sequence)
+
+| Lens | TOGAF layer | Primary surface |
+| --- | --- | --- |
+| Context & Domain | Business (structural) | Empty Business Domain panels |
+| System Landscape | Application | 2D canvas (pan / zoom) |
+| Integration | Application + Data | Empty Interface and Data Exchange placeholders |
+| Deployment & Infrastructure | Technology | 3D canvas + empty Zone / Compute / Network / Storage slots |
+| Operations & Continuity | Cross-layer (descriptive) | Empty Redundancy containers + plain-text annotations |
+
+The sub-navigation has no progress indicator, no next / previous, no
+maturity or completion language. The same workspace is observed
+through five different lenses; switching does nothing structural.
+
+### Vocabulary tier
+
+`ACW_PLACEHOLDER_FORBIDDEN` (declared in `staticTextGuard.ts`) is a
+strict superset of `TOGAF_CONTAINMENT_FORBIDDEN`. Per the brief it
+explicitly restates `optimise`, `optimize`, `recommend`,
+`recommended`, `target`, `best` (each already present transitively
+via the REFLECTIVE / SCENARIO_READING chain or PORTFOLIO tier). The
+restatement makes the brief's ban literal at the source level. Every
+static label rendered by an ACW view, container, or canvas primitive
+is asserted against this tier at module load. The ACW vocabulary
+forbids generative / prescriptive language outright; the surface
+uses only generic structural nouns (`Domain`, `System`, `Connection`,
+`Zone`, `Interface`) and neutral instructional empty-state copy.
+
+### Build-time decoupling invariant
+
+`acwIsolationInvariants.test-shape.ts` is imported as a side effect
+from both `App.tsx` and `WorkspaceShell.tsx`. It uses Vite's
+`import.meta.glob` with `?raw` to read every ACW source file as a
+string at bundle time and scans `from "..."` / `import "..."`
+specifiers for forbidden module paths (`portfolioStore`,
+`signalsStore`, `adsBuilder`, `ecpBuilder`, `exposureDerive`,
+`exposureNarratives`, `responsibilityLens`, `scenarioReading`,
+`decisionReentry`, `export`, `hash`, `identity`, the architecture
+grammar package). Any match throws at module load and fails the
+bundle.
+
+### Non-influence guarantee on Phase 6
+
+Phase 6 is unchanged. No Phase 6 source file (`togafContainment.ts`,
+`misusePlaybooks.ts`, `togafContainmentInvariants.test-shape.ts`,
+`pages/Containment.tsx`, the export disclaimer injection, the wizard
+advisory hint) references the ACW. The ACW does not produce ADC
+content, does not export anything, and does not surface the
+mandatory non-authority disclaimer (PH6-HC3 requires the disclaimer
+on surfaces *carrying ADC content*; the ACW carries none). The
+strictly-removable guarantee for Phase 6 (PH6-HC7) is preserved: the
+ACW directory tree can be deleted independently and Phase 6 is
+unaffected; conversely deleting Phase 6 leaves the ACW unaffected.
+
+### Strictly removable
+
+Removing `src/acw/`, `src/components/acw/`, `src/pages/acw/`, the
+ACW route definitions in `App.tsx`, the two ACW side-effect imports
+in `App.tsx`, the `Workspace` link in `PortfolioHeaderNav`, and the
+`ACW_PLACEHOLDER_FORBIDDEN` block in `staticTextGuard.ts` restores
+the pre-ACW behaviour with no other change required.
