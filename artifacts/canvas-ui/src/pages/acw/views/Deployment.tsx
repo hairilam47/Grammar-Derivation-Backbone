@@ -158,6 +158,9 @@ export default function Deployment() {
         height={460}
         testId="acw-deployment-canvas"
         onDrillDown={handleDrillDown}
+        permitContainerType={(t) =>
+          TECHNOLOGY_TYPES.has(t as "Zone" | "ComputeNode" | "System")
+        }
       />
 
       <LiveStructurePanel

@@ -164,6 +164,9 @@ export default function SystemLandscape() {
         height={460}
         testId="acw-landscape-canvas"
         onDrillDown={handleDrillDown}
+        permitContainerType={(t) =>
+          APPLICATION_TYPES.has(t as "System" | "Component")
+        }
       />
 
       <LiveStructurePanel

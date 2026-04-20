@@ -104,6 +104,16 @@ export interface InteractiveCanvas2DProps {
   emptyHint?: string;
   height?: number | string;
   testId?: string;
+  /**
+   * Optional lens-aware filter on which container types the Group
+   * affordance may materialise. The grammar is the legality
+   * authority; this predicate is a UX scope so that, for example,
+   * the Application lens does not silently spawn a Technology-lens
+   * container (which would then be filtered out of the current
+   * lens, making the grouped nodes appear to vanish). When omitted
+   * every grammar-permitted container is offered.
+   */
+  permitContainerType?: (type: AcwElementType) => boolean;
 }
 
 interface DragState {
@@ -136,6 +146,7 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
     emptyHint,
     height = 460,
     testId = "acw-canvas-2d",
+    permitContainerType,
   } = props;
 
   const [view, setView] = useState<ViewState>(INITIAL_VIEW);
@@ -528,16 +539,48 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
       const permits = permittedParentsFor(firstType).includes(candidate);
       if (!permits) continue;
       const canHost = canCreateNode(candidate, focusedParentId, validatorView);
-      if (canHost.ok) return candidate;
+      if (!canHost.ok) continue;
+      // Lens-aware UX scope: skip container types the active lens
+      // would filter out, so grouping never makes the user's nodes
+      // appear to disappear behind an invisible parent. The
+      // grammar still rules legality; this only narrows the menu.
+      if (permitContainerType && !permitContainerType(candidate)) continue;
+      return candidate;
     }
     return null;
-  }, [selectionAtFocus, byId, focusedParentId, validatorView]);
+  }, [selectionAtFocus, byId, focusedParentId, validatorView, permitContainerType]);
   const canGroup = groupContainerType !== null;
 
   function onGroup() {
     if (!canGroup || !groupContainerType) {
       publishRefusal(GROUP_HINT_NEED_COMPUTE);
       return;
+    }
+    // Preflight: simulate the post-mutation graph (the new
+    // container exists and has groupContainerType) and verify
+    // every reparent would pass the validator. Only mutate if
+    // every step is provably ok. This makes the group action
+    // effectively atomic — no partial commit can produce a
+    // half-grouped graph plus an orphan container, even if a
+    // future grammar change tightens canCreateNode.
+    const PRESERVED_PENDING_ID = "__acw_pending_group_container__";
+    const preflightView: ValidatorWorkspaceView = {
+      getNodeType(nodeId: string) {
+        if (nodeId === PRESERVED_PENDING_ID) return groupContainerType;
+        return validatorView.getNodeType(nodeId);
+      },
+    };
+    for (const id of selectionAtFocus) {
+      const t = byId.get(id)?.type as AcwElementType | undefined;
+      if (!t) {
+        publishRefusal(GROUP_HINT_NEED_COMPUTE);
+        return;
+      }
+      const verdict = canCreateNode(t, PRESERVED_PENDING_ID, preflightView);
+      if (!verdict.ok) {
+        publishRefusal(verdict.reason);
+        return;
+      }
     }
     // Position the new container at the centroid of the selection,
     // snapped to grid. Pure layout convenience; carries no meaning.
