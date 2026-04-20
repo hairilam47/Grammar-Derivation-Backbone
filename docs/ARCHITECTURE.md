@@ -504,7 +504,9 @@ SIGNALS guard at module load.
 ## 11. Routing
 
 Wouter, configured in `artifacts/canvas-ui/src/App.tsx` with
-`base={import.meta.env.BASE_URL}`.
+`base={import.meta.env.BASE_URL.replace(/\/$/, "")}` (the trailing
+slash is stripped so artifacts mounted at root and at a prefix both
+resolve consistently).
 
 | Path | Component | Purpose |
 | --- | --- | --- |
@@ -653,11 +655,16 @@ portfolio and re-derive on every render.
   spec-equality + expected-throw lock on the mandatory disclaimer,
   and a default-deny TOGAF artefact docking table. Phase 6 carries
   no override flag of any kind.
-- **Lens-only navigation in the ACW.** The ACW workspace exposes
-  five sibling lenses with no progress indicator, no next/previous,
-  no maturity language, and no completion signal. Switching lenses
-  observes the same workspace differently; it does nothing
-  structural.
+- **Lens-only navigation, no sequencing.** Two surfaces in the
+  system follow this principle. The ACW workspace exposes five
+  sibling lenses with no progress indicator, no next/previous, no
+  maturity language, and no completion signal — switching lenses
+  observes the same workspace differently and does nothing
+  structural. The Decision Exposure card stack (Phases 1–5 plus the
+  Phase 4 scenario selector) is also strictly additive and unranked:
+  every card is rendered in fixed order, each has equal visual
+  weight, and no card supersedes, replaces, or is "more advanced
+  than" any other.
 - **Build-time invariants over runtime checks.** Architectural
   guarantees that must hold for the entire bundle's life are
   expressed as `*.test-shape.ts` modules whose side effects run at
