@@ -10,14 +10,14 @@
 // `Connection`, `Zone`, `Interface`). All static labels asserted
 // against ACW_PLACEHOLDER_FORBIDDEN at module load.
 import { useEffect, useRef, useState } from "react";
-import type { CSSProperties, MouseEvent, WheelEvent } from "react";
+import type { CSSProperties, MouseEvent } from "react";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 
 const EMPTY_TITLE = "Empty 2D canvas";
 const EMPTY_SUBTITLE = "Add systems to begin";
 const ZOOM_LABEL = "Zoom";
 const RESET_LABEL = "Reset view";
-const NODE_FALLBACK_LABEL = "Node";
+const NODE_FALLBACK_LABEL = "System";
 
 assertAllAcwPlaceholderLanguage([
   EMPTY_TITLE,
@@ -96,13 +96,9 @@ export function Canvas2D(props: Canvas2DProps) {
   const onMouseUp = () => {
     dragRef.current = null;
   };
-  const onWheel = (e: WheelEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const delta = -e.deltaY * 0.001;
-    setView((v) => ({ ...v, zoom: Math.min(4, Math.max(0.25, v.zoom + delta)) }));
-  };
-
-  // Native wheel listener with passive:false so preventDefault works
+  // Native wheel listener with passive:false so preventDefault works.
+  // Intentionally NOT also bound via React's onWheel — duplicating
+  // the handler would double-apply the zoom delta per tick.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -131,7 +127,6 @@ export function Canvas2D(props: Canvas2DProps) {
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
       onMouseLeave={onMouseUp}
-      onWheel={onWheel}
       style={{
         position: "relative",
         height,
@@ -178,7 +173,7 @@ export function Canvas2D(props: Canvas2DProps) {
         <svg
           width="100%"
           height="100%"
-          style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
+          style={{ position: "absolute", inset: 0 }}
         >
           <g style={transformStyle as Record<string, string | number>}>
             {edges.map((e) => {
