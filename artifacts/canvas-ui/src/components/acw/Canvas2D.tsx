@@ -47,6 +47,16 @@ export interface Canvas2DProps {
   emptyHint?: string;
   height?: number | string;
   testId?: string;
+  /**
+   * Drill-down navigation contract. When supplied, every rendered
+   * node becomes a clickable affordance that invokes
+   * `onNodeDrillDown(nodeId)` so the host lens can step into a deeper
+   * level of decomposition. The primitive itself does not maintain
+   * the depth path or invent hierarchy — it only surfaces the click.
+   * Lenses that wire this prop are responsible for their own depth
+   * model, breadcrumb, and back affordance.
+   */
+  onNodeDrillDown?: (nodeId: string) => void;
 }
 
 interface ViewState {
@@ -64,6 +74,7 @@ export function Canvas2D(props: Canvas2DProps) {
     emptyHint,
     height = 360,
     testId = "acw-canvas-2d",
+    onNodeDrillDown,
   } = props;
   const [view, setView] = useState<ViewState>(INITIAL_VIEW);
   const dragRef = useRef<{ startX: number; startY: number; vx: number; vy: number } | null>(
@@ -186,29 +197,48 @@ export function Canvas2D(props: Canvas2DProps) {
                 />
               );
             })}
-            {nodes.map((n) => (
-              <g key={n.id}>
-                <rect
-                  x={n.x - 36}
-                  y={n.y - 14}
-                  width={72}
-                  height={28}
-                  rx={4}
-                  fill="rgba(255,255,255,0.06)"
-                  stroke="rgba(255,255,255,0.4)"
-                />
-                <text
-                  x={n.x}
-                  y={n.y + 4}
-                  textAnchor="middle"
-                  fontSize="10"
-                  fontFamily="monospace"
-                  fill="rgba(255,255,255,0.85)"
+            {nodes.map((n) => {
+              const drillable = typeof onNodeDrillDown === "function";
+              return (
+                <g
+                  key={n.id}
+                  data-testid={`${testId}-node-${n.id}`}
+                  data-drillable={drillable ? "true" : "false"}
+                  style={{
+                    cursor: drillable ? "pointer" : "default",
+                    pointerEvents: drillable ? "auto" : "none",
+                  }}
+                  onClick={
+                    drillable
+                      ? (ev) => {
+                          ev.stopPropagation();
+                          onNodeDrillDown!(n.id);
+                        }
+                      : undefined
+                  }
                 >
-                  {n.label ?? NODE_FALLBACK_LABEL}
-                </text>
-              </g>
-            ))}
+                  <rect
+                    x={n.x - 36}
+                    y={n.y - 14}
+                    width={72}
+                    height={28}
+                    rx={4}
+                    fill="rgba(255,255,255,0.06)"
+                    stroke="rgba(255,255,255,0.4)"
+                  />
+                  <text
+                    x={n.x}
+                    y={n.y + 4}
+                    textAnchor="middle"
+                    fontSize="10"
+                    fontFamily="monospace"
+                    fill="rgba(255,255,255,0.85)"
+                  >
+                    {n.label ?? NODE_FALLBACK_LABEL}
+                  </text>
+                </g>
+              );
+            })}
           </g>
         </svg>
       )}
