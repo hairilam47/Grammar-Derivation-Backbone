@@ -135,8 +135,13 @@ export function AuthoringPanel() {
   const [edgeTo, setEdgeTo] = useState<string>("");
 
   const onSubmitEdge = () => {
+    // Endpoint pickers must be set before we hand off to the
+    // validator-gated store. Submit is disabled in this state below
+    // (see `disabled={...}` on the submit button), so this guard is
+    // a defensive no-op rather than a UI-local refusal path; it
+    // therefore does not need to surface in `acw-refusal-banner`,
+    // which is reserved for validator-sourced refusals.
     if (edgeFrom === "" || edgeTo === "") {
-      setRefusal(NO_NODES_HINT);
       return;
     }
     const result = createEdge({ kind: edgeKind, fromId: edgeFrom, toId: edgeTo });
@@ -318,7 +323,7 @@ export function AuthoringPanel() {
             size="sm"
             onClick={onSubmitEdge}
             data-testid="acw-edge-submit"
-            disabled={allNodes.length < 2}
+            disabled={allNodes.length < 2 || edgeFrom === "" || edgeTo === ""}
           >
             {SUBMIT_LABEL}
           </Button>

@@ -34,6 +34,54 @@ import { ACW_SCHEMA_VERSION, __acwStoreInternals } from "./acwStore";
 
 const PREFIX = "ACW v1 grammar invariant violation";
 
+// (0) Registry shape: ACW_REGISTRY itself and its top-level
+// collections must be frozen and non-empty. A drift here (e.g. a
+// future commit replacing the frozen registry with a mutable
+// object) silently breaks the constitutional guarantee that the
+// grammar is a build-time constant.
+if (!Object.isFrozen(ACW_REGISTRY)) {
+  throw new Error(`${PREFIX}: ACW_REGISTRY is not frozen.`);
+}
+for (const [name, value] of [
+  ["ACW_ELEMENT_TYPES", ACW_ELEMENT_TYPES],
+  ["ACW_EXPLICIT_EDGE_KINDS", ACW_EXPLICIT_EDGE_KINDS],
+  ["ACW_CONTAINMENT_RULES", ACW_CONTAINMENT_RULES],
+  ["ACW_EDGE_RULES", ACW_EDGE_RULES],
+] as const) {
+  if (value.length === 0) {
+    throw new Error(`${PREFIX}: ${name} is empty.`);
+  }
+}
+
+// (0b) Every element type referenced by a containment or edge rule
+// must itself be a member of ACW_ELEMENT_TYPES. Catches the failure
+// mode where a rule names a stale or misspelled type that the rest
+// of the registry has dropped.
+const elementTypeSet = new Set<string>(ACW_ELEMENT_TYPES);
+for (const rule of ACW_CONTAINMENT_RULES) {
+  if (!elementTypeSet.has(rule.child)) {
+    throw new Error(
+      `${PREFIX}: containment rule references unknown child type "${rule.child}".`,
+    );
+  }
+  for (const p of rule.permittedParents) {
+    if (p !== null && !elementTypeSet.has(p)) {
+      throw new Error(
+        `${PREFIX}: containment rule for "${rule.child}" references unknown parent type "${p}".`,
+      );
+    }
+  }
+}
+for (const rule of ACW_EDGE_RULES) {
+  for (const [a, b] of rule.permittedPairs) {
+    if (!elementTypeSet.has(a) || !elementTypeSet.has(b)) {
+      throw new Error(
+        `${PREFIX}: edge rule "${rule.kind}" references unknown element type in pair [${a}, ${b}].`,
+      );
+    }
+  }
+}
+
 // (1) Schema version locked.
 if (ACW_REGISTRY.schemaVersion !== ACW_SCHEMA_VERSION) {
   throw new Error(

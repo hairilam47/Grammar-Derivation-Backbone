@@ -1502,10 +1502,11 @@ silently drop corrupted documents back to an empty workspace, mirroring
 
 The store exposes a tiny subscribe API (`subscribe(listener)`,
 `getWorkspace()`) and validator-gated mutations (`createNode`,
-`createEdge`, `removeNode`, `removeEdge`, `clear`). React surfaces
-consume the store through `acw/acwGrammarHooks.ts#useAcwWorkspace`,
-which keeps the hooks file as the only React-aware shim and the
-store itself UI-free.
+`createEdge`). v1 is intentionally append-only: there are no
+remove / clear operations on the store yet. React surfaces consume
+the store through `acw/acwGrammarHooks.ts#useAcwWorkspace`, which
+keeps the hooks file as the only React-aware shim and the store
+itself UI-free.
 
 ### Authoring panel — `components/acw/AuthoringPanel.tsx`
 
@@ -1521,24 +1522,31 @@ authoring forking.
 ### Live structure renderer — `components/acw/LiveStructurePanel.tsx`
 
 Each lens view embeds `LiveStructurePanel` with a TOGAF-aligned
-filter (Business → `Domain`; Application → `System` + `Interface`;
-Application + Data → `Interface` + `DataExchange`; Technology →
-`Zone` + `ComputeNode`; cross-layer → all). The filter is *display
-only* — the underlying structure graph is the same for every lens.
+filter over the v3 element types (e.g. Technology lens →
+`Zone` + `ComputeNode`; Application lens → `System` + `Component`;
+cross-layer → all). The filter is *display only* — the underlying
+structure graph is the same for every lens.
 The System Landscape lens additionally renders the live nodes / edges
 on the 2D canvas (with depth-path filtering so a drilled-down view
 shows only the descendants of the focused node).
 
 ### Build-time invariants — `acw/acwGrammarInvariants.test-shape.ts`
 
-Five invariant categories asserted synchronously at module load
-(see Section 15A): schema-version lock (`acw-1.0`), containment
-coverage (every element type has at least one permitted parent),
-edge-rule coverage (every explicit edge kind has at least one
-permitted pair), refusal behaviour (each refusal code is reachable
-through a constructed bad input), and a positive sanity case (Zone
-at the workspace root passes). Imported from `App.tsx` and
-`WorkspaceShell.tsx` so the bundle fails synchronously on drift.
+Invariants asserted synchronously at module load (see Section 15A):
+registry shape (`ACW_REGISTRY` frozen, top-level collections
+non-empty, every type referenced by a containment or edge rule is a
+member of `ACW_ELEMENT_TYPES`); schema-version lock (`acw-1.0`);
+containment coverage (every element type has at least one permitted
+parent); edge-rule coverage (every explicit edge kind has at least
+one permitted pair); refusal behaviour (each refusal class —
+ROOT_ONLY containment violation, illegal edge pair, self-loop, and
+illegal CONTAINS pair — is reached and asserts a distinguishing
+substring of the refusal reason so semantic drift is caught); a
+positive sanity case (Zone at the workspace root passes); and a
+read-validation probe that fails the bundle if the store ever
+accepts a persisted document with an orphan parent reference.
+Imported from `App.tsx` and `WorkspaceShell.tsx` so the bundle
+fails synchronously on drift.
 
 ### What v1 still does **not** do
 
