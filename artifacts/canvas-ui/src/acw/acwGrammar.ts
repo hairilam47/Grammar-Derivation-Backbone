@@ -71,10 +71,14 @@ export function isAcwEdgeKind(value: unknown): value is AcwEdgeKind {
 }
 
 // Edge kinds that may be created via the explicit "create edge"
-// affordance. CONTAINS is excluded because containment is set via the
-// node's parent reference at creation time, not authored as a
-// separate edge record (see CONTAINMENT NOTE).
+// affordance. CONTAINS is also authorable as an explicit edge for
+// users who prefer to express containment as a relationship between
+// two existing nodes; it is additionally materialised on the child's
+// `parentId` at node-creation time (see CONTAINMENT NOTE), so a
+// CONTAINS edge record is a redundant-but-permitted second
+// representation of the same structural fact.
 export const ACW_EXPLICIT_EDGE_KINDS = [
+  "CONTAINS",
   "CONNECTS",
   "INTERFACES_WITH",
   "DATA_FLOW",
@@ -175,6 +179,19 @@ export interface EdgeRule {
 }
 
 export const ACW_EDGE_RULES: readonly EdgeRule[] = Object.freeze([
+  Object.freeze({
+    kind: "CONTAINS",
+    // CONTAINS is the v3 zoom-through chain stated as an edge: each
+    // pair below mirrors the containment rule for the child type.
+    // Edges are direction-agnostic at the rule level; the store
+    // records the authored direction (fromId → toId) so v2 can render
+    // it visually without changing the grammar.
+    permittedPairs: Object.freeze([
+      Object.freeze(["Zone", "ComputeNode"] as const),
+      Object.freeze(["ComputeNode", "System"] as const),
+      Object.freeze(["System", "Component"] as const),
+    ] as const),
+  }),
   Object.freeze({
     kind: "CONNECTS",
     // Peer connectivity at the infrastructure / application layer.

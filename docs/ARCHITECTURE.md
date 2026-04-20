@@ -542,7 +542,7 @@ sub-navigation, which has no progress indicator and no next/previous.
 | Reflection (Layer 6) | (none) | `pages/Reflection.tsx` | n/a — pure aggregation | persists nothing |
 | Decision Exposure (Phases 1–5) | (none) | `pages/Exposure.tsx` + `governance/exposure*`, `responsibilityLens.ts`, `scenarioReading.ts`, `decisionReentry.ts` | n/a — pure derivation from one `PortfolioEntry` per render | persists nothing |
 | TOGAF / ArchiMate Containment (Phase 6) | (none) | `pages/Containment.tsx` + `governance/togafContainment.ts`, `governance/misusePlaybooks.ts` | n/a — pure refusal validators and static tables | persists nothing |
-| ACW Workspace (`/workspace/*`) — v1 grammar diagram | `acw.workspace.v1` (`localStorage`) | `acw/acwStore.ts` (write goes through `acwValidator.ts`; allow-list `assertAllowedFields` and read-validate `isValidWorkspace`); registry in `acw/acwGrammar.ts`; React subscription via `acw/acwGrammarHooks.ts#useAcwWorkspace`; surfaces `pages/acw/WorkspaceShell.tsx` + 5 lens views, `components/acw/AuthoringPanel.tsx`, `components/acw/LiveStructurePanel.tsx`, `components/acw/Canvas2D.tsx`, `Canvas3D.tsx` | Document is `{ schemaVersion: "acw-1.0", structureGraph: { nodes, edges } }`; node fields = `{ id, type, parentId, label, x, y }`; edge fields = `{ id, kind, fromId, toId }`. Locked allow-list at every nested level, validated by `__acwStoreInternals.isValidWorkspace` on read and `assertAllowedFields` on write. Containment is materialised via `parentId`; the explicit edge kinds are CONNECTS, INTERFACES_WITH, DATA_FLOW. CONTAINS is recognised by the registry but never stored as an edge record. | structure-only persistence; no semantics, no scoring, no ranking, no derivation |
+| ACW Workspace (`/workspace/*`) — v1 grammar diagram | `acw.workspace.v1` (`localStorage`) | `acw/acwStore.ts` (write goes through `acwValidator.ts`; allow-list `assertAllowedFields` and read-validate `isValidWorkspace`); registry in `acw/acwGrammar.ts`; React subscription via `acw/acwGrammarHooks.ts#useAcwWorkspace`; surfaces `pages/acw/WorkspaceShell.tsx` + 5 lens views, `components/acw/AuthoringPanel.tsx`, `components/acw/LiveStructurePanel.tsx`, `components/acw/Canvas2D.tsx`, `Canvas3D.tsx` | Document is `{ schemaVersion: "acw-1.0", structureGraph: { nodes, edges } }`; node fields = `{ id, type, parentId, label, x, y }`; edge fields = `{ id, kind, fromId, toId }`. Locked allow-list at every nested level, validated by `__acwStoreInternals.isValidWorkspace` on read and `assertAllowedFields` on write. Containment is also materialised via `parentId` at node-creation time; the explicit edge kinds the user can author are CONTAINS, CONNECTS, INTERFACES_WITH, DATA_FLOW. CONTAINS is therefore representable both as the child's `parentId` and as a redundant-but-permitted edge record between the two existing nodes. | structure-only persistence; no semantics, no scoring, no ranking, no derivation |
 
 Neither store ever feeds back into the grammar engine. The grammar
 remains the single source of structural truth. No surface added in
@@ -1446,14 +1446,18 @@ and a parent.
 A frozen registry of element types, edge kinds, containment rules,
 and edge rules. Element types are exactly the v3 zoom-through chain
 the master prompt names: `Zone`, `ComputeNode`, `System`, `Component`
-(the surface label for `ComputeNode` is `Compute node`). Edge kinds
-are `CONNECTS`, `INTERFACES_WITH`, `DATA_FLOW`, plus the implicit
-`CONTAINS` (which is materialised as `parentId` and never stored as
-an edge record). The `DATA_FLOW` kind renders to the surface as
-`Data exchange` because the literal word `flow` embeds `low`, which
-is forbidden by `ACW_PLACEHOLDER_FORBIDDEN`. Containment is the v3
-chain: Zone → ComputeNode → System → Component, with `System` also
-permitted at the workspace root for the lightweight case.
+(the surface label for `ComputeNode` is `Compute node`). The four
+authorable edge kinds (`ACW_EXPLICIT_EDGE_KINDS`) are `CONTAINS`,
+`CONNECTS`, `INTERFACES_WITH`, `DATA_FLOW`. `CONTAINS` is
+representable in two redundant ways: as the child's `parentId` (set
+at node-creation time) and / or as an explicit `CONTAINS` edge
+record between the two existing nodes. The `DATA_FLOW` kind renders
+to the surface as `Data exchange` because the literal word `flow`
+embeds `low`, which is forbidden by `ACW_PLACEHOLDER_FORBIDDEN`.
+Containment is the v3 chain: Zone → ComputeNode → System →
+Component, with `System` also permitted at the workspace root for
+the lightweight case; the `CONTAINS` edge rule mirrors that chain
+exactly.
 
 Rules are direction-agnostic for edges (a permitted unordered pair
 satisfies the rule whichever way the user adds it), but containment

@@ -67,6 +67,7 @@ const ALLOWED_NODE = ["id", "type", "parentId", "label", "x", "y"] as const;
 const ALLOWED_EDGE = ["id", "kind", "fromId", "toId"] as const;
 
 const EXPLICIT_EDGE_KINDS = new Set<AcwExplicitEdgeKind>([
+  "CONTAINS",
   "CONNECTS",
   "INTERFACES_WITH",
   "DATA_FLOW",

@@ -155,7 +155,23 @@ expectRefusal(
   );
 }
 
-// 4f. Read-validation rejects tampered persisted documents that have
+// 4f. CONTAINS edge between two Components is not permitted (the
+// only permitted CONTAINS pairs are Zone↔ComputeNode,
+// ComputeNode↔System, System↔Component). This guards that the
+// CONTAINS edge rule wasn't accidentally widened.
+{
+  const fakeView: ValidatorWorkspaceView = {
+    getNodeType: (id: string) =>
+      id === "c1" || id === "c2" ? ("Component" as AcwElementType) : undefined,
+  };
+  expectRefusal(
+    "CONTAINS between two Components",
+    canCreateEdge("CONTAINS", "c1", "c2", fakeView),
+    "permitted between",
+  );
+}
+
+// 4g. Read-validation rejects tampered persisted documents that have
 // orphan parent references. This guards the constitutional read-path
 // hardening added to acwStore.assertAllowedFields.
 {
