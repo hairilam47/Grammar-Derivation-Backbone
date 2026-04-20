@@ -36,7 +36,31 @@ The project is a pnpm workspace.
 
 Stack: Node.js 24, pnpm, TypeScript 5.9, React + Vite (canvas UI),
 Express 5 (api-server), Drizzle ORM + PostgreSQL (scaffolded), Zod, jspdf,
-docx.
+docx, React Three Fiber (ACW 3D canvas).
+
+---
+
+## 2A. Phase History / Development Timeline
+
+The system grew in phases. Each phase is strictly additive on the
+phase before it and strictly removable without affecting prior phases.
+Numbering reflects build order, not architectural priority.
+
+| Phase | Theme | Surface introduced | Removable to |
+| --- | --- | --- | --- |
+| Core (Steps 1–7) | Wizard, grammar engine, freeze, ADS/ECP, portfolio, signals, reflection | `/`, `/portfolio`, `/signals`, `/reflection` | n/a (foundation) |
+| Phase 1 | Decision Exposure View — baseline | `/exposure/:adsId` (Governance Domains, Scrutiny Vectors, Impact Surfaces, Functions Affected); two new portfolio fields (`inScopeCapabilityIds`, `ecpConstraintCategories`) | Pre-Phase 1 (delete `/exposure`, drop two fields) |
+| Phase 2 | Exposure Narratives | Per-section *"Why this exposure exists"* disclosure with four-clause grammar | Phase 1 |
+| Phase 3 | Cross-Functional Responsibility Lens | Single card beneath Phase 1/2 grid, function × pressure-types | Phase 2 |
+| Phase 4 | Scenario-Conditioned Reading | Lens selector + inline qualifier annotations on existing Phase 1/2/3 surface | Phase 3 |
+| Phase 5 | Decision Re-Entry Lens | *"Legitimate Re-Entry"* card; two new approval-time portfolio fields (`approvalFunctionsAffected`, `approvalDominantFunctions`) | Phase 4 (drop two fields, delete card) |
+| Phase 6 | TOGAF / ArchiMate Constitutional Layer | `/governance/containment`; mandatory non-authority disclaimer in PDF/DOCX exports; advisory-only misuse hint in the wizard freeze form; build-time invariants module | Phase 5 (delete files, remove disclaimer injection, remove invariants import) |
+| ACW | Architecture Composition Workspace | `/workspace/*` (5 TOGAF lenses, 2D/3D canvas primitives, empty by default) | Pre-ACW (delete `src/acw/`, `src/components/acw/`, `src/pages/acw/`, route definitions) |
+
+The portfolio entry allow-list grew from 13 fields (Core) to 15 (Phase 1)
+to 17 (Phase 5). It has not changed since. Phase 6 explicitly refuses
+to add any new portfolio field (`assertNoComputedADCFields`). The ACW
+adds none.
 
 ---
 
@@ -81,12 +105,52 @@ docx.
 |  Layer 1  Grammar Engine                                     |
 |           lib/architecture-grammar                           |
 +--------------------------------------------------------------+
+
+  Sibling derived lenses (read Layer 4 only, persist nothing):
+
+  +----------------------------------------------------------+
+  |  Decision Exposure View (/exposure/:adsId)               |
+  |    Phase 1 baseline      governance/exposureDerive.ts    |
+  |    Phase 2 narratives    governance/exposureNarratives.ts|
+  |    Phase 3 responsibility governance/responsibilityLens.ts|
+  |    Phase 4 scenario      governance/scenarioReading.ts   |
+  |    Phase 5 re-entry      governance/decisionReentry.ts   |
+  +----------------------------------------------------------+
+
+  Constitutional layer (build-time refusals, no runtime authority):
+
+  +----------------------------------------------------------+
+  |  Phase 6 TOGAF / ArchiMate Containment                   |
+  |    governance/togafContainment.ts                        |
+  |    governance/misusePlaybooks.ts                         |
+  |    governance/togafContainmentInvariants.test-shape.ts   |
+  |    pages/Containment.tsx (route /governance/containment) |
+  +----------------------------------------------------------+
+
+  Sibling workspace shell (no read of any decision-pipeline module):
+
+  +----------------------------------------------------------+
+  |  ACW Workspace Builder (/workspace/*)                    |
+  |    pages/acw/WorkspaceShell.tsx + 5 lens views           |
+  |    components/acw/Canvas2D.tsx, Canvas3D.tsx             |
+  |    acw/acwGrammarHooks.ts (empty stubs)                  |
+  |    acw/acwIsolationInvariants.test-shape.ts              |
+  +----------------------------------------------------------+
 ```
 
 Each layer reads only from the layers below it. There are no upward
 dependencies. The grammar engine has no knowledge of UI, persistence,
 governance, or signals. The Reflection view has no knowledge of any
 mutating action; it reads aggregate state and persists nothing.
+
+The five Decision Exposure lenses (Phases 1–5) all read a single
+`PortfolioEntry` and re-derive on every render. They never write back
+to the portfolio store and never feed back into the grammar engine.
+The Phase 6 constitutional layer adds no derivation, no portfolio
+field, and no export surface — it only classifies and refuses. The
+ACW workspace is structurally isolated by a build-time decoupling
+invariant: it imports nothing from the Decision Canvas decision
+pipeline.
 
 ---
 
@@ -435,11 +499,21 @@ Wouter, configured in `artifacts/canvas-ui/src/App.tsx` with
 | `/portfolio` | `Portfolio` | Read-only board of all approved decisions |
 | `/signals` | `Signals` | Leadership-recorded patterns observed across the portfolio |
 | `/reflection` | `Reflection` | Read-only observational view |
-| `/exposure/:adsId` | `Exposure` | Decision Exposure View for one approved decision |
-| `/governance/containment` | `Containment` | TOGAF / ArchiMate constitutional containment layer |
+| `/exposure/:adsId` | `Exposure` | Decision Exposure View for one approved decision (Phases 1–5 stacked) |
+| `/governance/containment` | `Containment` | TOGAF / ArchiMate constitutional containment layer (Phase 6) |
+| `/workspace` | `ContextDomain` | ACW workspace — defaults to the Context & Domain lens |
+| `/workspace/context` | `ContextDomain` | ACW Context & Domain lens (TOGAF Business, structural only) |
+| `/workspace/landscape` | `SystemLandscape` | ACW System Landscape lens (TOGAF Application; embeds 2D canvas with drill-down) |
+| `/workspace/integration` | `IntegrationView` | ACW Integration lens (Application + Data; empty placeholders) |
+| `/workspace/deployment` | `Deployment` | ACW Deployment & Infrastructure lens (TOGAF Technology; embeds 3D canvas) |
+| `/workspace/operations` | `OperationsContinuity` | ACW Operations & Continuity lens (cross-layer, descriptive only) |
 
 Header navigation (`components/governance/PortfolioHeaderNav.tsx`) is
-shared across all routes.
+shared across all routes and exposes top-level links to Wizard,
+Portfolio, Signals, Reflection, Containment, and Workspace. Exposure
+is reached from a portfolio row, not from the global nav. The five
+ACW lenses are reached through the workspace shell's lens-style
+sub-navigation, which has no progress indicator and no next/previous.
 
 ---
 
@@ -451,9 +525,14 @@ shared across all routes.
 | Portfolio (Layer 4) | `adc.portfolio.v1` (`localStorage`) | `governance/portfolioStore.ts` | 17-field top-level allow-list, nested key allow-lists for `organisationContext` and `baselinePosture`, validated by `isValidEntry` | reduced read-model only |
 | Signals (Layer 5) | `adc.policy-signals.v1` (`localStorage`) | `governance/signalsStore.ts` | 11-field top-level allow-list, nested allow-list for `evidenceSummary` and `relatedEntries` items, validated by `isValidSignal` (including question-mark guidance check) | reduced read-model only |
 | Reflection (Layer 6) | (none) | `pages/Reflection.tsx` | n/a — pure aggregation | persists nothing |
+| Decision Exposure (Phases 1–5) | (none) | `pages/Exposure.tsx` + `governance/exposure*`, `responsibilityLens.ts`, `scenarioReading.ts`, `decisionReentry.ts` | n/a — pure derivation from one `PortfolioEntry` per render | persists nothing |
+| TOGAF / ArchiMate Containment (Phase 6) | (none) | `pages/Containment.tsx` + `governance/togafContainment.ts`, `governance/misusePlaybooks.ts` | n/a — pure refusal validators and static tables | persists nothing |
+| ACW Workspace (`/workspace/*`) | (none) | `pages/acw/WorkspaceShell.tsx` + 5 lens views, `components/acw/Canvas2D.tsx`, `Canvas3D.tsx`, `acw/acwGrammarHooks.ts` | n/a — empty by default; canvas state is component-local React state only | persists nothing |
 
 Neither store ever feeds back into the grammar engine. The grammar
-remains the single source of structural truth.
+remains the single source of structural truth. No surface added in
+Phase 1 onward introduces a new persistence key, network call, or
+cache.
 
 ---
 
@@ -495,10 +574,45 @@ remains the single source of structural truth.
    Governance Attention Over Time, and Memory Overview (with an optional
    Silence Awareness sub-list). It produces no judgement, no
    recommendation, and no required action; it persists nothing.
+9. **Decision Exposure View (Phases 1–5).** From any portfolio row,
+   leadership may navigate to `/exposure/:adsId` to read — for one
+   approved decision — where the decision places institutional
+   exposure. The view reads exclusively from a single portfolio entry
+   and re-derives all five lenses on every render: Phase 1 baseline
+   surfaces, Phase 2 narrative disclosures, Phase 3 responsibility
+   lens, Phase 4 scenario-conditioned reading, and Phase 5
+   Legitimate Re-Entry signals. It persists nothing. The page never
+   mutates the entry it reads.
+10. **TOGAF / ArchiMate Containment (Phase 6).** At any time,
+    leadership may visit `/governance/containment` to read what ADC
+    artefacts must NOT be read as doing: the verbatim mandatory
+    non-authority disclaimer, the docking-class table for TOGAF
+    artefacts, the misuse playbook table, and a try-phrase advisory
+    input. Phase 6 does not derive, score, persist, or feed back
+    anywhere; its only behaviour is classify, refuse, expose-as-text.
+    The freeze-time PDF and DOCX exports for ADS and ECP both
+    inject the verbatim disclaimer; the wizard's freeze-metadata
+    form runs an advisory-only misuse hint against project name and
+    authority inputs (never blocks, never persists).
+11. **ACW Workspace Builder.** Independently of the decision pipeline,
+    a user may visit `/workspace/*` to assemble or view architecture
+    *structure* through five TOGAF-aligned lenses (Context & Domain,
+    System Landscape, Integration, Deployment & Infrastructure,
+    Operations & Continuity). The workspace is empty by default,
+    consults no grammar, no portfolio, no signals, no freeze
+    pipeline, and persists nothing. The System Landscape lens hosts a
+    pan/zoom 2D canvas with a drill-down contract; the Deployment
+    lens hosts a 3D canvas (React Three Fiber, with neutral fallback
+    when WebGL is unavailable). A build-time invariant fails the
+    bundle if any ACW source imports from the Decision Canvas
+    decision pipeline.
 
 At no point in this flow does Step 7 affect Step 6, Step 6 affect
-Step 5, Step 5 affect the wizard, or the wizard alter the grammar.
-Each layer reads strictly downward.
+Step 5, Step 5 affect the wizard, the wizard alter the grammar, the
+Exposure view mutate the portfolio, the Containment view mutate
+anything, or the ACW workspace touch the decision pipeline. Each
+layer reads strictly downward; sibling lenses read only the
+portfolio and re-derive on every render.
 
 ---
 
@@ -518,6 +632,28 @@ Each layer reads strictly downward.
   documented in `staticTextGuard.ts` and at each consuming page.
 - **Read-model persistence.** The portfolio and signals stores are
   reduced read-models. They never feed back into the grammar.
+- **Constitutional non-authority (Phase 6).** ADC artefacts cannot
+  recommend, mandate, justify, trigger, or rank. This is encoded as
+  build-time refusals (`assertNoComputedADCFields`,
+  `assertNoStructuredADCExport`, `assertNoOverrideMechanism`), the
+  strictest vocabulary tier (`TOGAF_CONTAINMENT_FORBIDDEN`), the
+  spec-equality + expected-throw lock on the mandatory disclaimer,
+  and a default-deny TOGAF artefact docking table. Phase 6 carries
+  no override flag of any kind.
+- **Lens-only navigation in the ACW.** The ACW workspace exposes
+  five sibling lenses with no progress indicator, no next/previous,
+  no maturity language, and no completion signal. Switching lenses
+  observes the same workspace differently; it does nothing
+  structural.
+- **Build-time invariants over runtime checks.** Architectural
+  guarantees that must hold for the entire bundle's life are
+  expressed as `*.test-shape.ts` modules whose side effects run at
+  app startup. A failure in any such file fails the bundle, not a
+  runtime feature. See section 15A.
+- **Strict removability of every additive layer.** Each phase
+  (Phases 1–6 and the ACW) can be removed cleanly without touching
+  the prior layer. Removability is asserted in each phase's
+  documentation section and tested by inspection at review time.
 
 ---
 
@@ -528,11 +664,76 @@ Each layer reads strictly downward.
 - Module-load assertions in `staticTextGuard.ts` and the page-level
   `assertAll*` calls function as compile-time-style gates: forbidden
   vocabulary cannot reach the rendered DOM without throwing at import.
+  Each governance vocabulary tier (`PORTFOLIO_FORBIDDEN`,
+  `SIGNALS_FORBIDDEN`, `REFLECTIVE_FORBIDDEN`,
+  `EXPOSURE_NARRATIVE_FORBIDDEN`, `RESPONSIBILITY_LENS_FORBIDDEN`,
+  `SCENARIO_READING_FORBIDDEN`, `DECISION_REENTRY_FORBIDDEN`,
+  `TOGAF_CONTAINMENT_FORBIDDEN`, `ACW_PLACEHOLDER_FORBIDDEN`) has its
+  own `assert<Tier>Language` / `assertAll<Tier>Language` helper pair.
 - `isValidEntry` and `isValidSignal` enforce the persistence shape
   contract on every read; corrupted entries are silently dropped, never
-  rendered.
+  rendered. `assertAllowedFields` throws on unknown fields at write
+  time.
+- **Spec-equality + expected-throw pattern.** Static sentences that
+  intentionally negate the very vocabulary their tier bans (the
+  Phase 1 banner, the Phase 2 framing-boundary clause, the Phase 3
+  responsibility-lens prefix, the Phase 5 re-entry prefix, the
+  Phase 6 mandatory non-authority disclaimer) are locked by two
+  complementary checks at module load: spec-equality against a
+  literal copy of the brief wording, and an expected-throw substring
+  scan whose successful throw is itself the proof the negated
+  banned tokens are still present. If a future edit removes the
+  negated tokens the scan stops throwing and a constitutional drift
+  error is raised. Together this is strictly stronger than a
+  passing substring scan would be. Verified live by
+  `togafContainment.ts` for the Phase 6 disclaimer.
+- **`*.test-shape.ts` modules.** Negative-shape invariants ("what
+  the system MUST NOT do") live in files suffixed
+  `.test-shape.ts`. They export pure functions whose contract is
+  the refusal itself, and run those functions at module load
+  against live application introspection. Two such modules ship
+  today:
+  - `governance/togafContainmentInvariants.test-shape.ts` — closes
+    the export module to exactly four PDF/DOCX entrypoints
+    (`assertNoStructuredADCExport`), bans new portfolio fields
+    matching forbidden constructs (`assertNoComputedADCFields`,
+    with the Phase 5 baseline grandfathered), and bans
+    override-style symbols on the Phase 6 surface
+    (`assertNoOverrideMechanism`). Imported as a side effect from
+    `App.tsx`.
+  - `acw/acwIsolationInvariants.test-shape.ts` — uses Vite's
+    `import.meta.glob` with `?raw` to read every ACW source file
+    as a string at bundle time; throws if any ACW source imports
+    from the Decision Canvas decision pipeline (denylist) or
+    imports anything outside a positive allowlist. Imported as a
+    side effect from both `App.tsx` and `WorkspaceShell.tsx`.
 - End-to-end Playwright runs are used during feature development to
-  validate the full wizard → portfolio → signals → reflection flow.
+  validate the full wizard → portfolio → signals → reflection flow,
+  and (for newer surfaces) the wizard → freeze → exposure → re-entry
+  flow, the containment route, and the ACW workspace lens
+  navigation.
+
+---
+
+## 15A. Build-Time Invariants
+
+Architectural guarantees that must hold for the entire bundle's life
+are expressed as side-effect imports that run at app startup. A
+failure in any of them throws synchronously during module load and
+fails the bundle. There is no runtime fallback, retry, or override.
+
+| Invariant module | Imported from | Guarantee enforced |
+| --- | --- | --- |
+| `governance/staticTextGuard.ts` (per-tier `assertAll*` calls in each consuming module) | every page and deriver that renders static text | No forbidden token from any tier reaches the rendered DOM. |
+| `governance/togafContainment.ts` (spec-equality + expected-throw on `MANDATORY_NON_AUTHORITY_DISCLAIMER`) | `governance/export.ts`, `pages/Containment.tsx` | The verbatim disclaimer wording is locked AND still contains the negated authority-vocabulary it must negate. |
+| `governance/togafContainmentInvariants.test-shape.ts` (`assertNoStructuredADCExport`, `assertNoComputedADCFields`, `assertNoOverrideMechanism`) | `App.tsx` (side-effect import) | Phase 6 PH6-HC1 / PH6-HC2 / PH6-HC6: no structured export surface, no new computed/severity/score/lifecycle/trigger/event/metric/chart/ranking field on the portfolio entry, no override / bypass / force / escalate symbol on the Phase 6 surface. |
+| `acw/acwIsolationInvariants.test-shape.ts` (denylist + positive allowlist over raw ACW sources via `import.meta.glob('**/*.{ts,tsx}', { as: 'raw' })`) | `App.tsx` and `pages/acw/WorkspaceShell.tsx` (side-effect imports) | The ACW workspace imports nothing from the Decision Canvas decision pipeline (`portfolioStore`, `signalsStore`, `adsBuilder`, `ecpBuilder`, `exposureDerive`, `exposureNarratives`, `responsibilityLens`, `scenarioReading`, `decisionReentry`, `export`, `hash`, `identity`, the architecture grammar package). |
+| `governance/portfolioStore.ts` (`assertAllowedFields` at write, `isValidEntry` at read) | called from the freeze flow and on every portfolio read | The 17-field allow-list is the only shape that ever reaches storage; corrupted entries are silently dropped at read time. |
+| `governance/signalsStore.ts` (`assertAllowedTopLevel`, `assertAllowedEvidenceInput`, `endsWithQuestionMark` validator, `isValidSignal`) | called from the signals create / advance flow and on every read | The 11-field top-level allow-list, the nested `evidenceSummary` / `relatedEntries` allow-lists, and the question-mark constraint on `interpretationGuidance` are enforced both at write and at read. |
+
+These invariants are intentionally redundant with manual review: a
+reviewer can always be persuaded; a thrown exception during
+`vite build` cannot.
 
 ---
 
