@@ -29,6 +29,7 @@ import {
 } from "@/acw/acwGrammar";
 import { useAcwWorkspace } from "@/acw/acwGrammarHooks";
 import { createNode, createEdge } from "@/acw/acwStore";
+import { subscribeRefusals } from "@/acw/acwRefusalChannel";
 
 const PANEL_TITLE = "Workspace authoring";
 const PANEL_HINT =
@@ -73,6 +74,15 @@ const SELECT_CLASS =
 export function AuthoringPanel() {
   const workspace = useAcwWorkspace();
   const [refusal, setRefusal] = useState<string | null>(null);
+
+  // Subscribe to the refusal channel so visual surfaces (Canvas2D
+  // drag handlers, the group affordance) can route their refusals
+  // into this single shared banner without prop-threading. The
+  // channel transports the validator's neutral refusal string
+  // verbatim — no codes, no severity, no remediation.
+  useEffect(() => {
+    return subscribeRefusals((message) => setRefusal(message));
+  }, []);
 
   // ---- Add-node form state ---------------------------------------------
   const [nodeType, setNodeType] = useState<AcwElementType>("Zone");

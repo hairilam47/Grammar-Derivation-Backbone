@@ -19,6 +19,11 @@ import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 import "@/acw/acwGrammarHooks";
 import "@/acw/acwIsolationInvariants.test-shape";
 import "@/acw/acwGrammarInvariants.test-shape";
+// v2 visual-layer invariants. Importing this side-effect module
+// runs the bundle-load assertions for the per-lens view-state
+// schema, drag-to-reparent validator gating, cycle prevention,
+// and structural inertness of position / collapse operations.
+import "@/acw/acwGrammarV2Invariants.test-shape";
 
 const SHELL_TITLE = "Architecture Composition Workspace";
 const SHELL_HINT =

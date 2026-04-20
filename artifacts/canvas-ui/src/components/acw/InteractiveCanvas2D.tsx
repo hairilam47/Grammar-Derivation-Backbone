@@ -1,0 +1,780 @@
+// ACW v2 — full-scale interactive 2D canvas.
+//
+// Adds visual usability on top of the v1 grammar foundation WITHOUT
+// adding meaning. Every visual operation that touches structure is
+// validator-gated: drag-to-reparent calls `updateNodeParent`
+// (which calls `canCreateNode` under the hood); group calls the
+// same path; collapse / expand never touches the persisted graph
+// at all (it lives in the per-lens view-state slice).
+//
+// Master prompt §11 says grammar always wins over visuals. This
+// component never fabricates structural change: an illegal drag
+// snaps the node back, surfaces the validator's neutral refusal
+// string in the shared banner via the refusal channel, and leaves
+// the workspace unchanged.
+//
+// Forbidden semantics (per task #50 brief):
+//   - No colour mapped to judgement (red/green/amber). Container
+//     outlines are neutral; the selection highlight is the same
+//     colour for every node type.
+//   - No size mapped to importance. Every node renders at the same
+//     box size regardless of type, child count, or any computed
+//     weight.
+//   - No temporal cues / arrowheads / animation suggesting flow,
+//     sequence, or future / past.
+//   - No labels implying judgement (the static labels in this
+//     module are asserted against ACW_PLACEHOLDER_FORBIDDEN at
+//     module load).
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, MouseEvent } from "react";
+import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
+import {
+  ACW_ELEMENT_TYPE_LABEL,
+  type AcwElementType,
+} from "@/acw/acwGrammar";
+import type { AcwNode, AcwEdge } from "@/acw/acwStore";
+import { updateNodePosition, updateNodeParent, createNode } from "@/acw/acwStore";
+import { publishRefusal } from "@/acw/acwRefusalChannel";
+import {
+  getCollapsedIds,
+  isCollapsed,
+  subscribeViewState,
+  toggleCollapsed,
+} from "@/acw/acwViewState";
+
+const EMPTY_TITLE = "Empty 2D canvas";
+const EMPTY_SUBTITLE = "Add systems to begin";
+const ZOOM_LABEL = "Zoom";
+const RESET_LABEL = "Reset view";
+const GROUP_LABEL = "Group into Zone";
+const GROUP_HINT_NEED_COMPUTE = "Select at least two compute nodes to group.";
+const COLLAPSE_LABEL = "Collapse";
+const EXPAND_LABEL = "Expand";
+const CONTAINED_PREFIX = "contained";
+const SELECTION_LABEL = "Selection";
+const NEW_ZONE_LABEL = "Zone";
+
+assertAllAcwPlaceholderLanguage([
+  EMPTY_TITLE,
+  EMPTY_SUBTITLE,
+  ZOOM_LABEL,
+  RESET_LABEL,
+  GROUP_LABEL,
+  GROUP_HINT_NEED_COMPUTE,
+  COLLAPSE_LABEL,
+  EXPAND_LABEL,
+  CONTAINED_PREFIX,
+  SELECTION_LABEL,
+  NEW_ZONE_LABEL,
+]);
+
+// Visual constants. Pure rendering geometry — no semantics.
+const NODE_W = 96;
+const NODE_H = 32;
+const GRID = 24; // matches the dotted background spacing
+const CONTAINER_PADDING = 24;
+const ALIGN_TOLERANCE = 4; // px in canvas-space
+
+interface ViewState {
+  x: number;
+  y: number;
+  zoom: number;
+}
+const INITIAL_VIEW: ViewState = { x: 0, y: 0, zoom: 1 };
+
+export interface InteractiveCanvas2DProps {
+  /** Lens identity used to scope per-lens view-state (collapse). */
+  lensId: string;
+  /** All nodes the lens has decided to surface. The canvas filters
+   *  by the lens's current depth path before rendering. */
+  nodes: readonly AcwNode[];
+  /** All edges the lens has decided to surface. */
+  edges: readonly AcwEdge[];
+  /** Node id whose contents are currently displayed (depth focus).
+   *  `null` means the workspace root. */
+  focusedParentId: string | null;
+  /** Drill-down callback when the user double-clicks a container. */
+  onDrillDown?: (nodeId: string) => void;
+  emptyHint?: string;
+  height?: number | string;
+  testId?: string;
+}
+
+interface DragState {
+  nodeId: string;
+  // Pointer-to-node anchor (canvas coords)
+  anchorX: number;
+  anchorY: number;
+  // Original position (canvas coords) for snap-back on refusal
+  originX: number;
+  originY: number;
+  // Live position during drag (pre-snap)
+  liveX: number;
+  liveY: number;
+  // Snapped position currently rendered
+  snapX: number;
+  snapY: number;
+}
+
+function snap(value: number): number {
+  return Math.round(value / GRID) * GRID;
+}
+
+export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
+  const {
+    lensId,
+    nodes,
+    edges,
+    focusedParentId,
+    onDrillDown,
+    emptyHint,
+    height = 460,
+    testId = "acw-canvas-2d",
+  } = props;
+
+  const [view, setView] = useState<ViewState>(INITIAL_VIEW);
+  const panRef = useRef<{ startX: number; startY: number; vx: number; vy: number } | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [selection, setSelection] = useState<readonly string[]>([]);
+  const [drag, setDrag] = useState<DragState | null>(null);
+  // Re-render when view-state (collapse) changes
+  // `viewTick` is the dependency we use to invalidate every memo
+  // that derives from the per-lens view-state slice (notably
+  // `collapsedIds`). Without consuming the value in a memo dep
+  // list the memos would never recompute on collapse / expand,
+  // and the rendered visibility would lag behind storage.
+  const [viewTick, setViewTick] = useState(0);
+  useEffect(() => subscribeViewState(() => setViewTick((t) => t + 1)), []);
+
+  // ---- Visibility filtering --------------------------------------
+  // Only nodes whose direct parent is the focused container are
+  // rendered as siblings. Children of any *collapsed* sibling are
+  // not rendered. Containers always render their direct children
+  // unless the container is itself collapsed.
+  const collapsedIds = useMemo(
+    () => new Set(getCollapsedIds(lensId)),
+    [lensId, viewTick],
+  );
+  const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n] as const)), [nodes]);
+
+  // childrenOf: O(n) for the focused level
+  const directSiblings = useMemo(
+    () => nodes.filter((n) => n.parentId === focusedParentId),
+    [nodes, focusedParentId],
+  );
+
+  // For containment cues we render two passes: containers (which
+  // expand to fit their direct children's bounding box) and leaf
+  // nodes. A container is any sibling that has at least one child
+  // in `nodes`.
+  const childCount = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const n of nodes) {
+      if (n.parentId !== null) {
+        counts.set(n.parentId, (counts.get(n.parentId) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [nodes]);
+
+  // Determine which sibling rectangles to draw. For a non-collapsed
+  // container we also render its direct children inside it.
+  interface Drawable {
+    node: AcwNode;
+    x: number;
+    y: number;
+    isContainer: boolean;
+    isCollapsedHere: boolean;
+    childRefs: AcwNode[];
+  }
+  const drawables = useMemo<Drawable[]>(() => {
+    const out: Drawable[] = [];
+    for (const sib of directSiblings) {
+      const hasChildren = (childCount.get(sib.id) ?? 0) > 0;
+      const collapsedHere = collapsedIds.has(sib.id);
+      const live =
+        drag !== null && drag.nodeId === sib.id
+          ? { x: drag.snapX, y: drag.snapY }
+          : { x: sib.x, y: sib.y };
+      out.push({
+        node: sib,
+        x: live.x,
+        y: live.y,
+        isContainer: hasChildren,
+        isCollapsedHere: collapsedHere,
+        childRefs:
+          hasChildren && !collapsedHere
+            ? nodes.filter((n) => n.parentId === sib.id)
+            : [],
+      });
+    }
+    return out;
+  }, [directSiblings, childCount, collapsedIds, drag, nodes]);
+
+  // Compute a container's bounding box from its visible direct
+  // children. If a container has no laid-out children it falls back
+  // to the node's own coords.
+  function containerBox(d: Drawable): { x: number; y: number; w: number; h: number } {
+    if (d.isCollapsedHere || d.childRefs.length === 0) {
+      return { x: d.x - NODE_W / 2, y: d.y - NODE_H / 2, w: NODE_W, h: NODE_H };
+    }
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const c of d.childRefs) {
+      const cx = c.x;
+      const cy = c.y;
+      minX = Math.min(minX, cx - NODE_W / 2);
+      minY = Math.min(minY, cy - NODE_H / 2);
+      maxX = Math.max(maxX, cx + NODE_W / 2);
+      maxY = Math.max(maxY, cy + NODE_H / 2);
+    }
+    return {
+      x: minX - CONTAINER_PADDING,
+      y: minY - CONTAINER_PADDING,
+      w: maxX - minX + CONTAINER_PADDING * 2,
+      h: maxY - minY + CONTAINER_PADDING * 2 + 18, // +18 for header strip
+    };
+  }
+
+  // ---- Pointer math ---------------------------------------------
+  function clientToCanvas(clientX: number, clientY: number): { x: number; y: number } {
+    const svg = svgRef.current;
+    if (!svg) return { x: 0, y: 0 };
+    const rect = svg.getBoundingClientRect();
+    return {
+      x: (clientX - rect.left - view.x) / view.zoom,
+      y: (clientY - rect.top - view.y) / view.zoom,
+    };
+  }
+
+  // ---- Pan ------------------------------------------------------
+  const onBgMouseDown = (e: MouseEvent<HTMLDivElement>) => {
+    if (drag !== null) return;
+    panRef.current = { startX: e.clientX, startY: e.clientY, vx: view.x, vy: view.y };
+  };
+  const onBgMouseMove = (e: MouseEvent<HTMLDivElement>) => {
+    if (drag !== null) return;
+    if (!panRef.current) return;
+    const dx = e.clientX - panRef.current.startX;
+    const dy = e.clientY - panRef.current.startY;
+    setView((v) => ({ ...v, x: panRef.current!.vx + dx, y: panRef.current!.vy + dy }));
+  };
+  const onBgMouseUp = () => {
+    panRef.current = null;
+  };
+
+  // Native wheel handler for zoom
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handler = (ev: globalThis.WheelEvent) => {
+      ev.preventDefault();
+      const delta = -ev.deltaY * 0.001;
+      setView((v) => ({ ...v, zoom: Math.min(4, Math.max(0.25, v.zoom + delta)) }));
+    };
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
+  }, []);
+
+  // ---- Drag a node ----------------------------------------------
+  function onNodeMouseDown(e: MouseEvent, node: AcwNode) {
+    e.stopPropagation();
+    const { x, y } = clientToCanvas(e.clientX, e.clientY);
+    setDrag({
+      nodeId: node.id,
+      anchorX: x - node.x,
+      anchorY: y - node.y,
+      originX: node.x,
+      originY: node.y,
+      liveX: node.x,
+      liveY: node.y,
+      snapX: node.x,
+      snapY: node.y,
+    });
+    // Also select on mousedown (overwriting selection unless shift)
+    setSelection(e.shiftKey ? Array.from(new Set([...selection, node.id])) : [node.id]);
+  }
+  function onWindowMouseMove(e: globalThis.MouseEvent) {
+    if (!drag) return;
+    const { x, y } = clientToCanvas(e.clientX, e.clientY);
+    const lx = x - drag.anchorX;
+    const ly = y - drag.anchorY;
+    setDrag({ ...drag, liveX: lx, liveY: ly, snapX: snap(lx), snapY: snap(ly) });
+  }
+  // Drop-target resolution for drag-to-reparent.
+  //
+  // Only VISIBLE CONTAINERS are treated as drop targets. Releasing
+  // a drag over a leaf sibling is read as "the user ran out of
+  // empty space, but did not mean to nest into that sibling" — so
+  // the drop is treated as plain reposition (parent unchanged).
+  // This avoids spurious validator refusals every time two leaf
+  // siblings overlap on the canvas.
+  //
+  // To create a node *as the first child* of a leaf — turning that
+  // leaf into a container — use the authoring panel's parent
+  // dropdown. v2 deliberately does not collapse those two
+  // affordances into one drag gesture; doing so would require
+  // either inferring intent from cursor pixels or popping a
+  // disambiguation menu, neither of which has a deterministic
+  // grammar interpretation.
+  //
+  // If nothing matches, the drop target is the focused parent
+  // (i.e. "the area the user is currently looking at", which may
+  // be the root). The validator is still the final authority on
+  // whether any resulting reparent is grammatical.
+  function findDropTarget(snapX: number, snapY: number, draggedId: string): string | null {
+    for (const d of drawables) {
+      if (d.node.id === draggedId) continue;
+      if (!d.isContainer) continue;
+      const box = containerBox(d);
+      if (
+        snapX >= box.x &&
+        snapX <= box.x + box.w &&
+        snapY >= box.y &&
+        snapY <= box.y + box.h
+      ) {
+        return d.node.id;
+      }
+    }
+    return focusedParentId;
+  }
+
+  function onWindowMouseUp() {
+    if (!drag) return;
+    const finalX = drag.snapX;
+    const finalY = drag.snapY;
+    const node = byId.get(drag.nodeId);
+    const movedPosition = finalX !== drag.originX || finalY !== drag.originY;
+    if (!node) {
+      setDrag(null);
+      return;
+    }
+    // Resolve drop target FIRST so that a refused reparent skips
+    // the position write — the node visibly snaps back to its
+    // original location, matching what we surfaced via the refusal
+    // banner.
+    const dropTargetId = findDropTarget(finalX, finalY, drag.nodeId);
+    const wantsReparent = dropTargetId !== node.parentId;
+    if (wantsReparent) {
+      const r = updateNodeParent(drag.nodeId, dropTargetId);
+      if (!r.ok) {
+        publishRefusal(r.reason);
+        setDrag(null);
+        return;
+      }
+    }
+    if (movedPosition) {
+      const r = updateNodePosition(drag.nodeId, finalX, finalY);
+      if (!r.ok) {
+        publishRefusal(r.reason);
+      }
+    }
+    setDrag(null);
+  }
+  useEffect(() => {
+    if (!drag) return;
+    const move = (e: globalThis.MouseEvent) => onWindowMouseMove(e);
+    const up = () => onWindowMouseUp();
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    return () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drag]);
+
+  // ---- Alignment guides (transient, render-only) ----------------
+  // When dragging, draw a vertical guide line whenever the dragged
+  // node's centre x is within tolerance of any other sibling's
+  // centre x; same for horizontal y. Pure visual aid; no
+  // auto-arrange.
+  const alignmentGuides = useMemo<{ kind: "v" | "h"; pos: number }[]>(() => {
+    if (!drag) return [];
+    const others = directSiblings.filter((s) => s.id !== drag.nodeId);
+    const guides: { kind: "v" | "h"; pos: number }[] = [];
+    for (const o of others) {
+      if (Math.abs(o.x - drag.snapX) <= ALIGN_TOLERANCE) {
+        guides.push({ kind: "v", pos: o.x });
+      }
+      if (Math.abs(o.y - drag.snapY) <= ALIGN_TOLERANCE) {
+        guides.push({ kind: "h", pos: o.y });
+      }
+    }
+    return guides;
+  }, [drag, directSiblings]);
+
+  // ---- Group affordance ----------------------------------------
+  // Only enabled when ALL selected siblings are ComputeNode AND
+  // selection size >= 2 AND we're at the workspace root (Zones can
+  // only live at root). The group operation: create a new Zone,
+  // then reparent every selected ComputeNode under it. Each
+  // reparent is validator-gated; if any fails, we publish the
+  // refusal and stop. Because `canCreateNode("ComputeNode", zoneId)`
+  // is always permitted by the grammar, partial-state risk in
+  // practice is zero — but the per-step gate is the contract.
+  const selectionAtFocus = selection.filter((id) => {
+    const n = byId.get(id);
+    return n !== undefined && n.parentId === focusedParentId;
+  });
+  const canGroup =
+    focusedParentId === null &&
+    selectionAtFocus.length >= 2 &&
+    selectionAtFocus.every((id) => byId.get(id)?.type === "ComputeNode");
+
+  function onGroup() {
+    if (!canGroup) {
+      publishRefusal(GROUP_HINT_NEED_COMPUTE);
+      return;
+    }
+    // Position the new zone at the centroid of the selection,
+    // snapped to grid. Pure layout convenience; carries no meaning.
+    let cx = 0;
+    let cy = 0;
+    for (const id of selectionAtFocus) {
+      const n = byId.get(id)!;
+      cx += n.x;
+      cy += n.y;
+    }
+    cx = snap(cx / selectionAtFocus.length);
+    cy = snap(cy / selectionAtFocus.length);
+    const created = createNode({
+      type: "Zone",
+      parentId: null,
+      label: NEW_ZONE_LABEL,
+      x: cx,
+      y: cy,
+    });
+    if (!created.ok) {
+      publishRefusal(created.reason);
+      return;
+    }
+    // Deterministic: `createNode` returns the freshly-minted id
+    // (v2 contract). No scanning, no "newest empty Zone"
+    // heuristic — this is the only correct way to address the
+    // node we just made, especially when other empty zones may
+    // already exist at the root.
+    const zoneId = created.id;
+    for (const id of selectionAtFocus) {
+      const r = updateNodeParent(id, zoneId);
+      if (!r.ok) {
+        publishRefusal(r.reason);
+        return;
+      }
+    }
+    setSelection([]);
+  }
+
+  // ---- Background / empty state --------------------------------
+  const isEmpty = directSiblings.length === 0;
+  const transformStyle: CSSProperties = {
+    transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`,
+    transformOrigin: "0 0",
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      data-testid={testId}
+      onMouseDown={onBgMouseDown}
+      onMouseMove={onBgMouseMove}
+      onMouseUp={onBgMouseUp}
+      onMouseLeave={onBgMouseUp}
+      style={{
+        position: "relative",
+        height,
+        overflow: "hidden",
+        cursor: drag ? "grabbing" : panRef.current ? "grabbing" : "grab",
+        backgroundImage:
+          "radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px)",
+        backgroundSize: `${GRID}px ${GRID}px`,
+      }}
+      className="rounded-md border border-border/40 bg-muted/10"
+    >
+      {/* HUD */}
+      <div
+        className="absolute top-2 right-2 z-10 flex items-center gap-2 text-[10px] uppercase tracking-widest text-muted-foreground"
+        data-testid={`${testId}-hud`}
+      >
+        <span>
+          {ZOOM_LABEL} {view.zoom.toFixed(2)}×
+        </span>
+        <button
+          type="button"
+          onClick={() => setView(INITIAL_VIEW)}
+          className="px-2 py-0.5 border border-border/60 rounded hover:text-primary hover:border-primary/60 transition-colors"
+          data-testid={`${testId}-reset`}
+        >
+          {RESET_LABEL}
+        </button>
+        <button
+          type="button"
+          onClick={onGroup}
+          disabled={!canGroup}
+          className="px-2 py-0.5 border border-border/60 rounded disabled:opacity-40 disabled:cursor-not-allowed hover:text-primary hover:border-primary/60 transition-colors"
+          data-testid={`${testId}-group`}
+        >
+          {GROUP_LABEL}
+        </button>
+        {selection.length > 0 ? (
+          <span data-testid={`${testId}-selection-count`}>
+            {SELECTION_LABEL} {selection.length}
+          </span>
+        ) : null}
+      </div>
+
+      {isEmpty ? (
+        <div
+          className="absolute inset-0 flex flex-col items-center justify-center text-center px-6 pointer-events-none"
+          data-testid={`${testId}-empty`}
+        >
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            {EMPTY_TITLE}
+          </p>
+          <p className="text-[11px] text-muted-foreground/70 mt-1 italic">
+            {emptyHint ?? EMPTY_SUBTITLE}
+          </p>
+        </div>
+      ) : (
+        <svg
+          ref={svgRef}
+          width="100%"
+          height="100%"
+          style={{ position: "absolute", inset: 0 }}
+          onMouseDown={(e) => {
+            // Click on bare svg clears selection
+            if (e.target === e.currentTarget) {
+              setSelection([]);
+            }
+          }}
+        >
+          <g style={transformStyle as Record<string, string | number>}>
+            {/* Container nested boxes (drawn behind everything) */}
+            {drawables
+              .filter((d) => d.isContainer)
+              .map((d) => {
+                const box = containerBox(d);
+                const collapsed = d.isCollapsedHere;
+                const total = childCount.get(d.node.id) ?? 0;
+                return (
+                  <g key={`container-${d.node.id}`} data-testid={`${testId}-container-${d.node.id}`}>
+                    {/* Bounding rect and header strip are pure
+                        decoration — they must not catch pointer
+                        events, otherwise they intercept clicks
+                        meant for the collapse toggle or the leaf
+                        nodes that visually sit on top of them. */}
+                    <rect
+                      x={box.x}
+                      y={box.y}
+                      width={box.w}
+                      height={box.h}
+                      rx={6}
+                      fill="rgba(255,255,255,0.02)"
+                      stroke="rgba(255,255,255,0.25)"
+                      strokeDasharray={collapsed ? "4 4" : "2 4"}
+                      strokeWidth={1}
+                      pointerEvents="none"
+                    />
+                    <rect
+                      x={box.x}
+                      y={box.y}
+                      width={box.w}
+                      height={18}
+                      fill="rgba(255,255,255,0.04)"
+                      pointerEvents="none"
+                    />
+                    <text
+                      x={box.x + 8}
+                      y={box.y + 13}
+                      fontSize="9"
+                      fontFamily="monospace"
+                      fill="rgba(255,255,255,0.7)"
+                      pointerEvents="none"
+                    >
+                      {ACW_ELEMENT_TYPE_LABEL[d.node.type]}: {d.node.label}
+                      {" — "}
+                      {total} {CONTAINED_PREFIX}
+                    </text>
+                    {/* Collapse toggle: explicitly enabled for
+                        pointer events so it wins against any
+                        ancestor that turned them off. */}
+                    <g
+                      style={{ cursor: "pointer", pointerEvents: "all" }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleCollapsed(lensId, d.node.id);
+                      }}
+                      data-testid={`${testId}-collapse-${d.node.id}`}
+                    >
+                      <rect
+                        x={box.x + box.w - 60}
+                        y={box.y + 2}
+                        width={56}
+                        height={14}
+                        fill="rgba(255,255,255,0.08)"
+                        stroke="rgba(255,255,255,0.4)"
+                        rx={2}
+                      />
+                      <text
+                        x={box.x + box.w - 32}
+                        y={box.y + 12}
+                        textAnchor="middle"
+                        fontSize="8"
+                        fontFamily="monospace"
+                        fill="rgba(255,255,255,0.9)"
+                        pointerEvents="none"
+                      >
+                        {collapsed ? EXPAND_LABEL : COLLAPSE_LABEL}
+                      </text>
+                    </g>
+                  </g>
+                );
+              })}
+
+            {/* Edges between visible siblings or visible children */}
+            {edges.map((e) => {
+              // Resolve endpoints by their visible position. An edge
+              // is drawn iff both endpoints are currently visible
+              // (direct sibling at the focus level or visible child
+              // of a non-collapsed container at this level).
+              const visibleAt = new Map<string, { x: number; y: number }>();
+              for (const d of drawables) {
+                visibleAt.set(d.node.id, { x: d.x, y: d.y });
+                for (const c of d.childRefs) {
+                  visibleAt.set(c.id, { x: c.x, y: c.y });
+                }
+              }
+              const a = visibleAt.get(e.fromId);
+              const b = visibleAt.get(e.toId);
+              if (!a || !b) return null;
+              return (
+                <line
+                  key={e.id}
+                  x1={a.x}
+                  y1={a.y}
+                  x2={b.x}
+                  y2={b.y}
+                  stroke="rgba(255,255,255,0.35)"
+                  strokeWidth={1}
+                  data-testid={`${testId}-edge-${e.id}`}
+                />
+              );
+            })}
+
+            {/* Children inside non-collapsed containers, then leaf
+                siblings on top */}
+            {drawables.flatMap((d) =>
+              d.childRefs.map((child) => {
+                const dx = drag?.nodeId === child.id ? drag.snapX : child.x;
+                const dy = drag?.nodeId === child.id ? drag.snapY : child.y;
+                return renderNodeBox(child, false, dx, dy);
+              }),
+            )}
+            {drawables.map((d) => {
+              if (d.isContainer) return null;
+              return renderNodeBox(d.node, selection.includes(d.node.id), d.x, d.y);
+            })}
+
+            {/* Alignment guides (drawn last so they sit on top) */}
+            {alignmentGuides.map((g, i) =>
+              g.kind === "v" ? (
+                <line
+                  key={`guide-${i}`}
+                  x1={g.pos}
+                  y1={-4000}
+                  x2={g.pos}
+                  y2={4000}
+                  stroke="rgba(120,200,255,0.5)"
+                  strokeWidth={0.6}
+                  strokeDasharray="2 3"
+                  data-testid={`${testId}-guide-v`}
+                />
+              ) : (
+                <line
+                  key={`guide-${i}`}
+                  x1={-4000}
+                  y1={g.pos}
+                  x2={4000}
+                  y2={g.pos}
+                  stroke="rgba(120,200,255,0.5)"
+                  strokeWidth={0.6}
+                  strokeDasharray="2 3"
+                  data-testid={`${testId}-guide-h`}
+                />
+              ),
+            )}
+          </g>
+        </svg>
+      )}
+    </div>
+  );
+
+  // Inline helper so it can close over selection / drag handlers.
+  function renderNodeBox(
+    n: AcwNode,
+    selected: boolean,
+    overrideX?: number,
+    overrideY?: number,
+  ) {
+    const x = overrideX ?? n.x;
+    const y = overrideY ?? n.y;
+    const isDragging = drag?.nodeId === n.id;
+    const isSelected = selection.includes(n.id);
+    return (
+      <g
+        key={n.id}
+        data-testid={`${testId}-node-${n.id}`}
+        style={{ cursor: "grab" }}
+        onMouseDown={(e) => onNodeMouseDown(e, n)}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          onDrillDown?.(n.id);
+        }}
+      >
+        <rect
+          x={x - NODE_W / 2}
+          y={y - NODE_H / 2}
+          width={NODE_W}
+          height={NODE_H}
+          rx={4}
+          fill={isDragging ? "rgba(120,200,255,0.12)" : "rgba(255,255,255,0.06)"}
+          stroke={
+            isSelected || selected
+              ? "rgba(120,200,255,0.85)"
+              : "rgba(255,255,255,0.45)"
+          }
+          strokeWidth={isSelected || selected ? 1.5 : 1}
+        />
+        <text
+          x={x}
+          y={y - 1}
+          textAnchor="middle"
+          fontSize="9"
+          fontFamily="monospace"
+          fill="rgba(255,255,255,0.85)"
+        >
+          {ACW_ELEMENT_TYPE_LABEL[n.type as AcwElementType]}
+        </text>
+        <text
+          x={x}
+          y={y + 10}
+          textAnchor="middle"
+          fontSize="9"
+          fontFamily="monospace"
+          fill="rgba(255,255,255,0.7)"
+        >
+          {n.label}
+        </text>
+      </g>
+    );
+  }
+}
+
+// Re-export the sentinel for build-time invariant probing without
+// pulling all the React internals — `isCollapsed` proves the
+// collapse predicate is wired to the per-lens key.
+export const __interactiveCanvasInternals = Object.freeze({ isCollapsed });

@@ -298,15 +298,25 @@ export type StoreResult =
   | { readonly ok: true }
   | { readonly ok: false; readonly reason: string };
 
-export function createNode(req: CreateNodeRequest): StoreResult {
+// `createNode` carries an extra `id` field on success so callers
+// (notably the v2 group affordance) can deterministically address
+// the node they just created without scanning the workspace for
+// "the most recently added Zone with no children" — a heuristic
+// that drifts as soon as a pre-existing empty container is present.
+export type CreateNodeResult =
+  | { readonly ok: true; readonly id: string }
+  | { readonly ok: false; readonly reason: string };
+
+export function createNode(req: CreateNodeRequest): CreateNodeResult {
   const ws = getWorkspace();
   const result: ValidationResult = validateOperation(
     { kind: "createNode", type: req.type, parentId: req.parentId },
     viewFor(ws),
   );
   if (!result.ok) return { ok: false, reason: result.reason };
+  const id = freshId("node");
   const node: AcwNode = Object.freeze({
-    id: freshId("node"),
+    id,
     type: req.type,
     parentId: req.parentId,
     label: req.label ?? req.type,
@@ -323,7 +333,7 @@ export function createNode(req: CreateNodeRequest): StoreResult {
   writeToStorage(next);
   cache = next;
   notify();
-  return { ok: true };
+  return { ok: true, id };
 }
 
 export function createEdge(req: CreateEdgeRequest): StoreResult {
@@ -352,6 +362,117 @@ export function createEdge(req: CreateEdgeRequest): StoreResult {
   return { ok: true };
 }
 
+// v2 — drag-to-move position update.
+//
+// Position changes carry no grammar consequence: x and y are
+// already-permitted node fields and the validator has no opinion
+// about the numeric values they take. The mutation still routes
+// through `writeToStorage`, which re-runs `assertAllowedFields` and
+// the grammar-consistency pass on the resulting workspace, so a
+// caller that smuggles a non-numeric value still gets refused at
+// the storage boundary.
+//
+// Snap-to-grid is intentionally NOT applied here. The store records
+// the canonical position the caller supplies; whether the caller
+// chose to snap is a render-layer concern. That keeps the store
+// agnostic to canvas geometry.
+export function updateNodePosition(
+  nodeId: string,
+  x: number,
+  y: number,
+): StoreResult {
+  const ws = getWorkspace();
+  const positionCheck: ValidationResult = validateOperation(
+    { kind: "updateNodePosition", x, y },
+    viewFor(ws),
+  );
+  if (!positionCheck.ok) return { ok: false, reason: positionCheck.reason };
+  const idx = ws.structureGraph.nodes.findIndex((n) => n.id === nodeId);
+  if (idx === -1) {
+    return { ok: false, reason: "The node referenced does not exist." };
+  }
+  const prev = ws.structureGraph.nodes[idx];
+  if (prev.x === x && prev.y === y) return { ok: true };
+  const updated: AcwNode = Object.freeze({ ...prev, x, y });
+  const nodes = ws.structureGraph.nodes.slice();
+  nodes[idx] = updated;
+  const next: AcwWorkspace = Object.freeze({
+    schemaVersion: ACW_SCHEMA_VERSION,
+    structureGraph: Object.freeze({
+      nodes: Object.freeze(nodes),
+      edges: ws.structureGraph.edges,
+    }),
+  });
+  writeToStorage(next);
+  cache = next;
+  notify();
+  return { ok: true };
+}
+
+// v2 — drag-to-reparent (and group-into-container).
+//
+// Reparenting is the only structural mutation v2 introduces. It
+// MUST go through the v1 validator's `canCreateNode` predicate so
+// the resulting parent / child pairing is grammar-well-formed; an
+// illegal drag is refused and the persisted workspace is unchanged.
+//
+// Two extra invariants are enforced on top of the validator:
+//   - the node must exist;
+//   - the new parent (when not null) must not be a descendant of
+//     the node, otherwise the containment hierarchy would form a
+//     cycle. This is a structural concern the v1 validator does
+//     not address (because v1 was append-only and could not
+//     produce a cycle).
+export function updateNodeParent(
+  nodeId: string,
+  newParentId: string | null,
+): StoreResult {
+  const ws = getWorkspace();
+  const idx = ws.structureGraph.nodes.findIndex((n) => n.id === nodeId);
+  if (idx === -1) {
+    return { ok: false, reason: "The node referenced does not exist." };
+  }
+  const node = ws.structureGraph.nodes[idx];
+  if (node.parentId === newParentId) return { ok: true };
+  // Cycle check: walk the new parent's ancestor chain; if we hit
+  // `nodeId` it means the move would make `nodeId` an ancestor of
+  // itself.
+  if (newParentId !== null) {
+    const byId = new Map(ws.structureGraph.nodes.map((n) => [n.id, n] as const));
+    let cursor: string | null = newParentId;
+    while (cursor !== null) {
+      if (cursor === nodeId) {
+        return {
+          ok: false,
+          reason: "A node is not permitted to be contained within itself.",
+        };
+      }
+      const next: AcwNode | undefined = byId.get(cursor);
+      cursor = next?.parentId ?? null;
+    }
+  }
+  const validation: ValidationResult = canCreateNode(
+    node.type,
+    newParentId,
+    viewFor(ws),
+  );
+  if (!validation.ok) return { ok: false, reason: validation.reason };
+  const updated: AcwNode = Object.freeze({ ...node, parentId: newParentId });
+  const nodes = ws.structureGraph.nodes.slice();
+  nodes[idx] = updated;
+  const next: AcwWorkspace = Object.freeze({
+    schemaVersion: ACW_SCHEMA_VERSION,
+    structureGraph: Object.freeze({
+      nodes: Object.freeze(nodes),
+      edges: ws.structureGraph.edges,
+    }),
+  });
+  writeToStorage(next);
+  cache = next;
+  notify();
+  return { ok: true };
+}
+
 // Test / maintenance affordance: clear the workspace back to empty.
 // Not bound to any UI in v1; provided so future tooling and the
 // build-time invariants can reset state without touching localStorage
@@ -371,4 +492,19 @@ export const __acwStoreInternals = Object.freeze({
   assertAllowedFields,
   emptyWorkspace,
   viewFor,
+  // Returns the canonical workspace as a stable JSON string for
+  // byte-identity probes (used by the v2 invariants to assert that
+  // visual operations like collapse / position-update do not
+  // mutate the structureGraph).
+  serializeForTest(): string {
+    return JSON.stringify(getWorkspace());
+  },
+  // Force the in-memory cache to drop and re-read from localStorage
+  // on the next access. The v2 invariants use this to restore the
+  // user's persisted workspace after running snapshot-and-restore
+  // mutation probes against the live singleton.
+  reloadFromStorageForTest(): void {
+    cache = null;
+    notify();
+  },
 });

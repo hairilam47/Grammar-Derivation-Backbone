@@ -1,32 +1,37 @@
 // ACW lens — System Landscape (TOGAF Application).
 //
-// Empty system nodes and placeholder connections on the 2D canvas
-// primitive. Instructional empty state. No lifecycle, legacy
-// labels, or quality indicators.
+// v2: the lens now hosts the InteractiveCanvas2D primitive, which
+// adds drag-to-move (snap-to-grid), drag-to-reparent (validator-
+// gated), manual grouping into a Zone container, per-lens
+// collapse / expand, nested containment cues, and transient
+// alignment guides. The structureGraph schema is unchanged
+// (`acw-1.0`); per-lens collapse state lives in the separate
+// `acw-view-1.0` document.
 //
-// Drill-down contract: this lens owns its own depth-path state and
-// passes a callback into Canvas2D so that any node placed on the
-// canvas in a later iteration becomes a clickable affordance for
-// stepping into a deeper level of decomposition. The contract is
-// wired today against an empty node set so the API surface is
-// demonstrably present; clicking is a no-op until nodes exist.
-import { useMemo, useState } from "react";
+// Drill-down contract: double-clicking a node descends into it,
+// matching the v1 contract. Step-out walks the depth path back.
+//
+// Empty / instructional vocabulary is asserted against
+// ACW_PLACEHOLDER_FORBIDDEN at module load.
+import { useEffect, useMemo, useState } from "react";
 import { WorkspaceShell } from "../WorkspaceShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Canvas2D, type Canvas2DNode, type Canvas2DEdge } from "@/components/acw/Canvas2D";
+import { InteractiveCanvas2D } from "@/components/acw/InteractiveCanvas2D";
 import { LiveStructurePanel } from "@/components/acw/LiveStructurePanel";
 import { useAcwWorkspace } from "@/acw/acwGrammarHooks";
 import { ACW_ELEMENT_TYPE_LABEL } from "@/acw/acwGrammar";
+import { updateNodePosition } from "@/acw/acwStore";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 
 const LENS_TITLE = "System Landscape";
 const LENS_LAYER = "TOGAF Application";
 const LENS_HINT =
-  "Empty 2D canvas. Pan with mouse drag, zoom with mouse wheel. Add systems to begin.";
+  "2D canvas. Pan with mouse drag, zoom with mouse wheel. Drag nodes to position; group selected compute nodes into a Zone; collapse containers to focus.";
 const EMPTY_HINT = "Add systems to begin";
 const ROOT_CRUMB = "Root";
 const BACK_LABEL = "Step out";
 const DEPTH_LABEL = "Depth";
+const LENS_PATH = "/workspace/landscape";
 
 assertAllAcwPlaceholderLanguage([
   LENS_TITLE,
@@ -39,24 +44,22 @@ assertAllAcwPlaceholderLanguage([
 ]);
 
 // Lens filter for the Application layer: Systems and Components.
-// The Application lens shows the application landscape; Zones /
-// ComputeNodes belong to the Technology lens (see Deployment).
+// Zones / ComputeNodes belong to the Technology lens (Deployment).
 const APPLICATION_TYPES = new Set(["System", "Component"] as const);
 
-// Auto-position any node that lacks user-set coordinates so the
-// Canvas2D primitive (which is render-only and never invents
-// arrangement) still has something to display. Deterministic and
-// purely positional; conveys no priority or ordering meaning.
+// Auto-place any node that lacks user-set coordinates so a freshly
+// added node is visible. Pure layout convenience; carries no
+// priority or ordering meaning. The auto-place writes back through
+// `updateNodePosition` so the next render reads the canonical
+// coords from the store and so subsequent drags compose with it.
 function autoPosition(index: number): { x: number; y: number } {
   const cols = 4;
   const col = index % cols;
   const row = Math.floor(index / cols);
-  return { x: 80 + col * 120, y: 60 + row * 80 };
+  return { x: 80 + col * 144, y: 80 + row * 96 };
 }
 
 export default function SystemLandscape() {
-  // Depth path: each entry is a system id the reader has stepped
-  // into. An empty array means we are at the root level.
   const [depthPath, setDepthPath] = useState<readonly string[]>([]);
   const workspace = useAcwWorkspace();
 
@@ -67,40 +70,58 @@ export default function SystemLandscape() {
     setDepthPath((prev) => prev.slice(0, -1));
   };
 
-  // Filter nodes for the Application lens; further filter by depth
-  // path (only show nodes whose parent matches the current depth
-  // frame, OR roots when depthPath is empty).
-  const visibleNodes = useMemo(() => {
-    const currentParent = depthPath.length === 0 ? null : depthPath[depthPath.length - 1];
-    return workspace.structureGraph.nodes
-      .filter((n) => APPLICATION_TYPES.has(n.type as "System" | "Component"))
-      .filter((n) => n.parentId === currentParent);
-  }, [workspace, depthPath]);
-
-  const canvasNodes: Canvas2DNode[] = useMemo(
+  // The Application lens surfaces System + Component across the
+  // whole tree so the canvas can render containment cues for
+  // Systems whose Components are visible inside them.
+  const lensNodes = useMemo(
     () =>
-      visibleNodes.map((n, i) => {
-        const pos = n.x === 0 && n.y === 0 ? autoPosition(i) : { x: n.x, y: n.y };
-        return {
-          id: n.id,
-          x: pos.x,
-          y: pos.y,
-          label: `${ACW_ELEMENT_TYPE_LABEL[n.type]}: ${n.label}`,
-        };
-      }),
-    [visibleNodes],
+      workspace.structureGraph.nodes.filter((n) =>
+        APPLICATION_TYPES.has(n.type as "System" | "Component"),
+      ),
+    [workspace],
   );
 
-  const visibleNodeIds = new Set(visibleNodes.map((n) => n.id));
-  const canvasEdges: Canvas2DEdge[] = useMemo(
+  const focusedParentId =
+    depthPath.length === 0 ? null : depthPath[depthPath.length - 1];
+
+  // Auto-place any sibling at the focus level whose stored
+  // coordinates are still (0, 0) — the v1 store seeds new nodes at
+  // the origin. We write back via the validator-gated mutation so
+  // the canonical coords live in the workspace document.
+  useEffect(() => {
+    const siblings = lensNodes.filter((n) => n.parentId === focusedParentId);
+    let i = 0;
+    for (const s of siblings) {
+      if (s.x === 0 && s.y === 0) {
+        const p = autoPosition(i);
+        updateNodePosition(s.id, p.x, p.y);
+      }
+      i += 1;
+    }
+  }, [lensNodes, focusedParentId]);
+
+  // Edges are filtered to those between any two visible nodes
+  // (lens-scoped). The canvas itself decides whether to actually
+  // draw an edge based on whether both endpoints are visible at the
+  // current depth + collapse state.
+  const visibleIds = useMemo(() => new Set(lensNodes.map((n) => n.id)), [lensNodes]);
+  const lensEdges = useMemo(
     () =>
-      workspace.structureGraph.edges
-        .filter((e) => visibleNodeIds.has(e.fromId) && visibleNodeIds.has(e.toId))
-        .map((e) => ({ id: e.id, fromId: e.fromId, toId: e.toId })),
-    // Recompute when underlying edge or visibility set changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [workspace.structureGraph.edges, Array.from(visibleNodeIds).join("|")],
+      workspace.structureGraph.edges.filter(
+        (e) => visibleIds.has(e.fromId) && visibleIds.has(e.toId),
+      ),
+    [workspace, visibleIds],
   );
+
+  // Crumb labels resolve depth ids to readable names.
+  const crumbs = useMemo(() => {
+    const acc: string[] = [ROOT_CRUMB];
+    for (const id of depthPath) {
+      const n = workspace.structureGraph.nodes.find((x) => x.id === id);
+      acc.push(n ? `${ACW_ELEMENT_TYPE_LABEL[n.type]}: ${n.label}` : id);
+    }
+    return acc;
+  }, [depthPath, workspace]);
 
   return (
     <WorkspaceShell>
@@ -113,9 +134,7 @@ export default function SystemLandscape() {
             {LENS_LAYER}
           </p>
         </CardHeader>
-        <CardContent className="text-xs text-muted-foreground">
-          {LENS_HINT}
-        </CardContent>
+        <CardContent className="text-xs text-muted-foreground">{LENS_HINT}</CardContent>
       </Card>
 
       <div
@@ -123,9 +142,7 @@ export default function SystemLandscape() {
         data-testid="acw-landscape-breadcrumb"
       >
         <span>{DEPTH_LABEL}:</span>
-        <span data-testid="acw-landscape-breadcrumb-path">
-          {[ROOT_CRUMB, ...depthPath].join(" / ")}
-        </span>
+        <span data-testid="acw-landscape-breadcrumb-path">{crumbs.join(" / ")}</span>
         {depthPath.length > 0 ? (
           <button
             type="button"
@@ -138,13 +155,15 @@ export default function SystemLandscape() {
         ) : null}
       </div>
 
-      <Canvas2D
-        nodes={canvasNodes}
-        edges={canvasEdges}
+      <InteractiveCanvas2D
+        lensId={LENS_PATH}
+        nodes={lensNodes}
+        edges={lensEdges}
+        focusedParentId={focusedParentId}
         emptyHint={EMPTY_HINT}
-        height={420}
+        height={460}
         testId="acw-landscape-canvas"
-        onNodeDrillDown={handleDrillDown}
+        onDrillDown={handleDrillDown}
       />
 
       <LiveStructurePanel

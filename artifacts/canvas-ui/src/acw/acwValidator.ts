@@ -34,6 +34,8 @@ const REASON_PARENT_MISSING = "The parent node referenced does not exist.";
 const REASON_NODE_MISSING = "One of the referenced nodes does not exist.";
 const REASON_EDGE_FORBIDDEN_PREFIX = "This relationship is not permitted between";
 const REASON_SELF_EDGE = "A relationship from a node to itself is not permitted.";
+export const REASON_POSITION_NOT_FINITE =
+  "Only finite numbers are permitted as position coordinates.";
 const REASON_PARENT_ROOT = "the workspace root";
 
 assertAllAcwPlaceholderLanguage([
@@ -45,6 +47,7 @@ assertAllAcwPlaceholderLanguage([
   REASON_EDGE_FORBIDDEN_PREFIX,
   REASON_SELF_EDGE,
   REASON_PARENT_ROOT,
+  REASON_POSITION_NOT_FINITE,
 ]);
 
 // Read-only view of the live workspace surface the validator needs.
@@ -114,6 +117,22 @@ export function canCreateEdge(
   return { ok: true };
 }
 
+// canUpdateNodePosition: a v2-introduced predicate so that visual
+// drag-to-move flows through the validator surface even though
+// position is not a structural concept the grammar has any opinion
+// about. The check is intentionally narrow — finite-number — but
+// having it routed here means every visual mutation is gated by
+// `validateOperation`, satisfying the v2 contract literally.
+export function canUpdateNodePosition(
+  x: number,
+  y: number,
+): ValidationResult {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return { ok: false, reason: REASON_POSITION_NOT_FINITE };
+  }
+  return { ok: true };
+}
+
 // Operation dispatcher used by callers that prefer a uniform shape.
 export type AcwOperation =
   | {
@@ -126,6 +145,11 @@ export type AcwOperation =
       readonly edgeKind: AcwExplicitEdgeKind;
       readonly fromId: string;
       readonly toId: string;
+    }
+  | {
+      readonly kind: "updateNodePosition";
+      readonly x: number;
+      readonly y: number;
     };
 
 export function validateOperation(
@@ -137,5 +161,7 @@ export function validateOperation(
       return canCreateNode(op.type, op.parentId, view);
     case "createEdge":
       return canCreateEdge(op.edgeKind, op.fromId, op.toId, view);
+    case "updateNodePosition":
+      return canUpdateNodePosition(op.x, op.y);
   }
 }

@@ -1562,3 +1562,161 @@ fails synchronously on drift.
 - No new vocabulary tier. Every static label introduced by v1 is
   asserted against `ACW_PLACEHOLDER_FORBIDDEN` (the existing ACW
   tier).
+
+## 18B. ACW v2 — 2D visual usability
+
+The v2 layer of the Progressive Diagram Builder makes the
+structural graph from §18A directly *manipulable on a 2D canvas*
+without giving any visual operation new meaning. The schema, the
+registry, the validator, and the persisted document shape are
+unchanged: workspace persistence remains `{ schemaVersion:
+"acw-1.0", structureGraph: { nodes, edges } }` under
+`acw.workspace.v1`. Every visual operation that touches structure
+is validator-gated; every visual concern that does not is moved
+out of the workspace document into a separate, allow-listed,
+schema-versioned view-state document.
+
+### New store mutations — `acw/acwStore.ts`
+
+Two additive, validator-gated mutations:
+
+- `updateNodePosition(nodeId, x, y)` — refuses non-finite values;
+  refuses unknown ids; otherwise rewrites only the `x` / `y` of
+  the named node. The mutation never alters `parentId`, `type`,
+  `label`, or any edge. Snap-to-grid is *not* applied at this
+  layer (the canvas decides whether the value it submits has been
+  snapped); the store records the canonical coordinates the
+  caller supplies.
+- `updateNodeParent(nodeId, newParentId)` — gated by the v1
+  validator's `canCreateNode(node.type, newParentId)`. The
+  mutation also enforces a cycle check by walking the new
+  parent's ancestor chain: a node may not be made a descendant of
+  itself. Refusals carry a neutral reason string that satisfies
+  the v1 vocabulary tier (`ACW_VALIDATOR_FORBIDDEN`).
+
+Both mutations route their resulting workspace through
+`writeToStorage`, which re-runs `assertAllowedFields` and
+`isValidWorkspace`, so a tampered call still cannot smuggle a
+disallowed field past the storage boundary.
+
+### Per-lens view-state — `acw/acwViewState.ts`
+
+Backed by `localStorage` under the *separate* key
+`acw.workspace.view.v1`, with the *separate* schema version
+`acw-view-1.0`. Document shape:
+`{ schemaVersion: "acw-view-1.0", collapseByLens: { [lensId]:
+string[] } }`. Allow-list at every level; corrupted documents
+silently revert to the empty view-state (mirroring the workspace
+store). The hook surface is intentionally tiny:
+`getCollapsedIds(lensId)`, `isCollapsed(lensId, nodeId)`,
+`toggleCollapsed(lensId, nodeId)`, `clearViewState()`,
+`subscribeViewState(fn)`. Collapse is keyed by lens path so each
+lens has its own folding state without ever touching the
+structure graph (master prompt §11: grammar always wins over
+visuals).
+
+### Refusal channel — `acw/acwRefusalChannel.ts`
+
+A trivial pub/sub that transports a *neutral refusal string only*
+— no codes, no severities, no remediation. The interactive
+canvas's drag handlers and the group affordance publish into the
+channel when their validator-gated mutation refuses; the existing
+`AuthoringPanel` refusal banner subscribes once and surfaces the
+message verbatim. This routes visual-layer refusals through the
+single shared `acw-refusal-banner` without prop-threading.
+
+### Interactive canvas — `components/acw/InteractiveCanvas2D.tsx`
+
+A drop-in replacement for `Canvas2D` used by the System Landscape
+lens. Adds:
+
+- *Selection* — single (click) and additive (shift-click).
+  Background click clears.
+- *Drag with snap-to-grid* — pointer drag updates a
+  per-component `drag` state that snaps the final position to a
+  fixed `GRID = 24` lattice. On mouseup the snapped position is
+  committed via `updateNodePosition`; failure publishes the
+  refusal and the in-memory drag falls away (the persisted
+  position is unchanged).
+- *Transient alignment guides* — while dragging, vertical and
+  horizontal guide lines appear when the dragged node's centre is
+  within `ALIGN_TOLERANCE = 4 px` of any sibling's centre. Pure
+  visual aid; no auto-arrange.
+- *Manual grouping* — a *Group into Zone* affordance is enabled
+  only when the user is at the workspace root and the selection
+  is two-or-more `ComputeNode` siblings. The action creates a
+  fresh `Zone` at the selection centroid via `createNode` and
+  reparents every selected `ComputeNode` under it via
+  `updateNodeParent`. Each step is validator-gated; a refusal
+  publishes through the refusal channel.
+- *Per-lens collapse / expand* — every container renders a small
+  toggle in its header strip. Collapse hides the container's
+  direct children and any edges that would have crossed the
+  boundary; expansion restores them. Collapse touches *only* the
+  `acw-view-1.0` document — the workspace document is byte-
+  identical before and after.
+- *Nested containment cues* — non-collapsed containers render a
+  dashed bounding box around their direct children with a header
+  strip stating the type, label, and `n contained` count. Nested
+  containers compose recursively.
+- *Forbidden visual semantics* — no colour mapped to judgement
+  (every container outline is the same neutral grey; selection is
+  the same blue regardless of node type), no size mapped to
+  importance (every node renders at a fixed `NODE_W × NODE_H`
+  box), no temporal cues / arrowheads / animation suggesting
+  flow, sequence, or future / past.
+
+### System Landscape integration — `pages/acw/views/SystemLandscape.tsx`
+
+The lens passes the live workspace's Application-typed nodes
+(`System` + `Component`) and edges through to
+`InteractiveCanvas2D` along with the current `focusedParentId`
+(derived from the existing depth path). An `useEffect` auto-
+positions any sibling at the focus level whose stored coordinates
+are still `(0, 0)` by writing back through `updateNodePosition`,
+so freshly-created nodes are visible without any per-render
+fabrication.
+
+### Build-time invariants — `acw/acwGrammarV2Invariants.test-shape.ts`
+
+Synchronous module-load assertions, additive to §18A:
+
+1. `ACW_VIEW_SCHEMA_VERSION` is exactly `acw-view-1.0`.
+2. The view-state read-validator drops documents that smuggle
+   graph fields (e.g. `nodes`) into the view-state allow-list.
+3. `updateNodeParent` is validator-gated: a refused reparent
+   (e.g. `Component` into `Zone`) leaves the persisted
+   `structureGraph` byte-identical and surfaces a neutral reason.
+4. `updateNodeParent` rejects cycles: a node may not be made a
+   descendant of itself; the refusal reason mentions `itself`.
+5. `updateNodePosition` is structurally inert: across every
+   node, `id` / `type` / `parentId` / `label` are unchanged and
+   the edge set is `JSON.stringify`-identical.
+6. `toggleCollapsed` is structurally inert: the workspace
+   `JSON.stringify` snapshot is byte-identical before and after.
+
+The probes mutate the live store, so the module *snapshots
+localStorage on entry and restores it byte-for-byte on exit*
+(via `__acwStoreInternals.reloadFromStorageForTest` and the
+matching helper on the view-state module). This is essential:
+without snapshot-and-restore, every page load would silently
+wipe the user's persisted workspace.
+
+Imported from `WorkspaceShell.tsx` so any drift fails the bundle
+synchronously.
+
+### What v2 still does **not** do
+
+- No recommendation, scoring, ranking, lifecycle, severity, or
+  evaluation. A box is still a typed placeholder; an edge is
+  still a typed pair.
+- No new vocabulary tier. Every static label introduced by v2 is
+  asserted against `ACW_PLACEHOLDER_FORBIDDEN`; the canvas-
+  originated refusal strings are produced by the v1 validator and
+  satisfy `ACW_VALIDATOR_FORBIDDEN`.
+- No interaction with the Decision Canvas pipeline; the
+  decoupling invariant continues to apply to the v2 source files.
+- No structural meaning carried by visual choice. Position,
+  collapse state, and selection live entirely outside the
+  workspace document; group inference reduces to validator-gated
+  `createNode` + `updateNodeParent` calls.
