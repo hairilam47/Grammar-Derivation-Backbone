@@ -432,10 +432,21 @@ There are no scores, thresholds, percentages, or comparisons.
 
 - `artifacts/canvas-ui/src/governance/staticTextGuard.ts`
 
-Three nested forbidden vocabularies are enforced at module load. Each
-page registers every static label it renders into a single dictionary
-and asserts the dictionary against its own vocabulary. JSX references
-only those constants, so the guard cannot be bypassed.
+A lattice of nine forbidden vocabularies is enforced at module load.
+Each page registers every static label it renders into a single
+dictionary and asserts the dictionary against its own vocabulary. JSX
+references only those constants, so the guard cannot be bypassed.
+
+The lattice is not a single chain. `PORTFOLIO_FORBIDDEN` and
+`SIGNALS_FORBIDDEN` form the base. Three sibling tiers
+(`REFLECTIVE_FORBIDDEN`, `EXPOSURE_NARRATIVE_FORBIDDEN`,
+`RESPONSIBILITY_LENS_FORBIDDEN`) each strict-superset
+`SIGNALS_FORBIDDEN` independently. `SCENARIO_READING_FORBIDDEN` is a
+strict superset of all three siblings. Above it sit two further
+sibling tiers (`DECISION_REENTRY_FORBIDDEN` and
+`TOGAF_CONTAINMENT_FORBIDDEN`), and `ACW_PLACEHOLDER_FORBIDDEN` is a
+strict superset of `TOGAF_CONTAINMENT_FORBIDDEN`. None of the
+sibling pairs is interchangeable in either direction.
 
 | Vocabulary | Relationship | Additional forbidden tokens |
 | --- | --- | --- |
@@ -447,6 +458,7 @@ only those constants, so the guard cannot be bypassed.
 | `SCENARIO_READING_FORBIDDEN` | strict superset of all three sibling tiers above | `predict`, `forecast`, `probability`, `likelihood`, `worst`, `best`, `severe`, `escalate`, `urgent` |
 | `DECISION_REENTRY_FORBIDDEN` | strict superset of `SCENARIO_READING_FORBIDDEN` (sibling of `TOGAF_CONTAINMENT_FORBIDDEN`, not interchangeable) | `fix`, `change`, `update`, `revise`, `rework`, `should`, `must`, `need`, `urgent`, `critical`, `failed`, `overdue` |
 | `TOGAF_CONTAINMENT_FORBIDDEN` | strict superset of `SCENARIO_READING_FORBIDDEN` (sibling of `DECISION_REENTRY_FORBIDDEN`, not interchangeable) | `mandate`, `justify`, `trigger`, `score`, `rank`, `sequence`, `prioritise`, `prioritize`, `evaluate`, `enforce` |
+| `ACW_PLACEHOLDER_FORBIDDEN` | strict superset of `TOGAF_CONTAINMENT_FORBIDDEN` | `optimise`, `optimize`, `recommend`, `recommended`, `target`, `best` (each restated literally per the ACW brief; some are already present transitively via the REFLECTIVE / SCENARIO_READING chain or the PORTFOLIO base) |
 
 `REFLECTIVE_FORBIDDEN`, `EXPOSURE_NARRATIVE_FORBIDDEN`, and
 `RESPONSIBILITY_LENS_FORBIDDEN` all extend `SIGNALS_FORBIDDEN` in
@@ -476,6 +488,7 @@ are not interchangeable.
 - `assertScenarioReadingLanguage`, `assertAllScenarioReadingLanguage` — used by `governance/scenarioReading.ts` for Phase 4 qualifier and lens literals
 - `assertDecisionReentryLanguage`, `assertAllDecisionReentryLanguage` — used by `governance/decisionReentry.ts` and by `pages/Exposure.tsx` for the Phase 5 re-entry surface
 - `assertTogafContainmentLanguage`, `assertAllTogafContainmentLanguage` — used by `governance/togafContainment.ts`, `governance/misusePlaybooks.ts`, and `pages/Containment.tsx` for the Phase 6 constitutional surface
+- `assertAcwPlaceholderLanguage`, `assertAllAcwPlaceholderLanguage` — used by `acw/acwGrammarHooks.ts`, `pages/acw/WorkspaceShell.tsx`, the five ACW lens views, and the two ACW canvas primitives for every static label rendered by the ACW workspace
 
 ### Layering carve-out
 
@@ -727,7 +740,7 @@ fails the bundle. There is no runtime fallback, retry, or override.
 | `governance/staticTextGuard.ts` (per-tier `assertAll*` calls in each consuming module) | every page and deriver that renders static text | No forbidden token from any tier reaches the rendered DOM. |
 | `governance/togafContainment.ts` (spec-equality + expected-throw on `MANDATORY_NON_AUTHORITY_DISCLAIMER`) | `governance/export.ts`, `pages/Containment.tsx` | The verbatim disclaimer wording is locked AND still contains the negated authority-vocabulary it must negate. |
 | `governance/togafContainmentInvariants.test-shape.ts` (`assertNoStructuredADCExport`, `assertNoComputedADCFields`, `assertNoOverrideMechanism`) | `App.tsx` (side-effect import) | Phase 6 PH6-HC1 / PH6-HC2 / PH6-HC6: no structured export surface, no new computed/severity/score/lifecycle/trigger/event/metric/chart/ranking field on the portfolio entry, no override / bypass / force / escalate symbol on the Phase 6 surface. |
-| `acw/acwIsolationInvariants.test-shape.ts` (denylist + positive allowlist over raw ACW sources via `import.meta.glob('**/*.{ts,tsx}', { as: 'raw' })`) | `App.tsx` and `pages/acw/WorkspaceShell.tsx` (side-effect imports) | The ACW workspace imports nothing from the Decision Canvas decision pipeline (`portfolioStore`, `signalsStore`, `adsBuilder`, `ecpBuilder`, `exposureDerive`, `exposureNarratives`, `responsibilityLens`, `scenarioReading`, `decisionReentry`, `export`, `hash`, `identity`, the architecture grammar package). |
+| `acw/acwIsolationInvariants.test-shape.ts` (denylist scan + positive allowlist over raw ACW sources via three Vite globs — `/src/acw/**/*.{ts,tsx}`, `/src/pages/acw/**/*.tsx`, `/src/components/acw/**/*.tsx` — loaded with `{ eager: true, query: '?raw', import: 'default' }`) | `App.tsx` and `pages/acw/WorkspaceShell.tsx` (side-effect imports) | The ACW workspace imports nothing from the Decision Canvas decision pipeline (`portfolioStore`, `signalsStore`, `adsBuilder`, `ecpBuilder`, `ecpSections`, `exposureDerive`, `exposureNarratives`, `responsibilityLens`, `scenarioReading`, `decisionReentry`, `export`, `hash`, `identity`, the architecture grammar package). |
 | `governance/portfolioStore.ts` (`assertAllowedFields` at write, `isValidEntry` at read) | called from the freeze flow and on every portfolio read | The 17-field allow-list is the only shape that ever reaches storage; corrupted entries are silently dropped at read time. |
 | `governance/signalsStore.ts` (`assertAllowedTopLevel`, `assertAllowedEvidenceInput`, `endsWithQuestionMark` validator, `isValidSignal`) | called from the signals create / advance flow and on every read | The 11-field top-level allow-list, the nested `evidenceSummary` / `relatedEntries` allow-lists, and the question-mark constraint on `interpretationGuidance` are enforced both at write and at read. |
 
