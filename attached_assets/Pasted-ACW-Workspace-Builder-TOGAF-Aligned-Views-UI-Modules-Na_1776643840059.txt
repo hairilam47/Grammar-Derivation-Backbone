@@ -1,0 +1,163 @@
+ACW Workspace Builder
+TOGAF‑Aligned Views · UI Modules · Navigation Patterns (Placeholder‑First)
+
+Mode: Workspace Builder (not Runtime Assistant)
+Model: Replit with built‑in Claude Opus 4.7
+Status: Draft — Normative
+
+
+This prompt instructs Replit + Claude Opus 4.7 to build the Architecture Composition Workspace (ACW) as an empty but fully structured workspace, aligned to TOGAF layers, using placeholders and containers only.
+No real architecture content, decisions, optimisation, or evaluation logic may be generated.
+
+
+0. Non‑Negotiable Framing
+Claude Opus 4.7 is acting strictly as a workspace builder and UI scaffolding assistant.
+Claude must not:
+
+generate architecture diagrams with real systems
+invent domain content
+propose target states or improvements
+optimise, rank, or assess anything
+Claude must only build the capabilities and containers that EA/SA will later use.
+If a feature appears to "help decide", it violates this prompt.
+
+
+1. Desired End State (What to Build)
+Replit must produce an ACW shell with:
+
+A TOGAF‑aligned view system (Business, Application, Data, Technology)
+Modular UI containers for each view
+A navigation pattern between views
+Explicit placeholders where future architecture content will appear
+At this stage, the workspace must be empty, neutral, and safe.
+
+
+2. View Model — TOGAF‑Aligned (Containers Only)
+Implement the following ACW views as empty but navigable modules.
+2.1 Context & Domain View
+(TOGAF Business Architecture — structural only)
+
+Purpose: contextual grouping of domains
+UI elements: empty domain panels
+neutral labels (e.g. "Business Domain")
+placeholder text: "No systems defined"
+No processes, KPIs, or value metrics.
+
+
+2.2 System Landscape View
+(TOGAF Application Architecture)
+
+Purpose: show application/system placeholders
+UI elements: empty system nodes
+placeholder connections
+instructional empty state ("Add systems to begin")
+No lifecycle, legacy labels, or quality indicators.
+
+
+2.3 Integration View
+(Application & Data Architecture — restrained)
+
+Purpose: future structural data‑flow visualisation
+UI elements: empty interface slots
+data‑flow placeholders
+No schema, sensitivity, or risk attributes.
+
+
+2.4 Deployment & Infrastructure View
+(TOGAF Technology Architecture)
+
+Purpose: infrastructure topology container
+UI elements: empty zones (e.g. "Zone")
+empty compute / network / storage slots
+No capacity, cost, or performance fields.
+
+
+2.5 Operations & Continuity View
+(Cross‑layer, descriptive only)
+
+Purpose: structural continuity reading
+UI elements: empty redundancy containers
+neutral annotations (text only)
+No SLAs, availability scores, or risk ratings.
+
+
+3. UI Module Rules (Strict)
+Claude may build:
+
+reusable containers
+view panels
+split panes
+zoom / pan mechanics
+drill‑down navigation (empty)
+Claude must not build:
+
+auto‑population logic
+example architectures
+suggested layouts
+"best practice" templates
+All modules must render safely even with zero content.
+
+
+4. Navigation Pattern
+Implement navigation that allows users to:
+
+switch between views (tabs / sidebar)
+remain on the same underlying workspace
+perceive views as different lenses, not steps
+Navigation must not imply:
+
+sequence
+progression
+maturity
+
+
+5. 2D and 3D Capability (Empty State)
+5.1 2D Capability
+
+Implement a generic 2D canvas
+Supports nodes, edges, labels
+Starts empty with instructional placeholders
+5.2 3D Capability
+
+Implement a 3D canvas engine (e.g. containment‑based)
+Depth represents decomposition only
+No default objects rendered
+
+3D must be inert until the user adds structure manually.
+
+
+
+
+6. Grammar & Constraint Hooks
+Implement hooks (without content) for:
+
+ACW canonical structure schema
+forbidden element checks
+Phase 6 authority constraints
+Do not implement enforcement logic yet — only placeholders and extension points.
+
+
+7. Domain Content Policy (Critical)
+Claude must not generate:
+
+example systems
+example government domains
+example infrastructure
+All domain specification must come from humans later.
+UI placeholders may contain generic text only:
+
+"System"
+"Domain"
+"Connection"
+
+
+8. Acceptance Criteria
+The build is valid only if:
+✅ Workspace loads with no architecture content ✅ All TOGAF‑aligned views are visible ✅ Navigation works without implying sequence ✅ 2D and 3D canvases render empty safely ✅ No words like: optimise, recommend, target, best
+If any criterion fails, the implementation is invalid.
+
+
+9. Instruction to Claude (Last Line)
+
+You are building an empty architectural workspace, not architecture. If a generated artifact would influence a human decision, do not generate it.
+
