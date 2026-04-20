@@ -138,7 +138,15 @@ export const ACW_CONTAINMENT_RULES: readonly ContainmentRule[] = Object.freeze([
   }),
   Object.freeze({
     child: "ComputeNode",
-    permittedParents: Object.freeze(["Zone"] as const),
+    // ComputeNode is permitted at the workspace root OR inside a
+    // Zone. The root option is a v2-introduced widening: the 2D
+    // canvas needs a place where a user can drop a fresh
+    // ComputeNode before grouping it (or others) into a Zone, and
+    // requiring a Zone first defeats the manual-grouping flow.
+    // The widening is additive — every v1-valid graph remains
+    // valid, and downstream lenses still treat root-level
+    // ComputeNodes as part of the Technology layer.
+    permittedParents: Object.freeze([null, "Zone"] as const),
   }),
   Object.freeze({
     child: "System",

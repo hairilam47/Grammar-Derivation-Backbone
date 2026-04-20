@@ -30,8 +30,11 @@ import type { CSSProperties, MouseEvent } from "react";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 import {
   ACW_ELEMENT_TYPE_LABEL,
+  ACW_ELEMENT_TYPES,
+  permittedParentsFor,
   type AcwElementType,
 } from "@/acw/acwGrammar";
+import { canCreateNode, type ValidatorWorkspaceView } from "@/acw/acwValidator";
 import type { AcwNode, AcwEdge } from "@/acw/acwStore";
 import { updateNodePosition, updateNodeParent, createNode } from "@/acw/acwStore";
 import { publishRefusal } from "@/acw/acwRefusalChannel";
@@ -46,8 +49,10 @@ const EMPTY_TITLE = "Empty 2D canvas";
 const EMPTY_SUBTITLE = "Add systems to begin";
 const ZOOM_LABEL = "Zoom";
 const RESET_LABEL = "Reset view";
-const GROUP_LABEL = "Group into Zone";
-const GROUP_HINT_NEED_COMPUTE = "Select at least two compute nodes to group.";
+const GROUP_LABEL = "Group selection";
+const GROUP_HINT_NEED_COMPUTE =
+  "Select at least two siblings of the same type whose grammar permits a shared container.";
+const PAN_LABEL = "Hold Alt or use middle button to pan; drag the background to select an area.";
 const COLLAPSE_LABEL = "Collapse";
 const EXPAND_LABEL = "Expand";
 const CONTAINED_PREFIX = "contained";
@@ -61,6 +66,7 @@ assertAllAcwPlaceholderLanguage([
   RESET_LABEL,
   GROUP_LABEL,
   GROUP_HINT_NEED_COMPUTE,
+  PAN_LABEL,
   COLLAPSE_LABEL,
   EXPAND_LABEL,
   CONTAINED_PREFIX,
@@ -138,6 +144,20 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [selection, setSelection] = useState<readonly string[]>([]);
   const [drag, setDrag] = useState<DragState | null>(null);
+  // Marquee (drag-rectangle) selection state. Coordinates are in
+  // CANVAS space (post-pan, post-zoom) so the rectangle stays
+  // anchored to underlying nodes if the user pans mid-drag.
+  // `additive` means shift was held at the start, so the marquee
+  // extends the existing selection rather than replacing it.
+  interface MarqueeState {
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+    additive: boolean;
+    baseSelection: readonly string[];
+  }
+  const [marquee, setMarquee] = useState<MarqueeState | null>(null);
   // Re-render when view-state (collapse) changes
   // `viewTick` is the dependency we use to invalidate every memo
   // that derives from the per-lens view-state slice (notably
@@ -250,20 +270,78 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
     };
   }
 
-  // ---- Pan ------------------------------------------------------
+  // ---- Pan & marquee --------------------------------------------
+  // Background-drag intent dispatch:
+  //   - Middle button OR Alt+left = pan the viewport
+  //   - Plain left button = marquee (drag-rectangle) selection
+  //   - Shift+left = additive marquee (extends current selection)
+  // Pan is unchanged from v1; marquee is the v2 addition that
+  // satisfies the "single-select / marquee-select" requirement.
+  const isPanGesture = (e: MouseEvent) => e.button === 1 || (e.button === 0 && e.altKey);
   const onBgMouseDown = (e: MouseEvent<HTMLDivElement>) => {
     if (drag !== null) return;
-    panRef.current = { startX: e.clientX, startY: e.clientY, vx: view.x, vy: view.y };
+    if (isPanGesture(e)) {
+      panRef.current = { startX: e.clientX, startY: e.clientY, vx: view.x, vy: view.y };
+      return;
+    }
+    if (e.button !== 0) return;
+    // Plain left-click on background starts a marquee. We seed the
+    // marquee at the cursor's CANVAS-space coordinates so it
+    // remains anchored to underlying nodes if the user pans the
+    // viewport during the drag (we currently disable pan during a
+    // marquee, but the math still holds).
+    const { x, y } = clientToCanvas(e.clientX, e.clientY);
+    setMarquee({
+      startX: x,
+      startY: y,
+      currentX: x,
+      currentY: y,
+      additive: e.shiftKey,
+      baseSelection: e.shiftKey ? selection : [],
+    });
+    if (!e.shiftKey) setSelection([]);
   };
   const onBgMouseMove = (e: MouseEvent<HTMLDivElement>) => {
     if (drag !== null) return;
-    if (!panRef.current) return;
-    const dx = e.clientX - panRef.current.startX;
-    const dy = e.clientY - panRef.current.startY;
-    setView((v) => ({ ...v, x: panRef.current!.vx + dx, y: panRef.current!.vy + dy }));
+    if (panRef.current) {
+      const dx = e.clientX - panRef.current.startX;
+      const dy = e.clientY - panRef.current.startY;
+      setView((v) => ({ ...v, x: panRef.current!.vx + dx, y: panRef.current!.vy + dy }));
+      return;
+    }
+    if (marquee) {
+      const { x, y } = clientToCanvas(e.clientX, e.clientY);
+      setMarquee({ ...marquee, currentX: x, currentY: y });
+    }
   };
   const onBgMouseUp = () => {
     panRef.current = null;
+    if (marquee) {
+      // Compute marquee rect (canvas space).
+      const x1 = Math.min(marquee.startX, marquee.currentX);
+      const x2 = Math.max(marquee.startX, marquee.currentX);
+      const y1 = Math.min(marquee.startY, marquee.currentY);
+      const y2 = Math.max(marquee.startY, marquee.currentY);
+      // A near-zero-area marquee is treated as a click on empty
+      // background → clear selection (already done on mousedown
+      // for non-additive). Skip hit-test to avoid selecting
+      // something the user merely clicked past.
+      const tinyDrag = Math.abs(x2 - x1) < 4 && Math.abs(y2 - y1) < 4;
+      if (!tinyDrag) {
+        const hits = new Set<string>(marquee.baseSelection);
+        for (const d of drawables) {
+          const box = d.isContainer ? containerBox(d) : leafBox(d);
+          // Intersection (AABB overlap) — anything the rectangle
+          // touches is selected. This matches the convention
+          // most vector tools use.
+          const overlaps =
+            box.x < x2 && box.x + box.w > x1 && box.y < y2 && box.y + box.h > y1;
+          if (overlaps) hits.add(d.node.id);
+        }
+        setSelection(Array.from(hits));
+      }
+      setMarquee(null);
+    }
   };
 
   // Native wheel handler for zoom
@@ -306,38 +384,50 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
   }
   // Drop-target resolution for drag-to-reparent.
   //
-  // Only VISIBLE CONTAINERS are treated as drop targets. Releasing
-  // a drag over a leaf sibling is read as "the user ran out of
-  // empty space, but did not mean to nest into that sibling" — so
-  // the drop is treated as plain reposition (parent unchanged).
-  // This avoids spurious validator refusals every time two leaf
-  // siblings overlap on the canvas.
-  //
-  // To create a node *as the first child* of a leaf — turning that
-  // leaf into a container — use the authoring panel's parent
-  // dropdown. v2 deliberately does not collapse those two
-  // affordances into one drag gesture; doing so would require
-  // either inferring intent from cursor pixels or popping a
-  // disambiguation menu, neither of which has a deterministic
-  // grammar interpretation.
+  // The validator — not current visual occupancy — is the
+  // authority on which sibling can host the dragged node. We hit-
+  // test the cursor against EVERY visible sibling (containers and
+  // leaves alike), and only nominate a sibling as the drop target
+  // if `canCreateNode(draggedType, sibling)` returns ok. Empty-
+  // but-grammatically-valid containers therefore work as drop
+  // zones, and overlapping leaf-siblings whose grammar would
+  // refuse the nesting are silently passed over (no spurious
+  // refusal banner — the drag is treated as plain reposition).
   //
   // If nothing matches, the drop target is the focused parent
   // (i.e. "the area the user is currently looking at", which may
-  // be the root). The validator is still the final authority on
-  // whether any resulting reparent is grammatical.
+  // be the root). The validator surface is consulted again inside
+  // `updateNodeParent`, so this method's verdict is advisory: a
+  // refusal is still possible (e.g. cycle prevention) and the
+  // banner will surface it.
+  const validatorView = useMemo<ValidatorWorkspaceView>(
+    () => ({
+      getNodeType(nodeId: string): AcwElementType | undefined {
+        return byId.get(nodeId)?.type as AcwElementType | undefined;
+      },
+    }),
+    [byId],
+  );
+  function leafBox(d: Drawable): { x: number; y: number; w: number; h: number } {
+    return { x: d.x - NODE_W / 2, y: d.y - NODE_H / 2, w: NODE_W, h: NODE_H };
+  }
   function findDropTarget(snapX: number, snapY: number, draggedId: string): string | null {
-    for (const d of drawables) {
+    const draggedType = byId.get(draggedId)?.type as AcwElementType | undefined;
+    if (!draggedType) return focusedParentId;
+    // Iterate back-to-front (containers render first; leaves
+    // render on top in the JSX, so leaves take pickup priority).
+    for (let i = drawables.length - 1; i >= 0; i -= 1) {
+      const d = drawables[i];
       if (d.node.id === draggedId) continue;
-      if (!d.isContainer) continue;
-      const box = containerBox(d);
-      if (
+      const box = d.isContainer ? containerBox(d) : leafBox(d);
+      const inside =
         snapX >= box.x &&
         snapX <= box.x + box.w &&
         snapY >= box.y &&
-        snapY <= box.y + box.h
-      ) {
-        return d.node.id;
-      }
+        snapY <= box.y + box.h;
+      if (!inside) continue;
+      const verdict = canCreateNode(draggedType, d.node.id, validatorView);
+      if (verdict.ok) return d.node.id;
     }
     return focusedParentId;
   }
@@ -408,29 +498,48 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
   }, [drag, directSiblings]);
 
   // ---- Group affordance ----------------------------------------
-  // Only enabled when ALL selected siblings are ComputeNode AND
-  // selection size >= 2 AND we're at the workspace root (Zones can
-  // only live at root). The group operation: create a new Zone,
-  // then reparent every selected ComputeNode under it. Each
-  // reparent is validator-gated; if any fails, we publish the
-  // refusal and stop. Because `canCreateNode("ComputeNode", zoneId)`
-  // is always permitted by the grammar, partial-state risk in
-  // practice is zero — but the per-step gate is the contract.
+  // Generalized for v2: instead of hardcoding ComputeNode → Zone,
+  // we ask the grammar which container type (if any) can host the
+  // current selection AS siblings of one another at the focused
+  // level. The rule:
+  //   1. selection size >= 2
+  //   2. all selected nodes are siblings (parent === focusedParentId)
+  //   3. all selected nodes share the same element type T
+  //   4. there exists a type P such that:
+  //        - P appears in `permittedParentsFor(T)` (P can host T)
+  //        - `canCreateNode(P, focusedParentId)` is permitted by
+  //          the validator (P is itself legal at the focus level)
+  // If found, the group action creates a P at the centroid of the
+  // selection and reparents every selected node into it. Each
+  // mutation is validator-gated; on refusal we publish the
+  // neutral reason and stop. The container's label is
+  // `ACW_ELEMENT_TYPE_LABEL[P]`, never invented per call.
   const selectionAtFocus = selection.filter((id) => {
     const n = byId.get(id);
     return n !== undefined && n.parentId === focusedParentId;
   });
-  const canGroup =
-    focusedParentId === null &&
-    selectionAtFocus.length >= 2 &&
-    selectionAtFocus.every((id) => byId.get(id)?.type === "ComputeNode");
+  const groupContainerType = useMemo<AcwElementType | null>(() => {
+    if (selectionAtFocus.length < 2) return null;
+    const firstType = byId.get(selectionAtFocus[0])?.type as AcwElementType | undefined;
+    if (!firstType) return null;
+    if (!selectionAtFocus.every((id) => byId.get(id)?.type === firstType)) return null;
+    for (const candidate of ACW_ELEMENT_TYPES) {
+      if (candidate === firstType) continue; // disallow same-type wrapping
+      const permits = permittedParentsFor(firstType).includes(candidate);
+      if (!permits) continue;
+      const canHost = canCreateNode(candidate, focusedParentId, validatorView);
+      if (canHost.ok) return candidate;
+    }
+    return null;
+  }, [selectionAtFocus, byId, focusedParentId, validatorView]);
+  const canGroup = groupContainerType !== null;
 
   function onGroup() {
-    if (!canGroup) {
+    if (!canGroup || !groupContainerType) {
       publishRefusal(GROUP_HINT_NEED_COMPUTE);
       return;
     }
-    // Position the new zone at the centroid of the selection,
+    // Position the new container at the centroid of the selection,
     // snapped to grid. Pure layout convenience; carries no meaning.
     let cx = 0;
     let cy = 0;
@@ -442,9 +551,9 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
     cx = snap(cx / selectionAtFocus.length);
     cy = snap(cy / selectionAtFocus.length);
     const created = createNode({
-      type: "Zone",
-      parentId: null,
-      label: NEW_ZONE_LABEL,
+      type: groupContainerType,
+      parentId: focusedParentId,
+      label: ACW_ELEMENT_TYPE_LABEL[groupContainerType],
       x: cx,
       y: cy,
     });
@@ -453,13 +562,13 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
       return;
     }
     // Deterministic: `createNode` returns the freshly-minted id
-    // (v2 contract). No scanning, no "newest empty Zone"
+    // (v2 contract). No scanning, no "newest empty container"
     // heuristic — this is the only correct way to address the
-    // node we just made, especially when other empty zones may
-    // already exist at the root.
-    const zoneId = created.id;
+    // node we just made, especially when other empty containers
+    // of the same type may already exist at this level.
+    const containerId = created.id;
     for (const id of selectionAtFocus) {
-      const r = updateNodeParent(id, zoneId);
+      const r = updateNodeParent(id, containerId);
       if (!r.ok) {
         publishRefusal(r.reason);
         return;
@@ -494,10 +603,16 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
       }}
       className="rounded-md border border-border/40 bg-muted/10"
     >
-      {/* HUD */}
+      {/* HUD. We stop mousedown from bubbling so that clicking
+          buttons (Reset, Group) or the selection counter does NOT
+          start a marquee on the canvas background — which would
+          otherwise clear the selection right before the click
+          activates and disable the affordance the user just
+          targeted. */}
       <div
         className="absolute top-2 right-2 z-10 flex items-center gap-2 text-[10px] uppercase tracking-widest text-muted-foreground"
         data-testid={`${testId}-hud`}
+        onMouseDown={(e) => e.stopPropagation()}
       >
         <span>
           {ZOOM_LABEL} {view.zoom.toFixed(2)}×
@@ -524,6 +639,14 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
             {SELECTION_LABEL} {selection.length}
           </span>
         ) : null}
+      </div>
+      {/* Pan / marquee hint, kept out of the HUD strip so the
+          selection count remains the prominent right-side affordance. */}
+      <div
+        className="absolute bottom-1 left-2 z-10 text-[9px] tracking-wide text-muted-foreground/60 pointer-events-none normal-case"
+        data-testid={`${testId}-pan-hint`}
+      >
+        {PAN_LABEL}
       </div>
 
       {isEmpty ? (
@@ -678,6 +801,24 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
               if (d.isContainer) return null;
               return renderNodeBox(d.node, selection.includes(d.node.id), d.x, d.y);
             })}
+
+            {/* Marquee rectangle (drawn under guides). Coordinates
+                are already in canvas space because the parent <g>
+                applies the view transform; we render directly. */}
+            {marquee ? (
+              <rect
+                x={Math.min(marquee.startX, marquee.currentX)}
+                y={Math.min(marquee.startY, marquee.currentY)}
+                width={Math.abs(marquee.currentX - marquee.startX)}
+                height={Math.abs(marquee.currentY - marquee.startY)}
+                fill="rgba(120,200,255,0.10)"
+                stroke="rgba(120,200,255,0.7)"
+                strokeWidth={0.6}
+                strokeDasharray="2 2"
+                data-testid={`${testId}-marquee`}
+                pointerEvents="none"
+              />
+            ) : null}
 
             {/* Alignment guides (drawn last so they sit on top) */}
             {alignmentGuides.map((g, i) =>
