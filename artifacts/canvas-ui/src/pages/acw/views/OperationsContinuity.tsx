@@ -4,6 +4,7 @@
 // SLAs, availability scores, or risk ratings.
 import { WorkspaceShell } from "../WorkspaceShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { LiveStructurePanel } from "@/components/acw/LiveStructurePanel";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 
 const LENS_TITLE = "Operations & Continuity";
@@ -67,6 +68,15 @@ export default function OperationsContinuity() {
           </Card>
         ))}
       </div>
+
+      {/* Cross-layer lens: surface every element and every explicit
+          relationship in the workspace, unfiltered. Operations &
+          Continuity is the descriptive overview lens. */}
+      <LiveStructurePanel
+        testIdPrefix="acw-operations-structure"
+        nodeFilter={() => true}
+        edgeFilter={() => true}
+      />
     </WorkspaceShell>
   );
 }

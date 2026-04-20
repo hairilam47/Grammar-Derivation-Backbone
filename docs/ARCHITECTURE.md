@@ -542,7 +542,7 @@ sub-navigation, which has no progress indicator and no next/previous.
 | Reflection (Layer 6) | (none) | `pages/Reflection.tsx` | n/a — pure aggregation | persists nothing |
 | Decision Exposure (Phases 1–5) | (none) | `pages/Exposure.tsx` + `governance/exposure*`, `responsibilityLens.ts`, `scenarioReading.ts`, `decisionReentry.ts` | n/a — pure derivation from one `PortfolioEntry` per render | persists nothing |
 | TOGAF / ArchiMate Containment (Phase 6) | (none) | `pages/Containment.tsx` + `governance/togafContainment.ts`, `governance/misusePlaybooks.ts` | n/a — pure refusal validators and static tables | persists nothing |
-| ACW Workspace (`/workspace/*`) | (none) | `pages/acw/WorkspaceShell.tsx` + 5 lens views, `components/acw/Canvas2D.tsx`, `Canvas3D.tsx`, `acw/acwGrammarHooks.ts` | n/a — empty by default; canvas state is component-local React state only | persists nothing |
+| ACW Workspace (`/workspace/*`) — v1 grammar diagram | `acw.workspace.v1` (`localStorage`) | `acw/acwStore.ts` (write goes through `acwValidator.ts`; allow-list `assertAllowedFields` and read-validate `isValidWorkspace`); registry in `acw/acwGrammar.ts`; React subscription via `acw/acwGrammarHooks.ts#useAcwWorkspace`; surfaces `pages/acw/WorkspaceShell.tsx` + 5 lens views, `components/acw/AuthoringPanel.tsx`, `components/acw/LiveStructurePanel.tsx`, `components/acw/Canvas2D.tsx`, `Canvas3D.tsx` | Document is `{ schemaVersion: "acw-1.0", structureGraph: { nodes, edges } }`; node fields = `{ id, type, parentId, label, x, y }`; edge fields = `{ id, kind, fromId, toId }`. Locked allow-list at every nested level, validated by `__acwStoreInternals.isValidWorkspace` on read and `assertAllowedFields` on write. Containment is materialised via `parentId`; the explicit edge kinds are CONNECTS, INTERFACES_WITH, DATA_FLOW. CONTAINS is recognised by the registry but never stored as an edge record. | structure-only persistence; no semantics, no scoring, no ranking, no derivation |
 
 Neither store ever feeds back into the grammar engine. The grammar
 remains the single source of structural truth. No surface added in
@@ -748,6 +748,7 @@ fails the bundle. There is no runtime fallback, retry, or override.
 | `governance/togafContainment.ts` (spec-equality + expected-throw on `MANDATORY_NON_AUTHORITY_DISCLAIMER`) | `governance/export.ts`, `pages/Containment.tsx` | The verbatim disclaimer wording is locked AND still contains the negated authority-vocabulary it must negate. |
 | `governance/togafContainmentInvariants.test-shape.ts` (`assertNoStructuredADCExport`, `assertNoComputedADCFields`, `assertNoOverrideMechanism`) | `App.tsx` (side-effect import) | Phase 6 PH6-HC1 / PH6-HC2 / PH6-HC6: no structured export surface, no new computed/severity/score/lifecycle/trigger/event/metric/chart/ranking field on the portfolio entry, no override / bypass / force / escalate symbol on the Phase 6 surface. |
 | `acw/acwIsolationInvariants.test-shape.ts` (denylist scan + positive allowlist over raw ACW sources via three Vite globs — `/src/acw/**/*.{ts,tsx}`, `/src/pages/acw/**/*.tsx`, `/src/components/acw/**/*.tsx` — loaded with `{ eager: true, query: '?raw', import: 'default' }`) | `App.tsx` and `pages/acw/WorkspaceShell.tsx` (side-effect imports) | The ACW workspace imports nothing from the Decision Canvas decision pipeline (`portfolioStore`, `signalsStore`, `adsBuilder`, `ecpBuilder`, `ecpSections`, `exposureDerive`, `exposureNarratives`, `responsibilityLens`, `scenarioReading`, `decisionReentry`, `export`, `hash`, `identity`, the architecture grammar package). |
+| `acw/acwGrammarInvariants.test-shape.ts` (synchronous module-load assertions over the v1 grammar registry, validator, and store) | `App.tsx` and `pages/acw/WorkspaceShell.tsx` (side-effect imports) | ACW v1 grammar shape is locked: schema version is exactly `acw-1.0`; every element type carries a containment rule with at least one permitted parent; every explicit edge kind carries an edge rule with at least one permitted pair; the validator refuses unknown element types, root-only-violations, parent-type mismatches, edge-pair mismatches, and self-loop edges; one positive sanity case (Zone at the workspace root) passes. Drift in any of these surfaces fails the bundle synchronously. |
 | `governance/portfolioStore.ts` (`assertAllowedFields` at write, `isValidEntry` at read) | called from the freeze flow and on every portfolio read | The 17-field allow-list is the only shape that ever reaches storage; corrupted entries are silently dropped at read time. |
 | `governance/signalsStore.ts` (`assertAllowedTopLevel`, `assertAllowedEvidenceInput`, `endsWithQuestionMark` validator, `isValidSignal`) | called from the signals create / advance flow and on every read | The 11-field top-level allow-list, the nested `evidenceSummary` / `relatedEntries` allow-lists, and the question-mark constraint on `interpretationGuidance` are enforced both at write and at read. |
 
@@ -1419,7 +1420,133 @@ unaffected; conversely deleting Phase 6 leaves the ACW unaffected.
 ### Strictly removable
 
 Removing `src/acw/`, `src/components/acw/`, `src/pages/acw/`, the
-ACW route definitions in `App.tsx`, the two ACW side-effect imports
-in `App.tsx`, the `Workspace` link in `PortfolioHeaderNav`, and the
-`ACW_PLACEHOLDER_FORBIDDEN` block in `staticTextGuard.ts` restores
-the pre-ACW behaviour with no other change required.
+ACW route definitions in `App.tsx`, the three ACW side-effect imports
+in `App.tsx` (`acwGrammarHooks`, `acwIsolationInvariants`,
+`acwGrammarInvariants`), the `Workspace` link in
+`PortfolioHeaderNav`, and the `ACW_PLACEHOLDER_FORBIDDEN` block in
+`staticTextGuard.ts` restores the pre-ACW behaviour with no other
+change required. The `acw.workspace.v1` `localStorage` key (added by
+the v1 grammar diagram, see below) becomes orphan data and is never
+read again; the platform never produced a writer outside `acwStore`.
+
+## 18A. ACW v1 — Grammar Diagram
+
+The v1 layer of the Progressive Diagram Builder turns the ACW
+workspace from an empty shell into an authored, but still purely
+*structural*, diagram. It introduces a canonical element registry, a
+pure validator, a schema-locked persistent store, and a shared
+authoring panel. The grammar layer is additive: every guarantee from
+Section 18 (no recommendation, no derivation, no scoring, no Phase 6
+influence, no decision-pipeline coupling) continues to hold. A v1
+node has no semantics — it is just a typed placeholder with a label
+and a parent.
+
+### Canonical registry — `acw/acwGrammar.ts`
+
+A frozen registry of element types, edge kinds, containment rules,
+and edge rules. Element types are exactly the v3 zoom-through chain
+the master prompt names: `Zone`, `ComputeNode`, `System`, `Component`
+(the surface label for `ComputeNode` is `Compute node`). Edge kinds
+are `CONNECTS`, `INTERFACES_WITH`, `DATA_FLOW`, plus the implicit
+`CONTAINS` (which is materialised as `parentId` and never stored as
+an edge record). The `DATA_FLOW` kind renders to the surface as
+`Data exchange` because the literal word `flow` embeds `low`, which
+is forbidden by `ACW_PLACEHOLDER_FORBIDDEN`. Containment is the v3
+chain: Zone → ComputeNode → System → Component, with `System` also
+permitted at the workspace root for the lightweight case.
+
+Rules are direction-agnostic for edges (a permitted unordered pair
+satisfies the rule whichever way the user adds it), but containment
+is single-parent: a node has exactly one `parentId`, possibly the
+workspace root. The registry is the single source of truth; the
+validator and the store both consult it.
+
+### Pure validator — `acw/acwValidator.ts`
+
+`validateNode` and `validateEdge` are pure functions that return
+`{ ok: true } | { ok: false, refusalCode, message }`. Refusal codes
+are restricted, structural, and deterministic:
+
+- `UNKNOWN_TYPE` — element type is not in the registry.
+- `ROOT_ONLY` — the type cannot live at the workspace root.
+- `PARENT_NOT_PERMITTED` — the parent's type is not on the
+  containment allow-list for the child's type.
+- `UNKNOWN_EDGE_KIND` — edge kind is not in the registry.
+- `EDGE_ENDPOINT_MISSING` — `fromId` or `toId` does not resolve.
+- `EDGE_PAIR_NOT_PERMITTED` — the (fromType, toType) pair is not on
+  the edge rule's allow-list, in either direction.
+- `EDGE_SELF_LOOP` — `fromId === toId`.
+
+The validator is consulted twice on every authoring action: once by
+`AuthoringPanel` to render an in-place refusal banner
+(`data-testid="acw-refusal-banner"`), and once again by `acwStore` at
+mutation time. The store is the constitutional gate: if validation
+fails inside the store, the mutation throws and the workspace is
+not modified.
+
+### Schema-locked persistent store — `acw/acwStore.ts`
+
+Backed by `localStorage` under the key `acw.workspace.v1`. The
+document shape is locked at the top level
+(`{ schemaVersion: "acw-1.0", structureGraph: { nodes, edges } }`)
+and at every nested level (node fields = `{ id, type, parentId,
+label, x, y }`; edge fields = `{ id, kind, fromId, toId }`). Writes
+go through `assertAllowedFields`; reads go through `isValidWorkspace`
+(both exposed via the test-only `__acwStoreInternals` namespace) and
+silently drop corrupted documents back to an empty workspace, mirroring
+`portfolioStore` and `signalsStore`.
+
+The store exposes a tiny subscribe API (`subscribe(listener)`,
+`getWorkspace()`) and validator-gated mutations (`createNode`,
+`createEdge`, `removeNode`, `removeEdge`, `clear`). React surfaces
+consume the store through `acw/acwGrammarHooks.ts#useAcwWorkspace`,
+which keeps the hooks file as the only React-aware shim and the
+store itself UI-free.
+
+### Authoring panel — `components/acw/AuthoringPanel.tsx`
+
+A single shared panel embedded once at the top of `WorkspaceShell`.
+It renders two forms — *Add element* and *Add relationship* — both
+derived from the registry (no element type or edge kind is
+hard-coded in the UI). On submission it asks the validator first;
+on failure it surfaces the refusal in the
+`acw-refusal-banner` and leaves the workspace untouched. The shell's
+five lenses share this one authoring source — there is no per-lens
+authoring forking.
+
+### Live structure renderer — `components/acw/LiveStructurePanel.tsx`
+
+Each lens view embeds `LiveStructurePanel` with a TOGAF-aligned
+filter (Business → `Domain`; Application → `System` + `Interface`;
+Application + Data → `Interface` + `DataExchange`; Technology →
+`Zone` + `ComputeNode`; cross-layer → all). The filter is *display
+only* — the underlying structure graph is the same for every lens.
+The System Landscape lens additionally renders the live nodes / edges
+on the 2D canvas (with depth-path filtering so a drilled-down view
+shows only the descendants of the focused node).
+
+### Build-time invariants — `acw/acwGrammarInvariants.test-shape.ts`
+
+Five invariant categories asserted synchronously at module load
+(see Section 15A): schema-version lock (`acw-1.0`), containment
+coverage (every element type has at least one permitted parent),
+edge-rule coverage (every explicit edge kind has at least one
+permitted pair), refusal behaviour (each refusal code is reachable
+through a constructed bad input), and a positive sanity case (Zone
+at the workspace root passes). Imported from `App.tsx` and
+`WorkspaceShell.tsx` so the bundle fails synchronously on drift.
+
+### What v1 still does **not** do
+
+- No recommendation, scoring, ranking, lifecycle, severity, trigger,
+  or evaluation. A node is a typed placeholder; an edge is a typed
+  pair.
+- No interaction with the Decision Canvas pipeline. The build-time
+  decoupling invariant (`acwIsolationInvariants.test-shape.ts`)
+  continues to enforce this against the v1 source files as well.
+- No Phase 6 surface change. The ACW carries no ADC content and so
+  the mandatory non-authority disclaimer is not required (see
+  Section 18, *Non-influence guarantee on Phase 6*).
+- No new vocabulary tier. Every static label introduced by v1 is
+  asserted against `ACW_PLACEHOLDER_FORBIDDEN` (the existing ACW
+  tier).

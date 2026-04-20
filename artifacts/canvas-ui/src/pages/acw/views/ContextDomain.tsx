@@ -4,6 +4,7 @@
 // value metrics.
 import { WorkspaceShell } from "../WorkspaceShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { LiveStructurePanel } from "@/components/acw/LiveStructurePanel";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 
 const LENS_TITLE = "Context & Domain";
@@ -60,6 +61,15 @@ export default function ContextDomain() {
           </Card>
         ))}
       </div>
+
+      {/* Business lens filter: top-level Systems (those that exist
+          at the workspace root) play the role of business domains
+          for the v1 grammar. Components and infrastructure types
+          are filtered out. */}
+      <LiveStructurePanel
+        testIdPrefix="acw-context-structure"
+        nodeFilter={(n) => n.type === "System" && n.parentId === null}
+      />
     </WorkspaceShell>
   );
 }

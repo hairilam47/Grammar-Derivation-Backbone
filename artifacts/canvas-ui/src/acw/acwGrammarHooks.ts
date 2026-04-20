@@ -1,59 +1,103 @@
-// ACW Workspace Builder — grammar / constraint hook stubs.
+// ACW Workspace Builder — grammar / constraint hooks (v1 wired).
 //
-// Per the brief (section 6 "Grammar & Constraint Hooks"), the
-// workspace must expose hooks for:
-//   - the ACW canonical structure schema,
-//   - forbidden-element checks, and
-//   - Phase 6 authority constraints,
-// but must NOT implement enforcement logic yet — only placeholders
-// and extension points.
-//
-// This module satisfies that requirement. Each export is a named
-// extension-point stub: an empty registry, a no-op predicate, or an
-// inert hook function. None of them can be wired into a decision
-// pipeline because none of them carries any logic. They exist solely
-// so that future ACW phases can attach implementations against a
-// stable interface without changing the call sites.
+// Originally a placeholder slot (Task #44); the v1 grammar layer
+// (Task #49) replaces the stubs with the real canonical registry and
+// validator while keeping the public surface stable so prior call
+// sites continue to compile.
 //
 // Constitutional guarantees this module preserves:
-//   - PH6-HC1: nothing here recommends, mandates, or scores.
-//   - PH6-HC2: nothing here serialises ADC data.
+//   - PH6-HC1: nothing here recommends, mandates, or scores. The
+//     validator returns neutral pass / refuse decisions only.
+//   - PH6-HC2: nothing here serialises ADC data. The store
+//     (`acwStore.ts`) persists workspace structure only.
 //   - PH6-HC6: no override / bypass / force / escalate symbol.
-//   - Task #44: empty by default; lens, not step; generic
-//     placeholders only.
+//   - Master prompt §0: ACW diagrams enforce structural syntax only,
+//     never meaning.
+import { useEffect, useState } from "react";
 import { assertAllAcwPlaceholderLanguage } from "../governance/staticTextGuard";
+import {
+  ACW_REGISTRY,
+  isAcwElementType,
+  type AcwElementType,
+} from "./acwGrammar";
+import { getWorkspace, subscribe, type AcwWorkspace } from "./acwStore";
 
-// Canonical structure schema slot. The shape is intentionally an
-// empty object so any future canonical schema attaches by replacing
-// the value, not by mutating it. Frozen so accidental writes throw.
+// Canonical structure schema — now backed by the real v1 registry.
+// The shape is preserved (frozen object with `slotName`,
+// `schemaVersion`, and `fields`) so any future caller that probed
+// the placeholder continues to work.
 export const ACW_CANONICAL_STRUCTURE_SCHEMA = Object.freeze({
   slotName: "ACW_CANONICAL_STRUCTURE_SCHEMA",
-  status: "placeholder",
-  fields: Object.freeze([] as readonly string[]),
+  schemaVersion: ACW_REGISTRY.schemaVersion,
+  fields: Object.freeze([
+    "elementTypes",
+    "edgeKinds",
+    "containmentRules",
+    "edgeRules",
+  ] as const),
+  registry: ACW_REGISTRY,
 });
 
-// Forbidden-element check slot. The empty array is the canonical
-// "no checks registered" sentinel. Future ACW phases append rule
-// objects; today it returns no findings for any input.
+// Forbidden-element check slot. v1 wires the registry-based check:
+// any element whose `type` is not part of the canonical registry is
+// reported. Other findings remain reserved for future phases.
 export const ACW_FORBIDDEN_ELEMENT_CHECKS: ReadonlyArray<{
   readonly id: string;
   readonly description: string;
-}> = Object.freeze([]);
+}> = Object.freeze([
+  Object.freeze({
+    id: "unknown-element-type",
+    description:
+      "Reports any element whose type field is not part of the v1 ACW canonical registry.",
+  }),
+]);
 
 export function runForbiddenElementChecks(
-  _element: unknown,
+  element: unknown,
 ): ReadonlyArray<string> {
-  // No checks registered. Returns the empty list of findings.
-  return [];
+  const findings: string[] = [];
+  if (
+    element !== null &&
+    typeof element === "object" &&
+    "type" in (element as Record<string, unknown>)
+  ) {
+    const type = (element as Record<string, unknown>).type;
+    if (!isAcwElementType(type)) {
+      findings.push("unknown-element-type");
+    }
+  }
+  return Object.freeze(findings);
 }
 
-// Phase 6 authority constraint hook slot. The function is a no-op
-// pass-through that returns the input unchanged. Future ACW phases
-// may attach interpretive helpers here, but the hook itself never
-// derives, scores, or refuses; refusals remain the responsibility
-// of the Phase 6 constitutional layer (`togafContainment.ts`).
+// Phase 6 authority constraint hook slot. Remains an inert pass-
+// through. Refusals continue to be the responsibility of the
+// constitutional layer (`togafContainment.ts`); the v1 grammar
+// validator only refuses structural violations.
 export function applyPhase6AuthorityHook<T>(input: T): T {
   return input;
+}
+
+// React hook: subscribe to the shared AcwWorkspace and re-render on
+// every mutation. Lens views call this so all five lenses observe
+// the same single structureGraph (master prompt §12).
+export function useAcwWorkspace(): AcwWorkspace {
+  const [snapshot, setSnapshot] = useState<AcwWorkspace>(() => getWorkspace());
+  useEffect(() => {
+    const unsubscribe = subscribe(() => setSnapshot(getWorkspace()));
+    // Re-read on mount in case storage changed between initial state
+    // and effect attachment.
+    setSnapshot(getWorkspace());
+    return unsubscribe;
+  }, []);
+  return snapshot;
+}
+
+// Convenience: lookup helper for lens views.
+export function findNodeType(
+  workspace: AcwWorkspace,
+  nodeId: string,
+): AcwElementType | undefined {
+  return workspace.structureGraph.nodes.find((n) => n.id === nodeId)?.type;
 }
 
 // Static labels exposed by this module. Empty today; the slot exists
@@ -61,7 +105,6 @@ export function applyPhase6AuthorityHook<T>(input: T): T {
 // have them asserted against the strictest tier at module load.
 const HOOK_STATIC_LABELS: readonly string[] = [
   "ACW_CANONICAL_STRUCTURE_SCHEMA",
-  "placeholder",
 ];
 
 assertAllAcwPlaceholderLanguage([...HOOK_STATIC_LABELS]);

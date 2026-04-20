@@ -24,6 +24,10 @@ import "@/governance/togafContainmentInvariants.test-shape";
 // ACW source file imports from the Decision Canvas decision pipeline.
 import "@/acw/acwGrammarHooks";
 import "@/acw/acwIsolationInvariants.test-shape";
+// ACW v1 grammar invariants — fail the bundle if the canonical
+// element registry, validator, or schema version drifts from the
+// constitutional shape locked at v1 (Task #49 / master prompt §13).
+import "@/acw/acwGrammarInvariants.test-shape";
 
 function DarkModeApplier() {
   useEffect(() => {

@@ -6,6 +6,7 @@
 import { WorkspaceShell } from "../WorkspaceShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Canvas3D } from "@/components/acw/Canvas3D";
+import { LiveStructurePanel } from "@/components/acw/LiveStructurePanel";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 
 const LENS_TITLE = "Deployment & Infrastructure";
@@ -89,6 +90,22 @@ export default function Deployment() {
           </Card>
         ))}
       </div>
+
+      {/* Technology lens filter: Zone, ComputeNode, and any System
+          contained inside a ComputeNode. CONNECTS edges between
+          ComputeNodes are surfaced as the only relationship the
+          Technology layer authors. */}
+      <LiveStructurePanel
+        testIdPrefix="acw-deployment-structure"
+        nodeFilter={(n) => {
+          if (n.type === "Zone" || n.type === "ComputeNode") return true;
+          // A System is part of the Technology lens only when it
+          // sits inside a ComputeNode. Bare-root Systems belong to
+          // the Application / Business lens instead.
+          return n.type === "System" && n.parentId !== null;
+        }}
+        edgeFilter={(e) => e.kind === "CONNECTS"}
+      />
     </WorkspaceShell>
   );
 }

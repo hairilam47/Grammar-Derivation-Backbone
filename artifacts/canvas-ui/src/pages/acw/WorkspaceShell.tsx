@@ -10,13 +10,15 @@ import type { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { Workflow } from "lucide-react";
 import { PortfolioHeaderNav } from "@/components/governance/PortfolioHeaderNav";
+import { AuthoringPanel } from "@/components/acw/AuthoringPanel";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
-// Side-effect import: ACW grammar hook stubs and isolation invariant.
-// Both run module-load assertions; importing them here ensures any
-// regression that crosses the ACW isolation line fails the build
-// before the shell renders.
+// Side-effect imports: ACW grammar hook stubs, isolation invariant,
+// and v1 grammar invariants. Each runs module-load assertions;
+// importing them here ensures any regression fails the build before
+// the shell renders.
 import "@/acw/acwGrammarHooks";
 import "@/acw/acwIsolationInvariants.test-shape";
+import "@/acw/acwGrammarInvariants.test-shape";
 
 const SHELL_TITLE = "Architecture Composition Workspace";
 const SHELL_HINT =
@@ -115,6 +117,7 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
         >
           {SHELL_HINT}
         </p>
+        <AuthoringPanel />
         {children}
       </main>
     </div>

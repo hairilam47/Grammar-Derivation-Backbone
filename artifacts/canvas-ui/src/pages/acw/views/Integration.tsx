@@ -7,6 +7,7 @@
 // transitively inherits.)
 import { WorkspaceShell } from "../WorkspaceShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { LiveStructurePanel } from "@/components/acw/LiveStructurePanel";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 
 const LENS_TITLE = "Integration";
@@ -90,6 +91,15 @@ export default function Integration() {
           </Card>
         ))}
       </div>
+
+      {/* Application + Data lens filter: Systems and Components,
+          plus the two relationship kinds that carry interface and
+          data-exchange semantics. */}
+      <LiveStructurePanel
+        testIdPrefix="acw-integration-structure"
+        nodeFilter={(n) => n.type === "System" || n.type === "Component"}
+        edgeFilter={(e) => e.kind === "INTERFACES_WITH" || e.kind === "DATA_FLOW"}
+      />
     </WorkspaceShell>
   );
 }
