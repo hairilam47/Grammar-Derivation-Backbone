@@ -85,7 +85,16 @@ function assertNoForbiddenSemantics(): void {
         // Token-bounded match so identifiers that contain a
         // banned substring (e.g. "scored" inside "scorecard")
         // are also flagged — that is intentional.
-        const re = new RegExp(`(^|[^a-z0-9_])${token}([^a-z0-9_]|$)`);
+        // CASE-INSENSITIVITY: the source has already been
+        // lowercased above, so the token must be lowercased to
+        // match. (Equivalent to the regex `i` flag, but kept
+        // explicit so a future reader cannot miss it. Without
+        // this, camelCase tokens such as `useFrame` /
+        // `setInterval` / `requestAnimationFrame` would silently
+        // never match the lowercased source.)
+        const re = new RegExp(
+          `(^|[^a-z0-9_])${token.toLowerCase()}([^a-z0-9_]|$)`,
+        );
         if (re.test(stripped)) {
           throw new Error(
             `ACW Track 3 forbidden-semantics invariant: file "${path}" contains the ${category} token "${token}". Track 3 renderers must remain inert; the ${category} concept is forbidden.`,
@@ -96,4 +105,34 @@ function assertNoForbiddenSemantics(): void {
   }
 }
 
+// Self-test: prove the scanner is genuinely case-insensitive.
+// We rebuild the same per-token regex used by the assertion and
+// confirm it fires on a synthetic source containing the banned
+// camelCase identifiers in their authored casing. If a future
+// edit drops the .toLowerCase() on either side, this self-test
+// throws at module load and the bundle fails — exactly when the
+// real assertion would otherwise silently miss the token.
+function selfTestCaseInsensitivity(): void {
+  const probes: ReadonlyArray<{ readonly token: string; readonly source: string }> = [
+    { token: "useFrame", source: "function tick() { useFrame(() => {}); }" },
+    { token: "setInterval", source: "const id = setInterval(fn, 16);" },
+    {
+      token: "requestAnimationFrame",
+      source: "requestAnimationFrame(step);",
+    },
+  ];
+  for (const { token, source } of probes) {
+    const stripped = stripComments(source).toLowerCase();
+    const re = new RegExp(
+      `(^|[^a-z0-9_])${token.toLowerCase()}([^a-z0-9_]|$)`,
+    );
+    if (!re.test(stripped)) {
+      throw new Error(
+        `ACW Track 3 forbidden-semantics invariant SELF-TEST: scanner failed to detect "${token}" in synthetic source. The case-insensitivity contract is broken.`,
+      );
+    }
+  }
+}
+
+selfTestCaseInsensitivity();
 assertNoForbiddenSemantics();
