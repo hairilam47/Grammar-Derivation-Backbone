@@ -109,17 +109,12 @@ const PORTFOLIO_STORE_READ_ONLY_NAMED_IMPORTS: readonly string[] = [
   "PortfolioEntry",
 ];
 const CTAD_STORE_READ_ONLY_NAMED_IMPORTS: readonly string[] = [
+  // Strictly the named-import allowlist mandated by the Track 3
+  // task contract. Anything else (subscribe / getStoreVersion /
+  // CtadBinding / write helpers) is rejected.
   "getCtadState",
   "exportCtadState",
   "CtadStateExport",
-  // Subscribe is a read-side hook for re-render notification;
-  // documented part of the read-only surface and used by the
-  // shell to refresh on CTAD edits.
-  "subscribe",
-  "getStoreVersion",
-  // CtadBinding is a structural type used to address a binding;
-  // identity-only, no mutation.
-  "CtadBinding",
 ];
 const ACW_LENS_STRUCTURE_NAMED_IMPORTS: readonly string[] = [
   "enumerateLensVisibility",
@@ -295,6 +290,18 @@ function selfTest(): void {
     {
       label: "ctad clearCtadParam named import",
       src: `import { clearCtadParam } from "@/ctad/ctadStore";`,
+    },
+    {
+      label: "ctad subscribe named import (off allowlist)",
+      src: `import { subscribe } from "@/ctad/ctadStore";`,
+    },
+    {
+      label: "ctad getStoreVersion named import (off allowlist)",
+      src: `import { getStoreVersion } from "@/ctad/ctadStore";`,
+    },
+    {
+      label: "ctad CtadBinding named type import (off allowlist)",
+      src: `import { type CtadBinding } from "@/ctad/ctadStore";`,
     },
     {
       label: "portfolio write helper",

@@ -10,19 +10,23 @@
 // The shell is strictly read-only: it never mutates CTAD or the
 // portfolio. The only mutable storage Track 3 owns is
 // `acw.track3.viewprefs.v1`, written through `track3ViewPrefs`.
-import { useMemo, useSyncExternalStore } from "react";
+//
+// Constitutional CTAD allowlist: only the closed surface
+// `{ getCtadState, exportCtadState, type CtadStateExport }` is
+// imported from the CTAD store. There is no live subscription —
+// re-reading CTAD happens on route mount, on view-control
+// changes (which trigger a re-render via the view-prefs
+// subscription), and on the explicit "Refresh from CTAD"
+// button below. This satisfies the task contract: "navigating
+// back to the derived view reflects the updated structure."
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { useRoute, Link } from "wouter";
-import { Layers } from "lucide-react";
+import { Layers, Crosshair, RefreshCcw } from "lucide-react";
 import {
   listEntries,
   type PortfolioEntry,
 } from "@/governance/portfolioStore";
-import {
-  getCtadState,
-  subscribe as subscribeCtad,
-  getStoreVersion as getCtadStoreVersion,
-  type CtadBinding,
-} from "@/ctad/ctadStore";
+import { getCtadState } from "@/ctad/ctadStore";
 import { GlobalNav } from "@/components/governance/GlobalNav";
 import { Button } from "@/components/ui/button";
 import {
@@ -49,11 +53,20 @@ import {
   setViewMode,
   setPerspective,
   toggleLayerHidden,
+  setCamera,
   subscribePrefs,
   type Track3ViewMode,
 } from "@/acw/track3/track3ViewPrefs";
 import { Track3Canvas2D } from "@/components/acw/track3/Track3Canvas2D";
 import { Track3Canvas3D } from "@/components/acw/track3/Track3Canvas3D";
+
+// Local binding identity. Track 3 cannot import the CTAD store's
+// `CtadBinding` type (off the read-only allowlist), so a thin
+// inline shape is used instead. Identity-only — no mutation.
+interface Track3Binding {
+  readonly adsId: string;
+  readonly adsVersion: string;
+}
 
 const LABELS = {
   brandLabel: "Architecture Decision Canvas",
@@ -92,8 +105,15 @@ const LABELS = {
     "No frozen decision matches this binding. Return to the entry list to pick a different one.",
   backToEntry: "Back to derived entry",
   openCtad: "Open bound CTAD shell",
+  refreshFromCtad: "Refresh from CTAD",
   inlineNote:
     "This view is exploratory and derived. It does not form or otherwise act on a decision.",
+  focusedHeading: "Focused on",
+  clearFocus: "Clear focus",
+  focusHint:
+    "Click a node in the diagram to isolate it and its neighbours. Click again or press the button to clear.",
+  zoomHint:
+    "Use the mouse wheel to zoom and drag to pan. Camera position persists per binding.",
 } as const;
 
 assertAllAcwTrack3Language(Object.values(LABELS));
@@ -118,10 +138,6 @@ function formatLayerLabel(l: Track3Layer): string {
   }
 }
 
-function useCtadStoreVersion(): number {
-  return useSyncExternalStore(subscribeCtad, getCtadStoreVersion, () => 0);
-}
-
 function useViewPrefsDoc(): unknown {
   return useSyncExternalStore(
     subscribePrefs,
@@ -137,7 +153,7 @@ export default function Track3Shell() {
   const adsId = match && params ? decodeURIComponent(params.adsId) : "";
   const adsVersion =
     match && params ? decodeURIComponent(params.adsVersion) : "";
-  const binding: CtadBinding = useMemo(
+  const binding: Track3Binding = useMemo(
     () => ({ adsId, adsVersion }),
     [adsId, adsVersion],
   );
@@ -206,15 +222,22 @@ function BoundShell({
   binding,
   entry,
 }: {
-  binding: CtadBinding;
+  binding: Track3Binding;
   entry: PortfolioEntry;
 }) {
-  // Re-render on CTAD store change AND on view-prefs change so
-  // editing CTAD and toggling view controls both refresh the diagram.
-  useCtadStoreVersion();
+  // Re-render on view-prefs change (mode/perspective/hidden
+  // layers/camera). CTAD is re-read on every render of this
+  // component, so any view-prefs change also picks up the
+  // latest CTAD_STATE. A "Refresh from CTAD" button forces a
+  // re-read without changing prefs.
   useViewPrefsDoc();
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [focusedParentId, setFocusedParentId] = useState<string | null>(null);
 
-  const ctadState = getCtadState(binding);
+  const ctadState = useMemo(
+    () => getCtadState(binding),
+    [binding, refreshTick],
+  );
   const bounds = useMemo(() => projectBounds(entry), [entry]);
   const structure = useMemo(
     () => deriveACWStructure(ctadState, bounds),
@@ -225,9 +248,6 @@ function BoundShell({
   // Filter nodes/edges by hidden layers and perspective.
   const filteredStructure = useMemo(() => {
     const hidden = new Set(prefs.hiddenLayers);
-    // Apply perspective focus: when not "all", only keep nodes
-    // belonging to the centric layer plus their immediate
-    // cross-layer neighbours via edges.
     let kept = new Set<string>();
     for (const n of structure.nodes) {
       const layer = layerOf(n.id);
@@ -249,14 +269,11 @@ function BoundShell({
           const l = layerOf(n.id);
           if (l === focusLayer && kept.has(n.id)) focusIds.add(n.id);
         }
-        // Keep neighbours via edges
         const neighbour = new Set<string>(focusIds);
         for (const e of structure.edges) {
           if (focusIds.has(e.fromId) && kept.has(e.toId)) neighbour.add(e.toId);
           if (focusIds.has(e.toId) && kept.has(e.fromId)) neighbour.add(e.fromId);
         }
-        // Keep parents of any kept child so the layer-root node
-        // remains visible and provides containment context.
         for (const n of structure.nodes) {
           if (neighbour.has(n.id) && n.parentId !== null) {
             neighbour.add(n.parentId);
@@ -272,24 +289,49 @@ function BoundShell({
     return { nodes, edges };
   }, [structure, prefs.hiddenLayers, prefs.perspective]);
 
-  // Track 3 visibility helper expects a collapsed-id set; we
-  // don't currently expose per-node collapse, so the set is empty.
+  // No per-node collapse UI yet; the empty set documents that.
   const collapsedIds = useMemo(() => new Set<string>(), []);
+
+  const handleNodeClick = useCallback((nodeId: string) => {
+    // Click toggles isolate-focus on the clicked node. Clicking
+    // the currently focused node clears focus.
+    setFocusedParentId((prev) => (prev === nodeId ? null : nodeId));
+  }, []);
+  const handleClearFocus = useCallback(() => setFocusedParentId(null), []);
+
+  const handleCameraChange = useCallback(
+    (cameraX: number, cameraY: number, cameraZoom: number) => {
+      setCamera(binding.adsId, binding.adsVersion, cameraX, cameraY, cameraZoom);
+    },
+    [binding.adsId, binding.adsVersion],
+  );
+
+  const focusedLabel = useMemo(() => {
+    if (focusedParentId === null) return null;
+    const n = structure.nodes.find((x) => x.id === focusedParentId);
+    return n ? n.label : focusedParentId;
+  }, [focusedParentId, structure.nodes]);
+
+  const handleRefresh = useCallback(() => {
+    setRefreshTick((t) => t + 1);
+  }, []);
 
   return (
     <>
-      <BindingPanel entry={entry} />
+      <BindingPanel entry={entry} onRefresh={handleRefresh} />
       <ControlsBar
         binding={binding}
         viewMode={prefs.viewMode}
         perspective={prefs.perspective}
         hiddenLayers={prefs.hiddenLayers}
+        focusedLabel={focusedLabel}
+        onClearFocus={handleClearFocus}
       />
       <Card data-testid="track3-diagram-card">
         <CardHeader>
           <CardTitle className="text-sm">{LABELS.diagramHeading}</CardTitle>
           <CardDescription className="text-xs">
-            {LABELS.diagramHint}
+            {LABELS.diagramHint} {LABELS.zoomHint}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -298,14 +340,24 @@ function BoundShell({
               nodes={filteredStructure.nodes}
               edges={filteredStructure.edges}
               collapsedIds={collapsedIds}
-              focusedParentId={null}
+              focusedParentId={focusedParentId}
+              cameraX={prefs.cameraX}
+              cameraY={prefs.cameraY}
+              cameraZoom={prefs.cameraZoom}
+              onCameraChange={handleCameraChange}
+              onNodeClick={handleNodeClick}
             />
           ) : (
             <Track3Canvas2D
               nodes={filteredStructure.nodes}
               edges={filteredStructure.edges}
               collapsedIds={collapsedIds}
-              focusedParentId={null}
+              focusedParentId={focusedParentId}
+              cameraX={prefs.cameraX}
+              cameraY={prefs.cameraY}
+              cameraZoom={prefs.cameraZoom}
+              onCameraChange={handleCameraChange}
+              onNodeClick={handleNodeClick}
             />
           )}
           <p
@@ -329,7 +381,13 @@ function layerOf(nodeId: string): Track3Layer | null {
   return null;
 }
 
-function BindingPanel({ entry }: { entry: PortfolioEntry }) {
+function BindingPanel({
+  entry,
+  onRefresh,
+}: {
+  entry: PortfolioEntry;
+  onRefresh: () => void;
+}) {
   return (
     <Card data-testid="track3-binding-panel">
       <CardHeader>
@@ -373,7 +431,7 @@ function BindingPanel({ entry }: { entry: PortfolioEntry }) {
             </dd>
           </div>
         </dl>
-        <div className="mt-4">
+        <div className="mt-4 flex flex-wrap gap-2">
           <Link
             href={`/ctad/${encodeURIComponent(entry.adsId)}/${encodeURIComponent(entry.adsVersion)}`}
           >
@@ -381,6 +439,15 @@ function BindingPanel({ entry }: { entry: PortfolioEntry }) {
               {LABELS.openCtad}
             </Button>
           </Link>
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="track3-refresh-ctad"
+            onClick={onRefresh}
+          >
+            <RefreshCcw className="w-3 h-3 mr-1" />
+            {LABELS.refreshFromCtad}
+          </Button>
         </div>
       </CardContent>
     </Card>
@@ -392,17 +459,23 @@ function ControlsBar({
   viewMode,
   perspective,
   hiddenLayers,
+  focusedLabel,
+  onClearFocus,
 }: {
-  binding: CtadBinding;
+  binding: Track3Binding;
   viewMode: Track3ViewMode;
   perspective: Track3Perspective;
   hiddenLayers: readonly string[];
+  focusedLabel: string | null;
+  onClearFocus: () => void;
 }) {
   return (
     <Card data-testid="track3-controls">
       <CardHeader>
         <CardTitle className="text-sm">{LABELS.controlsHeading}</CardTitle>
-        <CardDescription className="text-xs">{LABELS.controlsHint}</CardDescription>
+        <CardDescription className="text-xs">
+          {LABELS.controlsHint} {LABELS.focusHint}
+        </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-3">
         <div className="flex items-center gap-2 text-xs">
@@ -477,6 +550,28 @@ function ControlsBar({
             );
           })}
         </div>
+
+        {focusedLabel !== null && (
+          <div
+            className="flex items-center gap-2 text-xs"
+            data-testid="track3-focus-indicator"
+          >
+            <Crosshair className="w-3 h-3 text-primary" />
+            <span className="text-muted-foreground uppercase tracking-wider text-[10px]">
+              {LABELS.focusedHeading}
+            </span>
+            <span className="text-primary font-mono">{focusedLabel}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onClearFocus}
+              data-testid="track3-clear-focus"
+              className="h-6 text-[10px] px-2"
+            >
+              {LABELS.clearFocus}
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

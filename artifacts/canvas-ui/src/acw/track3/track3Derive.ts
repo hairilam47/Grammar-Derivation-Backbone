@@ -71,24 +71,30 @@ const PARAMS_PER_ROW = 4;
 
 export function deriveACWStructure(
   ctadState: CtadStateExport,
-  _bounds: AdcBounds,
+  bounds: AdcBounds,
 ): AcwTrack3Structure {
-  // _bounds is currently informational only — layer presence
-  // surfaces in the binding panel of the shell, not in derivation
-  // (CTAD is the authority for technology selections; an unbound
-  // selection still derives so the user sees the structural
-  // implication of the choice). Keeping the parameter in the
-  // signature documents the contract Track 4 will rely on.
+  // `bounds.layersPresent` materially constrains derivation:
+  // a CTAD selection in a layer that the bound ADC entry does
+  // not declare in scope is silently dropped from the derived
+  // structure. This makes the derivation honour the ADC
+  // boundary while remaining strictly read-only — CTAD itself
+  // is never mutated.
+  const layerInBounds = new Set<Track3Layer>(bounds.layersPresent);
   const nodes: Track3Node[] = [];
   const edges: Track3Edge[] = [];
-  // First pass: collect non-null selections per layer in
-  // deterministic registry order.
+  // First pass: collect non-null selections per in-bounds layer
+  // in deterministic registry order. Out-of-bounds layers are
+  // entirely skipped so they never produce a node or an edge.
   const selectionsByLayer = new Map<
     Track3Layer,
     Array<{ paramId: string; option: string }>
   >();
   let layerHasContent = false;
   for (const layer of TRACK3_LAYERS) {
+    if (!layerInBounds.has(layer)) {
+      selectionsByLayer.set(layer, []);
+      continue;
+    }
     const block = selectionsFor(ctadState, layer);
     const flat: Array<{ paramId: string; option: string }> = [];
     for (const [paramId, raw] of Object.entries(block)) {

@@ -9,7 +9,15 @@ interface NavItem {
   matches: (loc: string) => boolean;
 }
 
-const ITEMS: readonly NavItem[] = [
+// Sub-link surfaces under a parent nav item only when the user
+// is in that parent's section (or in the sub-link itself). This
+// keeps Track 3 ("Derived view") visibly subordinate to the
+// Architecture Workspace tier, not a peer of it.
+interface SubNavItem extends NavItem {
+  parentTestId: string;
+}
+
+const PRIMARY_ITEMS: readonly NavItem[] = [
   {
     href: "/",
     label: "Landing",
@@ -57,13 +65,21 @@ const ITEMS: readonly NavItem[] = [
     label: "Architecture Workspace",
     icon: Workflow,
     testId: "nav-workspace",
-    matches: (loc) => loc === "/workspace" || loc.startsWith("/workspace/"),
+    matches: (loc) =>
+      loc === "/workspace" ||
+      loc.startsWith("/workspace/") ||
+      loc === "/acw/derived" ||
+      loc.startsWith("/acw/derived/"),
   },
+];
+
+const SUB_ITEMS: readonly SubNavItem[] = [
   {
     href: "/acw/derived",
     label: "Derived view",
     icon: Boxes,
     testId: "nav-acw-derived",
+    parentTestId: "nav-workspace",
     matches: (loc) => loc === "/acw/derived" || loc.startsWith("/acw/derived/"),
   },
 ];
@@ -75,9 +91,14 @@ export function GlobalNav() {
       className="flex items-center gap-3 text-xs uppercase tracking-widest"
       data-testid="global-nav"
     >
-      {ITEMS.map((item, idx) => {
+      {PRIMARY_ITEMS.map((item, idx) => {
         const Icon = item.icon;
         const active = item.matches(location);
+        // Sub-links surface only when their parent is active or
+        // the sub-link itself is.
+        const subs = SUB_ITEMS.filter(
+          (s) => s.parentTestId === item.testId && (active || s.matches(location)),
+        );
         return (
           <span key={item.href} className="flex items-center gap-3">
             {idx > 0 && <span className="text-muted-foreground/40">·</span>}
@@ -90,6 +111,24 @@ export function GlobalNav() {
             >
               <Icon className="w-3.5 h-3.5" /> {item.label}
             </Link>
+            {subs.map((s) => {
+              const SubIcon = s.icon;
+              const subActive = s.matches(location);
+              return (
+                <span key={s.href} className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground/50 text-[10px]">›</span>
+                  <Link
+                    href={s.href}
+                    className={`flex items-center gap-1.5 hover:text-primary transition-colors text-[11px] normal-case ${
+                      subActive ? "text-primary" : "text-muted-foreground/80"
+                    }`}
+                    data-testid={s.testId}
+                  >
+                    <SubIcon className="w-3 h-3" /> {s.label}
+                  </Link>
+                </span>
+              );
+            })}
           </span>
         );
       })}
