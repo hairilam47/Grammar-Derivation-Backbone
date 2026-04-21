@@ -66,6 +66,17 @@ const ALLOWED_IMPORT_PREFIXES: readonly string[] = [
   // CTAD-internal aliased imports (Vite `@` alias resolves to /src).
   "@/ctad",
   "@/pages/ctad",
+  // CNCF reference catalog — frozen, build-time data + pure
+  // binding-hint engine. Has its own dedicated isolation
+  // invariant (`cncfIsolationInvariants.test-shape.ts`) that
+  // forbids any decision-pipeline imports and any fetch / dynamic
+  // import. CTAD may import its catalog and engine for the
+  // "Relevant cards" UI panel.
+  "@/cncf",
+  // CTAD-specific component primitives (e.g. <QuotedSource>, the
+  // boundary that exempts attributable third-party text from the
+  // CTAD vocabulary guard). Render-only, no pipeline state.
+  "@/components/ctad",
   // Generic UI primitives (shadcn-style); render-only, no pipeline state.
   "@/components/ui",
   // Top-level header nav reused across pages — read-only navigation

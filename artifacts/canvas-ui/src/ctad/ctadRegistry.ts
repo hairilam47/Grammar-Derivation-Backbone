@@ -15,7 +15,8 @@ export type CtadSectionId =
   | "infrastructure"
   | "application"
   | "integration"
-  | "crossCutting";
+  | "crossCutting"
+  | "ops";
 
 export type CtadParamKind = "single" | "multi";
 
@@ -204,6 +205,48 @@ const SECTIONS_RAW: readonly CtadSection[] = [
         label: "Resilience posture",
         kind: "single",
         options: ["Basic", "Redundant", "Multi-region"],
+      },
+    ],
+  },
+  {
+    id: "ops",
+    label: "Ops & Lifecycle",
+    parameters: [
+      {
+        id: "containerOrchestration",
+        label: "Container orchestration",
+        kind: "single",
+        options: ["Kubernetes", "Nomad", "Docker Swarm", "Managed runtime", "Self-managed"],
+      },
+      {
+        id: "observabilityStack",
+        label: "Observability stack",
+        kind: "single",
+        options: ["Metrics-only", "Metrics + Logs", "Metrics + Logs + Traces"],
+      },
+      {
+        id: "serviceMesh",
+        label: "Service mesh",
+        kind: "single",
+        options: ["None", "Sidecar-based", "Sidecar-less", "Library-based"],
+      },
+      {
+        id: "cicdModel",
+        label: "CI/CD model",
+        kind: "single",
+        options: ["GitOps", "Imperative", "Push-based", "Pull-based"],
+      },
+      {
+        id: "policyControls",
+        label: "Policy controls",
+        kind: "single",
+        options: ["None", "Admission-time", "Runtime", "Both"],
+      },
+      {
+        id: "backupAndRestore",
+        label: "Backup and restore",
+        kind: "single",
+        options: ["None", "Snapshot-based", "Continuous"],
       },
     ],
   },

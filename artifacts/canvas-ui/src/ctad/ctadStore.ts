@@ -222,6 +222,7 @@ export interface CtadStateExport {
   readonly application: Readonly<Record<string, CtadParamValue>>;
   readonly integration: Readonly<Record<string, CtadParamValue>>;
   readonly crossCutting: Readonly<Record<string, CtadParamValue>>;
+  readonly ops: Readonly<Record<string, CtadParamValue>>;
 }
 
 export function exportCtadState(b: CtadBinding): CtadStateExport {
@@ -231,6 +232,7 @@ export function exportCtadState(b: CtadBinding): CtadStateExport {
     application: {},
     integration: {},
     crossCutting: {},
+    ops: {},
   };
   for (const section of CTAD_SECTIONS) {
     const sectionParams = grouped[section.id];
@@ -247,6 +249,7 @@ export function exportCtadState(b: CtadBinding): CtadStateExport {
     application: grouped.application,
     integration: grouped.integration,
     crossCutting: grouped.crossCutting,
+    ops: grouped.ops,
   };
 }
 

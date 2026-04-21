@@ -52,12 +52,17 @@ if (CTAD_SCHEMA_VERSION !== "ctad-1.0") {
   );
 }
 
-// (2) Exactly the four canonical sections, in canonical order.
+// (2) Exactly the five canonical sections, in canonical order.
+// Section #5 ("ops") was added in Task #74 alongside the CNCF
+// reference catalog. The ordering is fixed: ops is appended last
+// so existing CTAD_STATE consumers iterating registry order remain
+// stable for the original four sections.
 const EXPECTED_SECTION_IDS: readonly CtadSectionId[] = [
   "infrastructure",
   "application",
   "integration",
   "crossCutting",
+  "ops",
 ];
 if (CTAD_SECTIONS.length !== EXPECTED_SECTION_IDS.length) {
   throw new Error(

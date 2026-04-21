@@ -1,6 +1,20 @@
-import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import {
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { useRoute, Link } from "wouter";
-import { Layers, ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
+import {
+  Layers,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  Lock,
+  Plus,
+  X,
+  AlertTriangle,
+} from "lucide-react";
 import {
   listEntries,
   type PortfolioEntry,
@@ -29,6 +43,29 @@ import {
   subscribe,
   type CtadBinding,
 } from "@/ctad/ctadStore";
+import {
+  getActiveAllowedOptions,
+  getConstraintsStoreVersion,
+  getContributions,
+  subscribeConstraints,
+} from "@/ctad/ctadConstraintsStore";
+import {
+  getAppliedCardsForBinding,
+  getAppliedCardsStoreVersion,
+  isCardApplied,
+  subscribeAppliedCards,
+} from "@/ctad/ctadAppliedCardsStore";
+import {
+  cardsForSection,
+} from "@/cncf/cncfCatalog";
+import {
+  applyCard,
+  previewCardApplication,
+  removeAppliedCard,
+  type CardApplicationPreview,
+} from "@/cncf/cncfBindingEngine";
+import type { CncfCard } from "@/cncf/cncfTypes";
+import { QuotedSource } from "@/components/ctad/QuotedSource";
 
 // Static labels rendered by this page; asserted at module load.
 const LABELS = {
@@ -37,11 +74,6 @@ const LABELS = {
   bindingHint:
     "These fields belong to the underlying frozen decision. CTAD never edits them.",
   fieldProject: "Project",
-  // Brief data field is `approvingAuthority`, but CTAD's vocabulary
-  // tier forbids "approving"-family tokens in CTAD-authored copy.
-  // We deliberately label it "Decision authority" so the binding
-  // panel reads in CTAD-neutral language while still surfacing the
-  // same underlying value from the frozen ADS record.
   fieldDecisionAuthority: "Decision authority",
   fieldDecisionDate: "Decision date",
   fieldAdsId: "ADS id",
@@ -70,6 +102,41 @@ const LABELS = {
   pageTitle: "Technology exploration",
   pageSubtitle:
     "Interpretive, reversible technology exploration bound to a frozen decision.",
+  // CNCF-card panel labels.
+  relevantCardsHeading: "Relevant cards",
+  relevantCardsHint:
+    "Reference catalog cards whose hints touch parameters in this section.",
+  noRelevantCards: "No reference cards touch this section.",
+  cardApplyButton: "Apply",
+  cardRemoveButton: "Remove",
+  cardAlreadyApplied: "Applied",
+  cardMaturityLabel: "Maturity",
+  cardCategoryLabel: "Category",
+  // Constraint badge per parameter row.
+  constrainedToLabel: "Narrowed to",
+  constraintConflictLabel: "No options remain",
+  contributingCardsLabel: "From",
+  // Preview modal.
+  previewHeading: "Card application preview",
+  previewSubheading: "Inspect the changes before they are written.",
+  previewSectionSets: "Sets value",
+  previewSectionConstrains: "Narrows options",
+  previewSectionJustifies: "Adds rationale",
+  previewSectionConflicts: "Conflicts detected",
+  previewSectionEmpty: "This card has no binding hints.",
+  previewBefore: "before",
+  previewAfter: "after",
+  previewCommit: "Commit",
+  previewCancel: "Cancel",
+  previewBlockedByConflicts:
+    "Resolve the conflicts before this card can be applied.",
+  previewReady:
+    "No conflicts. The card is ready to commit.",
+  // Applied-cards summary panel.
+  appliedCardsHeading: "Applied reference cards",
+  appliedCardsHint:
+    "Cards applied to this binding. Removing a card reverses its effects on parameters whose values still match.",
+  appliedCardsEmpty: "No reference cards have been applied to this binding.",
 } as const;
 
 // External catalog references — neutral name + url pairs only.
@@ -83,14 +150,24 @@ assertAllCtadLanguage([
   ...REFERENCES.map((r) => r.label),
 ]);
 
-function useCtadStore(): number {
-  // The snapshot MUST be a stable, equality-checkable value that
-  // only changes when the store actually mutates. `getStoreVersion`
-  // is a monotonic counter incremented inside `writeDoc`, satisfying
-  // React's `useSyncExternalStore` contract; returning `Date.now()`
-  // here would produce a fresh value on every call and trigger
-  // re-render loops under React strict mode.
-  return useSyncExternalStore(subscribe, getStoreVersion, () => 0);
+function useStoreVersions(): number {
+  // Three independent store versions, summed into a single
+  // monotonic snapshot value. `useSyncExternalStore` requires a
+  // stable, equality-checkable snapshot; the sum is monotonic
+  // (each store version only increments) so it always produces a
+  // strictly larger number on any change.
+  const v1 = useSyncExternalStore(subscribe, getStoreVersion, () => 0);
+  const v2 = useSyncExternalStore(
+    subscribeConstraints,
+    getConstraintsStoreVersion,
+    () => 0,
+  );
+  const v3 = useSyncExternalStore(
+    subscribeAppliedCards,
+    getAppliedCardsStoreVersion,
+    () => 0,
+  );
+  return v1 + v2 + v3;
 }
 
 function formatDate(iso: string): string {
@@ -176,24 +253,47 @@ function BoundShell({
   entry: PortfolioEntry;
 }) {
   // Re-render on any store change.
-  useCtadStore();
+  useStoreVersions();
   const doc = getBindingDoc(binding);
   const exported = exportCtadState(binding);
+  const [previewState, setPreviewState] = useState<{
+    card: CncfCard;
+    preview: CardApplicationPreview;
+  } | null>(null);
 
   return (
     <>
       <BindingPanel entry={entry} />
-      <ParametersPanel binding={binding} doc={doc} />
+      <AppliedCardsPanel binding={binding} />
+      <ParametersPanel
+        binding={binding}
+        doc={doc}
+        onPreviewCard={(card) =>
+          setPreviewState({
+            card,
+            preview: previewCardApplication(binding, card),
+          })
+        }
+      />
       <CtadStatePreview state={exported} />
       <ReferencesPanel />
+      {previewState && (
+        <PreviewModal
+          binding={binding}
+          card={previewState.card}
+          preview={previewState.preview}
+          onCancel={() => setPreviewState(null)}
+          onCommit={() => {
+            applyCard(binding, previewState.card);
+            setPreviewState(null);
+          }}
+        />
+      )}
     </>
   );
 }
 
 function BindingPanel({ entry }: { entry: PortfolioEntry }) {
-  // `organisationContext` is typed by the portfolio store; we read
-  // each field directly so we keep the structural typing rather
-  // than widening to `Record<string, unknown>`.
   const ctx = entry.organisationContext;
   const fields: ReadonlyArray<{ label: string; value: string; testId: string }> = [
     { label: LABELS.fieldProject, value: entry.projectName, testId: "binding-project" },
@@ -236,12 +336,59 @@ function BindingPanel({ entry }: { entry: PortfolioEntry }) {
   );
 }
 
+function AppliedCardsPanel({ binding }: { binding: CtadBinding }) {
+  const entries = getAppliedCardsForBinding(binding);
+  return (
+    <Card data-testid="ctad-applied-cards-panel">
+      <CardHeader>
+        <CardTitle className="text-sm">{LABELS.appliedCardsHeading}</CardTitle>
+        <CardDescription className="text-xs">
+          {LABELS.appliedCardsHint}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {entries.length === 0 ? (
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="ctad-applied-cards-empty"
+          >
+            {LABELS.appliedCardsEmpty}
+          </p>
+        ) : (
+          <ul className="space-y-1 text-xs">
+            {entries.map((e) => (
+              <li
+                key={e.cardId}
+                className="flex items-center justify-between gap-2 border border-border/50 rounded-md px-2 py-1"
+                data-testid={`ctad-applied-card-${e.cardId}`}
+              >
+                <span className="font-mono">{e.cardId}</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => removeAppliedCard(binding, e.cardId)}
+                  data-testid={`ctad-applied-card-${e.cardId}-remove`}
+                >
+                  <X className="w-3 h-3" />
+                  {LABELS.cardRemoveButton}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function ParametersPanel({
   binding,
   doc,
+  onPreviewCard,
 }: {
   binding: CtadBinding;
   doc: ReturnType<typeof getBindingDoc>;
+  onPreviewCard: (card: CncfCard) => void;
 }) {
   return (
     <Card data-testid="ctad-parameters-panel">
@@ -260,6 +407,7 @@ function ParametersPanel({
             parameters={section.parameters}
             binding={binding}
             doc={doc}
+            onPreviewCard={onPreviewCard}
           />
         ))}
       </CardContent>
@@ -273,12 +421,14 @@ function SectionBlock({
   parameters,
   binding,
   doc,
+  onPreviewCard,
 }: {
   sectionId: CtadSectionId;
   sectionLabel: string;
   parameters: readonly CtadParameter[];
   binding: CtadBinding;
   doc: ReturnType<typeof getBindingDoc>;
+  onPreviewCard: (card: CncfCard) => void;
 }) {
   const [open, setOpen] = useState(true);
   return (
@@ -306,15 +456,22 @@ function SectionBlock({
         </span>
       </button>
       {open && (
-        <div className="px-3 pb-3 pt-1 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
-          {parameters.map((p) => (
-            <ParameterRow
-              key={p.id}
-              param={p}
-              binding={binding}
-              currentValue={doc.params[p.id]}
-            />
-          ))}
+        <div className="px-3 pb-3 pt-1 space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+            {parameters.map((p) => (
+              <ParameterRow
+                key={p.id}
+                param={p}
+                binding={binding}
+                currentValue={doc.params[p.id]}
+              />
+            ))}
+          </div>
+          <RelevantCardsPanel
+            sectionId={sectionId}
+            binding={binding}
+            onPreviewCard={onPreviewCard}
+          />
         </div>
       )}
     </div>
@@ -331,33 +488,49 @@ function ParameterRow({
   currentValue: string | readonly string[] | null | undefined;
 }) {
   const testIdBase = `ctad-param-${param.id}`;
+  const activeAllowed = getActiveAllowedOptions(binding, param.id);
+  const allowedSet =
+    activeAllowed === null ? null : new Set(activeAllowed);
+  const contribs = getContributions(binding, param.id);
+
   if (param.kind === "single") {
     const value =
       typeof currentValue === "string" && param.options.includes(currentValue)
         ? currentValue
         : "";
     return (
-      <label className="text-xs space-y-1 block" data-testid={testIdBase}>
-        <span className="text-muted-foreground uppercase tracking-wider text-[10px]">
-          {param.label}
-        </span>
-        <select
-          className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs"
-          value={value}
-          onChange={(e) => {
-            const next = e.target.value;
-            setCtadParam(binding, param.id, next === "" ? null : next);
-          }}
-          data-testid={`${testIdBase}-select`}
-        >
-          <option value="">{LABELS.notSpecified}</option>
-          {param.options.map((o) => (
-            <option key={o} value={o}>
-              {o}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="text-xs space-y-1" data-testid={testIdBase}>
+        <label className="block space-y-1">
+          <span className="text-muted-foreground uppercase tracking-wider text-[10px]">
+            {param.label}
+          </span>
+          <select
+            className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs"
+            value={value}
+            onChange={(e) => {
+              const next = e.target.value;
+              setCtadParam(binding, param.id, next === "" ? null : next);
+            }}
+            data-testid={`${testIdBase}-select`}
+          >
+            <option value="">{LABELS.notSpecified}</option>
+            {param.options.map((o) => {
+              const allowed = allowedSet === null || allowedSet.has(o);
+              return (
+                <option key={o} value={o} disabled={!allowed}>
+                  {o}
+                  {allowed ? "" : " \u2014"}
+                </option>
+              );
+            })}
+          </select>
+        </label>
+        <ConstraintBadge
+          paramId={param.id}
+          allowedSet={allowedSet}
+          contribs={contribs}
+        />
+      </div>
     );
   }
   // Multi-flag.
@@ -377,15 +550,17 @@ function ParameterRow({
       <div className="flex flex-wrap gap-x-3 gap-y-1">
         {param.options.map((o) => {
           const checked = selected.has(o);
+          const allowed = allowedSet === null || allowedSet.has(o);
           return (
             <label
               key={o}
-              className="inline-flex items-center gap-1.5"
+              className={`inline-flex items-center gap-1.5 ${allowed ? "" : "opacity-40"}`}
               data-testid={`${testIdBase}-option-${o}`}
             >
               <input
                 type="checkbox"
                 checked={checked}
+                disabled={!allowed && !checked}
                 onChange={(e) => {
                   const next = new Set(selected);
                   if (e.target.checked) next.add(o);
@@ -402,8 +577,356 @@ function ParameterRow({
       <div className="text-[10px] text-muted-foreground">
         {selected.size === 0 ? LABELS.notSpecified : ""}
       </div>
+      <ConstraintBadge
+        paramId={param.id}
+        allowedSet={allowedSet}
+        contribs={contribs}
+      />
     </fieldset>
   );
+}
+
+function ConstraintBadge({
+  paramId,
+  allowedSet,
+  contribs,
+}: {
+  paramId: string;
+  allowedSet: Set<string> | null;
+  contribs: ReturnType<typeof getContributions>;
+}) {
+  if (allowedSet === null || contribs.length === 0) return null;
+  const allowedList = Array.from(allowedSet);
+  const conflict = allowedList.length === 0;
+  return (
+    <div
+      className={`flex items-start gap-1.5 text-[10px] mt-1 px-1.5 py-1 rounded border ${conflict ? "border-amber-700/40 bg-amber-950/20 text-amber-300" : "border-border/40 bg-card/40 text-muted-foreground"}`}
+      data-testid={`ctad-param-${paramId}-constraint-badge`}
+    >
+      <Lock className="w-3 h-3 mt-px shrink-0" aria-hidden="true" />
+      <div className="space-y-0.5 min-w-0">
+        {conflict ? (
+          <div>{LABELS.constraintConflictLabel}</div>
+        ) : (
+          <div>
+            <span className="uppercase tracking-wider">
+              {LABELS.constrainedToLabel}:
+            </span>{" "}
+            <span className="font-mono">{allowedList.join(", ")}</span>
+          </div>
+        )}
+        <div className="text-[10px] text-muted-foreground">
+          <span className="uppercase tracking-wider">
+            {LABELS.contributingCardsLabel}:
+          </span>{" "}
+          {contribs.map((c) => c.cardId).join(", ")}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RelevantCardsPanel({
+  sectionId,
+  binding,
+  onPreviewCard,
+}: {
+  sectionId: CtadSectionId;
+  binding: CtadBinding;
+  onPreviewCard: (card: CncfCard) => void;
+}) {
+  const cards = useMemo(() => cardsForSection(sectionId), [sectionId]);
+  return (
+    <div
+      className="border border-border/30 rounded-md p-2 bg-card/20"
+      data-testid={`ctad-relevant-cards-${sectionId}`}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          {LABELS.relevantCardsHeading}
+        </span>
+        <span className="text-[10px] text-muted-foreground/70">
+          {LABELS.relevantCardsHint}
+        </span>
+      </div>
+      {cards.length === 0 ? (
+        <p
+          className="text-[11px] text-muted-foreground italic"
+          data-testid={`ctad-relevant-cards-${sectionId}-empty`}
+        >
+          {LABELS.noRelevantCards}
+        </p>
+      ) : (
+        <ul className="space-y-1.5">
+          {cards.map((card) => (
+            <CardRow
+              key={card.id}
+              card={card}
+              binding={binding}
+              onPreview={() => onPreviewCard(card)}
+            />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function CardRow({
+  card,
+  binding,
+  onPreview,
+}: {
+  card: CncfCard;
+  binding: CtadBinding;
+  onPreview: () => void;
+}) {
+  const applied = isCardApplied(binding, card.id);
+  return (
+    <li
+      className="flex items-start justify-between gap-2 border border-border/40 rounded-md px-2 py-1.5"
+      data-testid={`ctad-card-${card.id}`}
+    >
+      <div className="min-w-0 space-y-0.5">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold">{card.name}</span>
+          <span className="text-[10px] text-muted-foreground">
+            {LABELS.cardCategoryLabel}: {card.category} / {card.subcategory}
+          </span>
+        </div>
+        <div className="text-[10px]">
+          <span className="text-muted-foreground uppercase tracking-wider">
+            {LABELS.cardMaturityLabel}:
+          </span>{" "}
+          <QuotedSource
+            source="CNCF"
+            testId={`ctad-card-${card.id}-maturity`}
+          >
+            {card.maturity}
+          </QuotedSource>
+        </div>
+        <div className="text-[11px]">
+          <QuotedSource
+            source="CNCF"
+            testId={`ctad-card-${card.id}-description`}
+          >
+            {card.description}
+          </QuotedSource>
+        </div>
+      </div>
+      <div className="shrink-0 flex flex-col gap-1">
+        {applied ? (
+          <>
+            <span
+              className="text-[10px] uppercase tracking-wider text-muted-foreground text-right"
+              data-testid={`ctad-card-${card.id}-applied-flag`}
+            >
+              {LABELS.cardAlreadyApplied}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => removeAppliedCard(binding, card.id)}
+              data-testid={`ctad-card-${card.id}-remove`}
+            >
+              <X className="w-3 h-3" />
+              {LABELS.cardRemoveButton}
+            </Button>
+          </>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onPreview}
+            data-testid={`ctad-card-${card.id}-apply`}
+          >
+            <Plus className="w-3 h-3" />
+            {LABELS.cardApplyButton}
+          </Button>
+        )}
+      </div>
+    </li>
+  );
+}
+
+function PreviewModal({
+  binding,
+  card,
+  preview,
+  onCancel,
+  onCommit,
+}: {
+  binding: CtadBinding;
+  card: CncfCard;
+  preview: CardApplicationPreview;
+  onCancel: () => void;
+  onCommit: () => void;
+}) {
+  void binding; // accepted for future use; not currently read
+  const blocked = preview.conflicts.length > 0;
+  const empty =
+    preview.setEffects.length === 0 &&
+    preview.constraintEffects.length === 0 &&
+    preview.justifyEffects.length === 0 &&
+    preview.conflicts.length === 0;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4"
+      role="dialog"
+      aria-modal="true"
+      data-testid="ctad-preview-modal"
+    >
+      <Card className="w-full max-w-2xl max-h-[85vh] overflow-auto">
+        <CardHeader>
+          <CardTitle className="text-sm flex items-center justify-between">
+            <span>{LABELS.previewHeading}</span>
+            <span className="text-xs font-normal text-muted-foreground">
+              {card.name}
+            </span>
+          </CardTitle>
+          <CardDescription className="text-xs">
+            {LABELS.previewSubheading}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 text-xs">
+          {empty && (
+            <p className="text-muted-foreground italic">
+              {LABELS.previewSectionEmpty}
+            </p>
+          )}
+          {preview.setEffects.length > 0 && (
+            <PreviewSection
+              title={LABELS.previewSectionSets}
+              testId="ctad-preview-sets"
+            >
+              <ul className="space-y-1 font-mono text-[11px]">
+                {preview.setEffects.map((e) => (
+                  <li key={e.paramId}>
+                    {e.paramId}: {LABELS.previewBefore}=
+                    <span className="text-muted-foreground">
+                      {formatParamValue(e.before)}
+                    </span>
+                    {" \u2192 "}
+                    {LABELS.previewAfter}=
+                    <span className="text-primary">
+                      {formatParamValue(e.after)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </PreviewSection>
+          )}
+          {preview.constraintEffects.length > 0 && (
+            <PreviewSection
+              title={LABELS.previewSectionConstrains}
+              testId="ctad-preview-constrains"
+            >
+              <ul className="space-y-1 font-mono text-[11px]">
+                {preview.constraintEffects.map((e) => (
+                  <li key={e.paramId}>
+                    {e.paramId} {"\u2190"} {e.addsAllowedOptions.join(", ")}{" "}
+                    <span className="text-muted-foreground">
+                      (
+                      {e.newActiveAllowedOptions.length === 0
+                        ? "\u2205"
+                        : e.newActiveAllowedOptions.join(", ")}
+                      )
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </PreviewSection>
+          )}
+          {preview.justifyEffects.length > 0 && (
+            <PreviewSection
+              title={LABELS.previewSectionJustifies}
+              testId="ctad-preview-justifies"
+            >
+              <ul className="space-y-1 text-[11px]">
+                {preview.justifyEffects.map((e, i) => (
+                  <li key={`${e.paramId}-${i}`}>
+                    <span className="font-mono">{e.paramId}</span>:{" "}
+                    <QuotedSource source="CNCF">{e.rationale}</QuotedSource>
+                  </li>
+                ))}
+              </ul>
+            </PreviewSection>
+          )}
+          {preview.conflicts.length > 0 && (
+            <PreviewSection
+              title={LABELS.previewSectionConflicts}
+              testId="ctad-preview-conflicts"
+            >
+              <ul className="space-y-1 text-[11px] text-amber-300">
+                {preview.conflicts.map((c, i) => (
+                  <li
+                    key={`${c.paramId}-${i}`}
+                    className="flex items-start gap-1.5"
+                  >
+                    <AlertTriangle
+                      className="w-3 h-3 mt-0.5 shrink-0"
+                      aria-hidden="true"
+                    />
+                    <span>
+                      <span className="font-mono">{c.paramId}</span>:{" "}
+                      {c.reason}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </PreviewSection>
+          )}
+          <div className="text-[11px] text-muted-foreground border-t border-border/40 pt-2">
+            {blocked ? LABELS.previewBlockedByConflicts : LABELS.previewReady}
+          </div>
+        </CardContent>
+        <div className="flex items-center justify-end gap-2 px-6 pb-4">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onCancel}
+            data-testid="ctad-preview-cancel"
+          >
+            {LABELS.previewCancel}
+          </Button>
+          <Button
+            variant="default"
+            size="sm"
+            disabled={blocked}
+            onClick={onCommit}
+            data-testid="ctad-preview-commit"
+          >
+            {LABELS.previewCommit}
+          </Button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function PreviewSection({
+  title,
+  testId,
+  children,
+}: {
+  title: string;
+  testId: string;
+  children: ReactNode;
+}) {
+  return (
+    <div data-testid={testId}>
+      <h4 className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+        {title}
+      </h4>
+      {children}
+    </div>
+  );
+}
+
+function formatParamValue(v: unknown): string {
+  if (v === null || v === undefined) return "null";
+  if (Array.isArray(v)) return `[${(v as string[]).join(", ")}]`;
+  return String(v);
 }
 
 function CtadStatePreview({

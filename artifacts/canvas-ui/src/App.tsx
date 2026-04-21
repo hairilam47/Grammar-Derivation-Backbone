@@ -45,6 +45,13 @@ import "@/acw/acw3DForbiddenSemantics.test-shape";
 // (parameter registry shape locked at "ctad-1.0").
 import "@/ctad/ctadIsolationInvariants.test-shape";
 import "@/ctad/ctadGrammarInvariants.test-shape";
+// CNCF reference catalog — module-load side effects: build-time
+// isolation invariant (no decision-pipeline imports, no fetch /
+// dynamic import — the catalog is bundled, never fetched) and
+// catalog validation (every binding hint targets a paramId /
+// option that exists in the live CTAD registry).
+import "@/cncf/cncfIsolationInvariants.test-shape";
+import "@/cncf/cncfCatalog";
 // ACW Track 3 — module-load side effects: build-time isolation
 // (allowlist + denylist + read-only named-import scan), structural
 // identity (both renderers consume `enumerateLensVisibility`),
