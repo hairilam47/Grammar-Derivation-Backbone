@@ -245,7 +245,7 @@ nothing is persisted before freeze.
    terminal freeze screen.
 
 The header shows a five-segment progress indicator alongside the shared
-nav (`PortfolioHeaderNav`).
+nav (`GlobalNav`).
 
 ---
 
@@ -523,10 +523,11 @@ resolve consistently).
 | `/workspace/deployment` | `Deployment` | ACW Deployment & Infrastructure lens (TOGAF Technology; embeds 3D canvas) |
 | `/workspace/operations` | `OperationsContinuity` | ACW Operations & Continuity lens (cross-layer, descriptive only) |
 
-Header navigation (`components/governance/PortfolioHeaderNav.tsx`) is
-shared across all routes and exposes top-level links to Wizard,
-Portfolio, Signals, Reflection, Containment, and Workspace. Exposure
-is reached from a portfolio row, not from the global nav. The five
+Header navigation (`components/governance/GlobalNav.tsx`) is
+shared across all routes and exposes top-level links to Landing,
+Decision Canvas, Portfolio, Signals, Reflection, and Architecture
+Workspace. Exposure is reached from a portfolio row, not from the
+global nav. The five
 ACW lenses are reached through the workspace shell's lens-style
 sub-navigation, which has no progress indicator and no next/previous.
 
@@ -1425,7 +1426,7 @@ Removing `src/acw/`, `src/components/acw/`, `src/pages/acw/`, the
 ACW route definitions in `App.tsx`, the three ACW side-effect imports
 in `App.tsx` (`acwGrammarHooks`, `acwIsolationInvariants`,
 `acwGrammarInvariants`), the `Workspace` link in
-`PortfolioHeaderNav`, and the `ACW_PLACEHOLDER_FORBIDDEN` block in
+`GlobalNav`, and the `ACW_PLACEHOLDER_FORBIDDEN` block in
 `staticTextGuard.ts` restores the pre-ACW behaviour with no other
 change required. The `acw.workspace.v1` `localStorage` key (added by
 the v1 grammar diagram, see below) becomes orphan data and is never
