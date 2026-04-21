@@ -19,7 +19,13 @@ export interface AdjacencyRule {
   readonly to: { readonly layer: Track3Layer; readonly paramId: string };
 }
 
-export const TRACK3_ADJACENCY: readonly AdjacencyRule[] = Object.freeze([
+// Cast at the array boundary: each inner object literal widens
+// `layer: "application"` to `layer: string` because the property
+// is not annotated, and `Object.freeze` preserves whatever shape
+// it received. Annotating the outer array with `as` lets the
+// literals stay deeply frozen while restoring the strict
+// `Track3Layer` type for downstream consumers.
+export const TRACK3_ADJACENCY = Object.freeze([
   // Application <-> infrastructure
   Object.freeze({
     from: { layer: "application", paramId: "runtimeCategory" },
@@ -68,4 +74,4 @@ export const TRACK3_ADJACENCY: readonly AdjacencyRule[] = Object.freeze([
     from: { layer: "crossCutting", paramId: "resiliencePosture" },
     to: { layer: "infrastructure", paramId: "deploymentTopology" },
   }),
-]);
+]) as readonly AdjacencyRule[];
