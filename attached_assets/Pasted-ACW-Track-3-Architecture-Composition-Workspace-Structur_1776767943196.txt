@@ -1,0 +1,208 @@
+ACW Track 3
+Architecture Composition Workspace (Structural Visualisation & Interaction)
+You are implementing ACW Track 3 — Architecture Composition Workspace
+focused on STRUCTURAL VISUALISATION and INTERACTION.
+
+IMPORTANT CONTEXT
+- ACW is NOT a decision layer.
+- ACW is NOT a recommendation engine.
+- ACW is NOT a workflow or BPM tool.
+- ACW is NOT approving or optimising anything.
+
+ACW consumes CTAD_STATE produced by CTAD.
+ACW never mutates ADC or CTAD.
+
+System planes:
+
+ADC  — Decision Authority (immutable)
+CTAD — Interpretive Technology Intent (reversible)
+ACW  — Structural Composition Workspace (exploratory)
+
+If ACW implies approval, correctness, maturity, or recommendation,
+the implementation is WRONG.
+
+
+1. Purpose of ACW Track 3
+ACW Track 3 exists to:
+
+Visualise architectural structure
+Show connectivity and adjacency
+Allow EA / SA to explore consequences of CTAD selections
+Provide 2D (and optionally 3D) structural perspectives
+
+ACW answers:
+
+“What does this look like when put together?”
+
+ACW does NOT answer:
+
+“Is this correct?”
+“Should we build this?”
+“Is this optimal?”
+
+
+2. Inputs (STRICT, READ‑ONLY)
+ACW Track 3 receives:
+Required
+
+CTAD_STATE (categorical technology selections)
+ADC‑derived component bounds (architectural layers present)
+
+Forbidden
+ACW must NOT read or write:
+
+Portfolio
+Signals
+ADS / ECP
+Any governance state
+
+
+3. ACW Derivation Model (NON‑NEGOTIABLE)
+ACW MUST derive structure mechanically from CTAD_STATE.
+3.1 Deterministic Derivation
+
+Same CTAD_STATE → same ACW structure
+No heuristics
+No scoring
+No optimisation
+No validation
+
+Derivation must be implemented as a pure function:
+deriveACWStructure(ctadState, adcBounds) → acwStructure
+
+
+3.2 Node Derivation Rules (Conceptual)
+For each CTAD category, ACW derives generic structural nodes.
+Examples (illustrative):
+
+Infrastructure classes → Infrastructure nodes
+Runtime categories → Runtime nodes
+Application style → Application boundary nodes
+Integration patterns → Integration surface nodes
+Security / ops classes → Cross‑cutting nodes
+
+Nodes MUST remain:
+
+Generic
+Non‑vendor‑specific
+Non‑prescriptive
+
+Example:
+✅ “Relational Database”
+❌ “PostgreSQL”
+
+3.3 Edge / Connectivity Rules
+Edges are implied by adjacency of categories, not manually designed.
+Examples:
+
+Application → Runtime
+Runtime → Infrastructure
+Integration ↔ Application boundaries
+Security nodes cross‑cut layers
+
+Edges express:
+
+Structural dependency
+Adjacency
+Containment
+
+Edges must NEVER express:
+
+Correctness
+Priority
+Performance
+Risk
+Recommendation
+
+
+4. ACW Interaction Contract (Track 3)
+ACW Track 3 interaction must comply with the ACW Interaction Contract.
+4.1 Progressive Disclosure
+
+Structure appears immediately from CTAD_STATE
+Interaction complexity grows with structure
+No grammar panels exposed prematurely
+
+
+4.2 Allowed Interactions
+Users MAY:
+
+Zoom and pan
+Focus / isolate nodes
+Hide / show layers
+Switch perspectives (e.g., infra / app / integration)
+Toggle 2D ↔ 3D views (optional)
+
+Users MUST NOT:
+
+Edit CTAD selections inside ACW
+Approve anything
+Trigger decision flows
+See validation alerts or correctness checks
+
+
+4.3 Forbidden Visual Semantics
+ACW must NEVER include:
+
+Heatmaps
+Health states
+Maturity levels
+Priority indicators
+Red / yellow / green semantics
+“Recommended” paths
+
+If a visual element suggests judgement, remove it.
+
+5. ACW Structure Storage Rules
+
+ACW structure is DERIVED, not authored
+ACW must be able to be regenerated entirely from CTAD_STATE
+ACW does not persist authoritative state about meaning
+
+Optional:
+
+UI layout preferences (camera position, collapsed panels)
+These must never affect structure derivation
+
+
+6. relationship to Track 4 (IMPORTANT)
+Track 3 does NOT implement:
+
+OrgUnit overlays
+Process overlays
+Responsibility modelling
+
+ACW Track 3 must expose stable structural anchoring points so that
+Track 4 can later attach overlays without modifying structure.
+
+7. UX Language Rules
+Allowed:
+
+“Structural view”
+“Connectivity”
+“Explore”
+“Derived from technology selections”
+
+Forbidden:
+
+“Approved architecture”
+“Best design”
+“Validated”
+“Optimised”
+
+ACW must feel exploratory and descriptive.
+
+8. Success Criteria
+ACW Track 3 is successful if:
+
+Structure updates whenever CTAD_STATE changes
+Users can visually understand consequences of tech choices
+No one can mistake ACW for a governance or recommendation tool
+ADC remains completely untouched
+CTAD remains reversible
+
+If there is any doubt between:
+“visual clarity” and “semantic implication”
+→ choose visual clarity WITHOUT implication.
+
+END OF ACW TRACK 3 REPLIT PROMPT
