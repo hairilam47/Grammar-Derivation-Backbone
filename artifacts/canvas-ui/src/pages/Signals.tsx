@@ -8,7 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { PortfolioHeaderNav } from "@/components/governance/PortfolioHeaderNav";
+import { GlobalNav } from "@/components/governance/GlobalNav";
 import { ReadOnlyArtefactModal } from "@/components/governance/ReadOnlyArtefactModal";
 import { listEntries } from "@/governance/portfolioStore";
 import { assertAllSignalsLanguage } from "@/governance/staticTextGuard";
@@ -169,7 +169,7 @@ export default function Signals() {
               {T.pageTitle}
             </span>
           </div>
-          <PortfolioHeaderNav />
+          <GlobalNav />
         </div>
       </header>
 

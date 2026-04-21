@@ -1,14 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "wouter";
-import { Eye, Layout } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Eye } from "lucide-react";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { PortfolioHeaderNav } from "@/components/governance/PortfolioHeaderNav";
+import { GlobalNav } from "@/components/governance/GlobalNav";
 import {
   listEntries,
   type PortfolioEntry,
@@ -57,7 +55,6 @@ const T = {
   lineageCaption:
     "For each logical decision (ADS ID), the chronological sequence of frozen versions is shown. A single-version decision is shown the same way as a multi-version one.",
   lineageEmpty: "No frozen decisions are recorded yet.",
-  lineageEmptyCta: "Open Canvas",
   lineageVersionLabel: "Revision sequence",
   lineageVersionHashLabel: "Version hash",
   lineageDateLabel: "Decision date",
@@ -218,7 +215,7 @@ export default function Reflection() {
               {T.pageTitle}
             </span>
           </div>
-          <PortfolioHeaderNav />
+          <GlobalNav />
         </div>
       </header>
 
@@ -276,11 +273,6 @@ function LineagePanel({ lineage }: { lineage: LineageGroup[] }) {
         {lineage.length === 0 ? (
           <div className="py-6 text-center space-y-3" data-testid="lineage-empty">
             <div className="text-xs text-muted-foreground">{T.lineageEmpty}</div>
-            <Link href="/">
-              <Button variant="outline" size="sm" className="gap-2" data-testid="lineage-empty-cta">
-                <Layout className="w-3.5 h-3.5" /> {T.lineageEmptyCta}
-              </Button>
-            </Link>
           </div>
         ) : (
           <div className="space-y-4">

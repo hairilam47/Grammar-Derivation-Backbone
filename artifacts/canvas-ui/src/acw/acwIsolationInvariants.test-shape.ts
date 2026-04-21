@@ -82,6 +82,7 @@ const ALLOWED_IMPORT_PREFIXES: readonly string[] = [
   // shell with no decision-pipeline state. Allowed so the workspace
   // can present the same global nav as the rest of the app.
   "@/components/governance/PortfolioHeaderNav",
+  "@/components/governance/GlobalNav",
   // Vocabulary guard — read-only assertion utility shared with the
   // rest of the application; introduces no decision-pipeline coupling.
   "@/governance/staticTextGuard",

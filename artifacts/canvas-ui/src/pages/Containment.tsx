@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PortfolioHeaderNav } from "@/components/governance/PortfolioHeaderNav";
+import { GlobalNav } from "@/components/governance/GlobalNav";
 import {
   TOGAF_ARTEFACT_DOCKING,
   MANDATORY_NON_AUTHORITY_DISCLAIMER,
@@ -109,7 +109,7 @@ export default function Containment() {
               {PAGE_TITLE}
             </span>
           </div>
-          <PortfolioHeaderNav />
+          <GlobalNav />
         </div>
       </header>
 

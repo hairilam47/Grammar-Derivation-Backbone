@@ -1,6 +1,6 @@
 // ACW Workspace Builder — workspace shell + lens-style sub-navigation.
 //
-// The shell renders the top app nav (PortfolioHeaderNav), an
+// The shell renders the top app nav (GlobalNav), an
 // ACW-specific sub-nav listing the five TOGAF-aligned lenses, and a
 // content slot for the active lens view. Navigation is "lens, not
 // step": no progress indicators, no next / previous, no maturity or
@@ -9,7 +9,7 @@
 import type { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { Workflow } from "lucide-react";
-import { PortfolioHeaderNav } from "@/components/governance/PortfolioHeaderNav";
+import { GlobalNav } from "@/components/governance/GlobalNav";
 import { AuthoringPanel } from "@/components/acw/AuthoringPanel";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 // Side-effect imports: ACW grammar hook stubs, isolation invariant,
@@ -86,7 +86,7 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
               {SHELL_TITLE}
             </span>
           </div>
-          <PortfolioHeaderNav />
+          <GlobalNav />
         </div>
       </header>
 

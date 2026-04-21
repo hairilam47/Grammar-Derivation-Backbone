@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { Layout, LayoutGrid, ArrowUpDown, FileText, FileType, Eye } from "lucide-react";
+import { LayoutGrid, ArrowUpDown, FileText, FileType, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -8,7 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { PortfolioHeaderNav } from "@/components/governance/PortfolioHeaderNav";
+import { GlobalNav } from "@/components/governance/GlobalNav";
 import {
   EntryAdsView,
   EntryEcpView,
@@ -39,7 +39,6 @@ const PORTFOLIO_STATIC_TEXT = {
   presentationCaption:
     "Sort and filter controls are presentation conveniences. Order does not imply priority or desirability.",
   emptyState: "The portfolio contains no approved decisions yet.",
-  emptyStateCta: "Open the canvas to freeze a decision",
   riskHeading: "Risk Concentration",
   severityHeading: "Decisions by Highest Risk Severity",
   categoryHeading: "Distribution of Risk Categories Present",
@@ -168,7 +167,7 @@ export default function Portfolio() {
               {PORTFOLIO_STATIC_TEXT.pageTitle}
             </span>
           </div>
-          <PortfolioHeaderNav />
+          <GlobalNav />
         </div>
       </header>
 
@@ -241,11 +240,6 @@ function EmptyState() {
         <div className="text-muted-foreground text-sm">
           {PORTFOLIO_STATIC_TEXT.emptyState}
         </div>
-        <Link href="/">
-          <Button variant="outline" className="gap-2" data-testid="button-empty-go-canvas">
-            <Layout className="w-4 h-4" /> {PORTFOLIO_STATIC_TEXT.emptyStateCta}
-          </Button>
-        </Link>
       </CardContent>
     </Card>
   );

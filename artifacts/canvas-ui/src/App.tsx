@@ -3,7 +3,8 @@ import { Switch, Route, Router as WouterRouter } from "wouter";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
-import Wizard from "@/pages/Wizard";
+import LandingPage from "@/pages/LandingPage";
+import DecisionCanvasShell from "@/components/DecisionCanvasShell";
 import Portfolio from "@/pages/Portfolio";
 import Signals from "@/pages/Signals";
 import Reflection from "@/pages/Reflection";
@@ -45,7 +46,8 @@ function DarkModeApplier() {
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Wizard} />
+      <Route path="/" component={LandingPage} />
+      <Route path="/decision-canvas" component={DecisionCanvasShell} />
       <Route path="/portfolio" component={Portfolio} />
       <Route path="/signals" component={Signals} />
       <Route path="/reflection" component={Reflection} />
