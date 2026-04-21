@@ -49,7 +49,7 @@ const CARDS: readonly IntentCard[] = [
       "No decisions are recorded",
     ],
     ctaLabel: "Open Workspace",
-    ctaHref: "/workspace/context",
+    ctaHref: "/workspace",
     ctaTestId: "intent-cta-acw",
   },
 ];
