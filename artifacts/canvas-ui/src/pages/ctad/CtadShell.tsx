@@ -191,17 +191,20 @@ function BoundShell({
 }
 
 function BindingPanel({ entry }: { entry: PortfolioEntry }) {
-  const ctx = entry.organisationContext as unknown as Record<string, unknown>;
+  // `organisationContext` is typed by the portfolio store; we read
+  // each field directly so we keep the structural typing rather
+  // than widening to `Record<string, unknown>`.
+  const ctx = entry.organisationContext;
   const fields: ReadonlyArray<{ label: string; value: string; testId: string }> = [
     { label: LABELS.fieldProject, value: entry.projectName, testId: "binding-project" },
     { label: LABELS.fieldDecisionAuthority, value: entry.approvingAuthority, testId: "binding-authority" },
     { label: LABELS.fieldDecisionDate, value: formatDate(entry.decisionDate), testId: "binding-date" },
     { label: LABELS.fieldAdsId, value: entry.adsId, testId: "binding-adsid" },
     { label: LABELS.fieldAdsVersion, value: entry.adsVersion, testId: "binding-adsversion" },
-    { label: LABELS.fieldOrgType, value: String(ctx?.organisationType ?? ""), testId: "binding-orgtype" },
-    { label: LABELS.fieldSensitivity, value: String(ctx?.sensitivityLevel ?? ""), testId: "binding-sensitivity" },
-    { label: LABELS.fieldSystemIntent, value: String(ctx?.systemIntent ?? ""), testId: "binding-systemintent" },
-    { label: LABELS.fieldLifespan, value: String(ctx?.expectedLifespanYears ?? ""), testId: "binding-lifespan" },
+    { label: LABELS.fieldOrgType, value: ctx.organisationType ?? "", testId: "binding-orgtype" },
+    { label: LABELS.fieldSensitivity, value: ctx.sensitivityLevel ?? "", testId: "binding-sensitivity" },
+    { label: LABELS.fieldSystemIntent, value: ctx.systemIntent ?? "", testId: "binding-systemintent" },
+    { label: LABELS.fieldLifespan, value: ctx.expectedLifespanYears == null ? "" : String(ctx.expectedLifespanYears), testId: "binding-lifespan" },
     {
       label: LABELS.fieldCapabilitiesInScope,
       value: String(entry.inScopeCapabilityIds.length),
