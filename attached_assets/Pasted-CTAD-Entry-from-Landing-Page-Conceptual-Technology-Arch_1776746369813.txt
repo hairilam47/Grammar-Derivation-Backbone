@@ -1,0 +1,228 @@
+CTAD (Entry from Landing Page)
+Conceptual Technology Architecture Design (CTAD)
+You are implementing the Conceptual Technology Architecture Design (CTAD) module.
+
+IMPORTANT CONTEXT
+CTAD is NOT a decision layer.
+CTAD is NOT a recommendation engine.
+CTAD is NOT a governance surface.
+
+CTAD is an INTERPRETIVE, REVERSIBLE technology exploration plane that sits between:
+- ADC (Architecture Decision Canvas — decision authority, immutable)
+- ACW (Architecture Composition Workspace — structural visualisation)
+
+CTAD exists to let EA / SA explore technology space WITHOUT reopening or mutating ADC.
+
+If any implementation implies approval, correctness, or recommendation, it is WRONG.
+
+
+1. Landing Page Contract (MANDATORY)
+CTAD is entered from the global landing page, which presents three peer planes:
+ADC | CTAD | ACW
+
+Each card represents an architectural plane of intent, not a workflow step.
+Landing Semantics (Binding)
+
+
+ADC
+Purpose: Create or review a binding architectural decision
+Authority: Decision, freeze, governance
+
+
+CTAD
+Purpose: Explore technology configurations permitted by an approved decision
+Authority: NONE (interpretive only)
+
+
+ACW
+Purpose: Visualise and explore architecture structure
+Authority: NONE (exploratory)
+
+
+CTAD must never be framed as “design approval” or “final architecture”.
+
+2. Entry Preconditions for CTAD (CRITICAL)
+CTAD REQUIRES an ADC decision context.
+Entry Rules
+
+
+If the user enters CTAD from the landing page:
+
+The system MUST prompt the user to select an existing frozen ADC decision
+The ADC context is READ-ONLY
+No CTAD screen may appear without a bound ADC decision
+
+
+
+If no ADC decisions exist:
+
+CTAD entry must be blocked
+A neutral message may be shown:
+“CTAD requires an approved architectural decision.”
+
+
+
+CTAD must never operate in isolation from ADC context.
+
+3. CTAD Authority Boundary (NON‑NEGOTIABLE)
+
+Upstream authority: ADC ONLY
+CTAD authority: NONE
+Downstream consumer: ACW ONLY
+Back‑propagation into ADC: FORBIDDEN
+
+CTAD must NEVER:
+
+Rank
+Recommend
+Approve
+Optimise
+Score
+Persist into Portfolio
+Create Signals
+Affect ADC freeze state
+
+
+4. CTAD Operating Model
+4.1 State‑Driven (Not Step‑Driven)
+CTAD must be state‑based, NOT wizard‑based.
+
+No Step 1 / Step 2 / completion flow
+No progress indicators
+No “finalise” semantics
+
+All UI must be a function of:
+ctadState + adcContext
+
+
+4.2 Declarative, Reversible Selection
+CTAD captures categorical technology classes only.
+
+All selections are reversible
+No selection is mandatory unless constrained by ADC
+Missing values mean “not specified”, not invalid
+
+
+5. CTAD Output (AUTHORITATIVE SHAPE)
+CTAD must emit a single, clean CTAD_STATE object.
+Illustrative structure:
+CTAD_STATE = {
+  infrastructure: { ... },
+  application: { ... },
+  integration: { ... },
+  crossCutting: { ... }
+}
+
+Rules:
+
+No product names by default
+Class/category level only
+Deterministic
+Serializable
+Reversible
+
+
+6. CTAD Parameters (AUTHORITATIVE — MUST IMPLEMENT)
+Infrastructure (Conceptual)
+
+Hosting model: On‑prem | Private | Public | Hybrid
+Deployment topology: Single‑tier | Multi‑tier | Distributed
+Server scale class: Small | Medium | Large | Elastic
+Database class: Relational | Document | Key‑Value | Graph | Time‑series
+Data distribution: Centralised | Replicated | Sharded
+Network topology: Flat | Segmented | Zero‑trust
+Network components present (flags): Router | Switch | Firewall | Load Balancer
+OS class: Linux | Windows | Mixed
+Virtualisation class: VM | Container | Mixed
+Identity model: Centralised | Federated
+Perimeter model: Perimeter‑based | Zero‑trust
+Cryptography scope: At‑rest | In‑transit | Both
+Monitoring class: Basic | Centralised | Observability
+Management model: Manual | Automated | Policy‑driven
+
+
+Application & Platform
+
+Application style: Monolith | Modular | Microservices | Event‑driven
+Runtime category: Managed | Self‑hosted
+Backend framework class: JVM | .NET | Node | Python | Mixed
+Frontend architecture: Server‑rendered | SPA | Hybrid
+Frontend framework class: React‑like | Vue‑like | Angular‑like | Other
+
+
+Integration
+
+Integration pattern: API | Event | Batch | Hybrid
+Message exchange: Synchronous | Asynchronous
+Boundary scope: Internal | External | Both
+
+
+Cross‑Cutting
+
+Configuration management: Centralised | Decentralised
+Secrets handling: Local | Vault‑based | Managed Service
+Resilience posture: Basic | Redundant | Multi‑region
+
+
+7. Reference Catalogs (OPTIONAL)
+CTAD MAY include:
+
+Read‑only technology catalogs
+External references (e.g., CNCF landscape, GeeksForGeeks)
+
+Catalog rules:
+
+Optional
+Read‑only
+No ranking
+No auto‑selection
+No defaults
+
+
+8. CTAD → ACW Handoff (DO NOT IMPLEMENT ACW LOGIC)
+CTAD must:
+
+Expose CTAD_STATE cleanly to ACW
+No shared logic
+No visual derivation
+No diagram rendering
+
+ACW will handle:
+
+Node creation
+Connectivity
+Structural layout
+Interaction (Track 3)
+Overlays (Track 4)
+
+
+9. UX Language Rules
+Allowed:
+
+“Select a technology class”
+“Swap selection”
+“Not specified”
+“Explores structural consequences”
+
+Forbidden:
+
+“Approve”
+“Confirm”
+“Best choice”
+“Recommended”
+“Final design”
+
+CTAD must feel exploratory, not decisive.
+
+10. Success Criteria
+
+Users clearly understand CTAD is exploratory
+Users cannot mistake CTAD for decision approval
+ACW structure changes when CTAD state changes
+ADC remains untouched
+
+If there is any ambiguity between:
+“help exploration” vs “imply correctness”
+→ Always choose exploration.
+
+END OF CTAD REPLIT PROMPT
