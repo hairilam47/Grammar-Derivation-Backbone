@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.0",
     "@workspace/architecture-grammar": "workspace:*",
     "docx": "^9.6.1",

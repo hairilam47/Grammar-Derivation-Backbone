@@ -88,6 +88,17 @@ export interface AcwTrack3Structure {
 export function nodeIdForLayer(layer: Track3Layer): string {
   return `node:layer:${layer}`;
 }
+// Inverse of the id schemes above: returns the layer that a
+// derived node belongs to, or null if the id does not match
+// either the layer-root or param-value form. Pure string match,
+// no allocation beyond the loop.
+export function layerOfNodeId(nodeId: string): Track3Layer | null {
+  for (const l of TRACK3_LAYERS) {
+    if (nodeId === nodeIdForLayer(l)) return l;
+    if (nodeId.startsWith(`node:param:${l}:`)) return l;
+  }
+  return null;
+}
 export function nodeIdForParamValue(
   layer: Track3Layer,
   paramId: string,

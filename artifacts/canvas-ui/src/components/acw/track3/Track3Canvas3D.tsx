@@ -7,35 +7,30 @@
 // layer-root nodes sit at z = 0; their child param-value nodes
 // sit at z = +1 inside the same XY footprint as their parent.
 //
-// Camera + pan: the perspective camera is mounted once at a
-// fixed `(0, 0, BASE_CAM_Z)` looking at the origin and never
-// moves. Pan and zoom are applied to a `<group>` transform that
-// wraps every mesh — `position = (-cameraX * SCALE, +cameraY *
-// SCALE, 0)` and `scale = cameraZoom`. Wheel-zoom and drag-pan
-// write back via `onCameraChange`; the shell updates the
-// per-binding view-prefs and re-renders, which feeds the new
-// transform values into the group on the next render.
+// Camera + navigation: the perspective camera is owned by drei's
+// OrbitControls, which provides true 3D rotate + pan + zoom.
+// View-prefs (cameraX / cameraY / cameraZoom) persist via the
+// pre-existing per-binding storage key (`acw.track3.viewprefs.v1`)
+// — this renderer does NOT change the schema. A pure mapping is
+// applied between the three persisted numbers and the controls
+// state:
 //
-// Why a group transform and not a live camera prop: R3F's
-// `<Canvas camera={...}>` initialises the default camera on
-// mount only, so updating `cameraX/Y/Zoom` afterwards would not
-// move the view. Using a group keeps the prop static (correct
-// at mount, never goes stale) and makes pan/zoom genuinely
-// reactive without `useFrame`, `setInterval`, or
-// `requestAnimationFrame` — pure render-time math.
+//   target.x = cameraX * SCALE
+//   target.y = -cameraY * SCALE     (Y flip preserves 2D pan sign)
+//   distance = BASE_CAM_Z / cameraZoom
 //
-// Why this also fixes the "blank 3D" symptom on first switch
-// from 2D: the 2D and 3D views share `cameraX/Y/Zoom` in
-// view-prefs, but the 2D values are in pixel-pan space. With
-// the previous implementation the 3D camera was placed at
-// `(cameraX * SCALE, -cameraY * SCALE, ...)` while the scene
-// was recentered around its visible centroid, so any persisted
-// 2D pan pointed the camera at empty space. With the camera
-// fixed and the same numbers driving a group offset, persisted
-// 2D pan now translates the scene by the same amount in scene
-// units — at zoom 1 with cameraX=cameraY=0 the centroid sits
-// dead-centre, and panning shifts the boxes exactly the way it
-// does in 2D.
+// On mount the camera + controls target are seeded from the
+// initial prefs. On every controls change event the inverse
+// mapping is fed back to `onCameraChange` so the shell persists
+// the new triple. There are no per-frame hooks in our source
+// (no useFrame, no setInterval, no requestAnimationFrame); the
+// controls' onChange callback is event-driven.
+//
+// Why this also fixes the original "blank 3D" symptom on first
+// switch from 2D: with the camera+target mapped from the same
+// pan/zoom triple the 2D view writes, persisted 2D state
+// always points the camera at the same scene region, never
+// empty space.
 //
 // Focus / isolate: clicking a mesh fires `onNodeClick(id)`. The
 // shell sets `focusedParentId` accordingly; the shared
@@ -45,18 +40,21 @@ import {
   useMemo,
   useRef,
   useState,
-  type PointerEvent,
   type ReactNode,
-  type WheelEvent,
   Component,
   type ErrorInfo,
 } from "react";
 import { Canvas } from "@react-three/fiber";
+import { OrbitControls } from "@react-three/drei";
 import {
   enumerateLensVisibility,
   type AcwNode,
   type AcwEdge,
 } from "@/acw/acwLensStructure";
+import {
+  layerOfNodeId,
+  type Track3Layer,
+} from "@/acw/track3/track3Types";
 import { assertAllAcwTrack3Language } from "@/governance/staticTextGuard";
 
 const EMPTY_HINT = "No selections yet — open the bound CTAD shell to add some.";
@@ -146,6 +144,41 @@ function clampZoom(z: number): number {
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
 }
 
+// Pure mapping from persisted view-prefs to controls target +
+// camera distance along the view axis. Kept inline for clarity.
+function prefsToTarget(
+  cameraX: number,
+  cameraY: number,
+): [number, number, number] {
+  return [cameraX * SCALE, -cameraY * SCALE, 0];
+}
+function prefsToDistance(cameraZoom: number): number {
+  return BASE_CAM_Z / clampZoom(cameraZoom);
+}
+
+interface LayerGeometryProps {
+  readonly node: AcwNode;
+}
+function LayerGeometry({ node }: LayerGeometryProps) {
+  // Param-value children keep the existing small box.
+  if (node.parentId !== null) {
+    return <boxGeometry args={[0.6, 0.3, 0.3]} />;
+  }
+  const layer: Track3Layer | null = layerOfNodeId(node.id);
+  switch (layer) {
+    case "infrastructure":
+      return <boxGeometry args={[1.6, 0.5, 0.5]} />;
+    case "application":
+      return <cylinderGeometry args={[0.5, 0.5, 0.6, 24]} />;
+    case "integration":
+      return <coneGeometry args={[0.55, 0.9, 24]} />;
+    case "crossCutting":
+      return <sphereGeometry args={[0.55, 24, 24]} />;
+    default:
+      return <boxGeometry args={[1.2, 0.4, 0.4]} />;
+  }
+}
+
 export function Track3Canvas3D(props: Track3Canvas3DProps) {
   const {
     nodes,
@@ -200,79 +233,48 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
 
   const isEmpty = visibleNodes.length === 0;
 
-  // The camera is mounted once at this fixed position and never
-  // moves — pan/zoom are applied to a group transform below.
-  // See the file-header comment for the rationale.
-  const camPos = useMemo<[number, number, number]>(
-    () => [0, 0, BASE_CAM_Z],
+  // Initial camera placement: read from prefs ONCE on mount via a
+  // ref so user-driven prop updates do not re-seed the camera
+  // mid-session. The shell forces a fresh mount when the bound
+  // ADS changes by passing a key, so this is correct per binding.
+  const initialPrefsRef = useRef({ cameraX, cameraY, cameraZoom });
+  const initialTarget = useMemo<[number, number, number]>(
+    () =>
+      prefsToTarget(
+        initialPrefsRef.current.cameraX,
+        initialPrefsRef.current.cameraY,
+      ),
     [],
   );
-  // Group transform: pan applied as scene translation (in scene
-  // units, via SCALE), zoom applied as uniform scale. Sign of
-  // `position.x` is negative because increasing `cameraX` in 2D
-  // means "pan view to the right", which in this scene means
-  // shifting the scene to the LEFT. `position.y` is positive
-  // because the per-node Y is already flipped (`-(n.y - center.y)
-  // * SCALE`), so increasing `cameraY` in 2D ("pan view down")
-  // corresponds to translating the scene UP in scene-Y.
-  const groupPos = useMemo<[number, number, number]>(
-    () => [-cameraX * SCALE, cameraY * SCALE, 0],
-    [cameraX, cameraY],
-  );
+  const initialCamPos = useMemo<[number, number, number]>(() => {
+    const t = initialTarget;
+    const dist = prefsToDistance(initialPrefsRef.current.cameraZoom);
+    return [t[0], t[1], dist];
+  }, [initialTarget]);
 
-  const dragRef = useRef<{
-    active: boolean;
-    startX: number;
-    startY: number;
-    startCamX: number;
-    startCamY: number;
-  } | null>(null);
-
-  function handlePointerDown(e: PointerEvent<HTMLDivElement>) {
-    if (e.button !== 0) return;
-    dragRef.current = {
-      active: true,
-      startX: e.clientX,
-      startY: e.clientY,
-      startCamX: cameraX,
-      startCamY: cameraY,
-    };
-    (e.target as Element).setPointerCapture?.(e.pointerId);
-  }
-  function handlePointerMove(e: PointerEvent<HTMLDivElement>) {
-    const d = dragRef.current;
-    if (!d || !d.active) return;
-    const dx = e.clientX - d.startX;
-    const dy = e.clientY - d.startY;
-    // Drag delta in pixels → scene units (same axis convention as 2D).
-    const next = {
-      x: d.startCamX - dx / cameraZoom,
-      y: d.startCamY - dy / cameraZoom,
-    };
-    onCameraChange?.(next.x, next.y, cameraZoom);
-  }
-  function handlePointerUp(e: PointerEvent<HTMLDivElement>) {
-    if (dragRef.current) dragRef.current.active = false;
-    (e.target as Element).releasePointerCapture?.(e.pointerId);
-  }
-  function handleWheel(e: WheelEvent<HTMLDivElement>) {
-    const factor = Math.exp(-e.deltaY * 0.0015);
-    const next = clampZoom(cameraZoom * factor);
-    if (next !== cameraZoom) {
-      onCameraChange?.(cameraX, cameraY, next);
-    }
+  // OrbitControls ref so the change callback can read camera +
+  // target back out and feed them through the inverse mapping.
+  const controlsRef = useRef<OrbitControlsLike | null>(null);
+  function handleControlsChange() {
+    const c = controlsRef.current;
+    if (!c) return;
+    const t = c.target;
+    const cam = c.object;
+    const dx = cam.position.x - t.x;
+    const dy = cam.position.y - t.y;
+    const dz = cam.position.z - t.z;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const nextX = t.x / SCALE;
+    const nextY = -t.y / SCALE;
+    const nextZoom = clampZoom(dist > 1e-6 ? BASE_CAM_Z / dist : 1);
+    onCameraChange?.(nextX, nextY, nextZoom);
   }
 
   return (
     <div
       data-testid={testId}
       className="relative rounded-md border border-border/40 bg-black/40 overflow-hidden"
-      style={{ height: 360, touchAction: "none", cursor: "grab" }}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
-      onWheel={handleWheel}
+      style={{ height: 360, touchAction: "none" }}
     >
       {!webgl ? (
         <div
@@ -293,12 +295,30 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
           }
         >
           <Canvas
-            camera={{ position: camPos, fov: 50 }}
+            camera={{ position: initialCamPos, fov: 50 }}
             style={{ width: "100%", height: "100%" }}
           >
-            <ambientLight intensity={0.5} />
-            <pointLight position={[5, 5, 5]} intensity={0.4} />
-            <group position={groupPos} scale={cameraZoom}>
+            <ambientLight intensity={0.4} />
+            <directionalLight position={[5, 8, 5]} intensity={0.6} />
+            {/* Faint XY reference grid at z = 0; rotated into the
+                XY plane and made non-interactive so node clicks
+                still land on the meshes below. */}
+            <gridHelper
+              args={[20, 20, "#1f2937", "#111827"]}
+              position={[0, 0, 0]}
+              rotation={[Math.PI / 2, 0, 0]}
+              raycast={() => null}
+            />
+            <OrbitControls
+              ref={(r) => {
+                controlsRef.current = r as unknown as OrbitControlsLike | null;
+              }}
+              enableRotate
+              enablePan
+              enableZoom
+              target={initialTarget}
+              onChange={handleControlsChange}
+            />
             {visibleNodes.map((n) => {
               const x = (n.x - center.x) * SCALE;
               const y = -(n.y - center.y) * SCALE;
@@ -317,7 +337,7 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
                   }}
                   userData={{ testid: `${testId}-mesh-${n.id}` }}
                 >
-                  <boxGeometry args={[1.6, 0.4, 0.4]} />
+                  <LayerGeometry node={n} />
                   <meshStandardMaterial
                     color={
                       isFocused
@@ -340,77 +360,28 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
               const bx = (b.x - center.x) * SCALE;
               const by = -(b.y - center.y) * SCALE;
               const bz = b.parentId === null ? 0 : 1;
-              const mx = (ax + bx) / 2;
-              const my = (ay + by) / 2;
-              const mz = (az + bz) / 2;
-              const dx = bx - ax;
-              const dy = by - ay;
-              const dz = bz - az;
-              const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
-              // Orient the box (which is built along the local
-              // X axis with length=len) to point from a → b.
-              // We compute a quaternion that rotates the unit
-              // vector (1,0,0) onto the unit edge direction,
-              // using axis = X × dir and angle = acos(X · dir).
-              // This is a one-shot per-render computation (no
-              // per-frame hooks, no animation), so it stays
-              // within Track 3's "static, mechanical" envelope.
-              let qx = 0;
-              let qy = 0;
-              let qz = 0;
-              let qw = 1;
-              if (len > 1e-9) {
-                const tx = dx / len;
-                const ty = dy / len;
-                const tz = dz / len;
-                // axis = (1,0,0) × (tx,ty,tz) = (0, -tz, ty)
-                let axx = 0;
-                let axy = -tz;
-                let axz = ty;
-                const axLen = Math.sqrt(
-                  axx * axx + axy * axy + axz * axz,
-                );
-                if (axLen < 1e-9) {
-                  // Edge is parallel to ±X; either no rotation
-                  // (forward) or 180° around any perpendicular
-                  // axis (backward). Pick Z as a stable choice.
-                  if (tx >= 0) {
-                    qx = 0;
-                    qy = 0;
-                    qz = 0;
-                    qw = 1;
-                  } else {
-                    qx = 0;
-                    qy = 0;
-                    qz = 1;
-                    qw = 0;
-                  }
-                } else {
-                  axx /= axLen;
-                  axy /= axLen;
-                  axz /= axLen;
-                  const cosT = Math.max(-1, Math.min(1, tx));
-                  const angle = Math.acos(cosT);
-                  const s = Math.sin(angle / 2);
-                  qx = axx * s;
-                  qy = axy * s;
-                  qz = axz * s;
-                  qw = Math.cos(angle / 2);
-                }
-              }
+              const positions = new Float32Array([ax, ay, az, bx, by, bz]);
               return (
-                <mesh
+                // `<lineSegments>` is used instead of `<line>` to
+                // avoid the JSX intrinsic collision with the SVG
+                // `<line>` element. Functionally identical for a
+                // two-vertex segment: it renders THREE.LineSegments
+                // with a `<bufferGeometry>` + `<lineBasicMaterial>`
+                // and replaces the previous rotated-box edge mesh.
+                <lineSegments
                   key={e.id}
-                  position={[mx, my, mz]}
-                  quaternion={[qx, qy, qz, qw]}
                   userData={{ testid: `${testId}-line-${e.id}` }}
                 >
-                  <boxGeometry args={[len, 0.02, 0.02]} />
-                  <meshStandardMaterial color="#64748b" />
-                </mesh>
+                  <bufferGeometry>
+                    <bufferAttribute
+                      attach="attributes-position"
+                      args={[positions, 3]}
+                    />
+                  </bufferGeometry>
+                  <lineBasicMaterial color="#64748b" />
+                </lineSegments>
               );
             })}
-            </group>
           </Canvas>
         </WebGLBoundary>
       )}
@@ -436,4 +407,17 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
       </div>
     </div>
   );
+}
+
+// Minimal structural shape of the OrbitControls instance we
+// actually read from in `handleControlsChange`. Avoids pulling
+// in concrete THREE.* types just for a ref read.
+interface Vec3Like {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+}
+interface OrbitControlsLike {
+  readonly target: Vec3Like;
+  readonly object: { readonly position: Vec3Like };
 }

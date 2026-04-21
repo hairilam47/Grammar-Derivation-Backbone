@@ -117,7 +117,7 @@ const LABELS = {
   focusHint:
     "Click a node in the diagram to isolate it and its neighbours. Click again or press the button to clear.",
   zoomHint:
-    "Use the mouse wheel to zoom and drag to pan. Camera position persists per binding.",
+    "Drag to rotate, right-drag to pan, scroll to zoom. Camera position persists per binding.",
 } as const;
 
 assertAllAcwTrack3Language(Object.values(LABELS));
@@ -369,6 +369,7 @@ function BoundShell({
         <CardContent>
           {prefs.viewMode === "3d" ? (
             <Track3Canvas3D
+              key={`3d:${binding.adsId}:${binding.adsVersion}`}
               nodes={isolatedStructure.nodes}
               edges={isolatedStructure.edges}
               collapsedIds={collapsedIds}
