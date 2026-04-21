@@ -1,0 +1,208 @@
+
+You are implementing Stage 2 — Track 1 and Track 2 of the Architecture Decision Canvas (ADC) system.
+
+IMPORTANT CONTEXT
+- Stage 1 is COMPLETE and LOCKED.
+- You must NOT modify:
+  - lib/architecture-grammar
+  - derivation rules
+  - freeze semantics
+  - ADS / ECP builders
+  - portfolio schema
+  - signals lifecycle
+  - reflection logic
+
+This task is STRICTLY about:
+- User journey
+- Routing
+- UI containment
+- Navigation structure
+
+NO semantic changes.
+NO governance changes.
+NO new business logic.
+
+--------------------------------------------------
+GOAL SUMMARY
+
+1. Introduce a neutral landing page where users choose intent:
+   - ADC (Design Contract)
+   - ACW (Architecture Workspace)
+
+2. Make ADC feel like a bounded decision session (not pages).
+
+3. Restructure global navigation to show cognitive domains only.
+
+--------------------------------------------------
+TASK 0 — LANDING PAGE (INTENT SELECTION)
+
+Implement a new landing page at route `/`.
+
+This page is NOT a dashboard.
+This page is NOT a shortcut.
+It exists ONLY to let the user declare intent.
+
+The landing page must display TWO LARGE, EQUAL-WEIGHT CARDS.
+
+--------------------------------------------------
+CARD 1 — ADC : Design Contract
+
+Icon:
+- Use a document / contract-style icon.
+- Icon is decorative only.
+- Must not imply recommendation, priority, or approval.
+
+Title:
+ADC — Design Contract
+
+Description:
+Form, approve, and record a formal architecture decision.
+
+Supporting hints (neutral, non-actionable):
+- Grammar-based decision formation
+- One-way freeze and governance record
+- Produces ADS and ECP artefacts
+
+Primary Action:
+[ Start a Decision ]
+
+Route:
+→ `/decision-canvas`
+
+Rules:
+- Represents formal, governed work
+- Do NOT imply reversibility
+- Do NOT mark as recommended or primary
+
+--------------------------------------------------
+CARD 2 — ACW : Architecture Workspace
+
+Icon:
+- Use a workspace / layers / map-style icon.
+- Icon is decorative only.
+- Must not imply drafting, approval, or authority.
+
+Title:
+ACW — Architecture Workspace
+
+Description:
+Explore and map the current architecture and system structure.
+
+Supporting hints:
+- Non-governing and exploratory
+- Safe to explore and experiment
+- No decisions are recorded
+
+Primary Action:
+[ Open Workspace ]
+
+Route:
+→ `/workspace`
+
+Rules:
+- Represents exploration only
+- Do NOT imply governance
+- Do NOT imply this replaces ADC
+
+--------------------------------------------------
+GLOBAL LANDING PAGE RULES
+
+STRICTLY FORBIDDEN:
+- Portfolio summaries
+- Counts or metrics
+- Recent decisions
+- Signals or alerts
+- “Recommended” labels
+- Auto-redirects
+- Hierarchy between the two cards
+
+Icons must be:
+- Same size
+- Same visual weight
+- Same emphasis
+
+Removing icons must not change meaning.
+
+--------------------------------------------------
+TASK 1 — DECISION CANVAS ROUTING
+
+- Introduce `/decision-canvas` as the canonical ADC entry.
+- Preserve existing wizard logic.
+- Ensure `/` no longer drops users directly into the Wizard.
+
+--------------------------------------------------
+TASK 2 — DECISION CANVAS SHELL (SESSION CONTAINMENT)
+
+Wrap the existing Wizard in a `DecisionCanvasShell`.
+
+The shell must:
+- Display “Decision in Progress”
+- Show a LOCAL phase indicator with 5 phases:
+  Context / Scope / Architecture / Trade-offs / Freeze
+- Phase indicator is NOT clickable
+- Provide an “Exit Decision” action BEFORE freeze
+
+After freeze:
+- Redirect user to Portfolio (read-only view)
+- Do NOT allow resuming the decision
+
+--------------------------------------------------
+TASK 3 — STEP CONTAINMENT
+
+- Steps must NOT appear in global navigation.
+- Steps must NOT be deep-linkable.
+- Steps are internal phases only.
+
+--------------------------------------------------
+TASK 4 — GLOBAL NAVIGATION RESTRUCTURE (TRACK 2)
+
+Restructure global navigation to show ONLY domain-level items:
+
+- Landing
+- Decision Canvas
+- Portfolio
+- Signals
+- Reflection
+- Architecture Workspace (ACW)
+
+Rules:
+- No step numbers
+- No implied sequence
+- No “next” or “progress” semantics
+
+--------------------------------------------------
+TASK 5 — READ-ONLY EMPHASIS
+
+Visually de-emphasise:
+- Portfolio
+- Exposure
+- Signals
+- Reflection
+
+Rules:
+- Remove CTA-style affordances
+- No links from read-only pages back to Decision Canvas
+- These views must feel observational only
+
+--------------------------------------------------
+FORBIDDEN ACTIONS
+
+- Do NOT introduce new routes for wizard steps
+- Do NOT modify freeze behavior
+- Do NOT add or remove persisted fields
+- Do NOT add org units, process, or ACW interaction changes
+- Do NOT add prescriptive language anywhere
+
+--------------------------------------------------
+SUCCESS CRITERIA
+
+A user must clearly understand:
+
+“I choose whether I want to:
+- Form a formal decision (ADC), or
+- Explore architecture safely (ACW).”
+
+ADC feels like a bounded, irreversible session.
+All other areas feel read-only or exploratory.
+
+If a change risks altering meaning, authority, or governance — DO NOT IMPLEMENT IT.

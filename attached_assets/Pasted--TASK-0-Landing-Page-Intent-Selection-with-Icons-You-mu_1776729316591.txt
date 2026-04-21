@@ -1,0 +1,104 @@
+
+### TASK 0 — Landing Page (Intent Selection with Icons)
+
+You must implement a new landing page at route `/`.
+
+This landing page is NOT a dashboard.
+This landing page is NOT a shortcut.
+This landing page exists ONLY to let the user declare intent.
+
+--------------------------------------------------
+LANDING PAGE STRUCTURE
+
+- The landing page must display TWO LARGE, EQUAL-WEIGHT CARDS.
+- Each card MUST include a clear ICON, TITLE, DESCRIPTION, and PRIMARY ACTION.
+- Cards must be visually balanced — no hierarchy, no default choice.
+
+--------------------------------------------------
+CARD 1 — ADC : Design Contract
+
+Icon:
+- Use a formal, contract-oriented icon (e.g. document, agreement, clipboard, or seal icon)
+- Icon is decorative and representational only
+- Icon must NOT imply approval, recommendation, or priority
+
+Title:
+ADC — Design Contract
+
+Description (short, neutral):
+Form, approve, and record a formal architecture decision.
+
+Supporting hints (non-actionable, neutral tone):
+- Grammar-based decision formation
+- One-way freeze and governance record
+- Produces ADS and ECP artefacts
+
+Primary Action:
+[ Start a Decision ]
+
+Route:
+→ `/decision-canvas`
+
+Framing rules:
+- Represents FORMAL, GOVERNED work
+- Do NOT describe as “recommended” or “primary”
+- Do NOT imply reversibility
+
+--------------------------------------------------
+CARD 2 — ACW : Architecture Workspace
+
+Icon:
+- Use an exploratory or structural icon (e.g. workspace, layers, map, grid, or cube icon)
+- Icon is decorative and representational only
+- Icon must NOT imply drafting, approval, or authority
+
+Title:
+ACW — Architecture Workspace
+
+Description (short, neutral):
+Explore and map the current architecture and system structure.
+
+Supporting hints (non-actionable, neutral tone):
+- Non-governing and exploratory
+- Safe to explore and experiment
+- No decisions are recorded
+
+Primary Action:
+[ Open Workspace ]
+
+Route:
+→ `/workspace`
+
+Framing rules:
+- Represents EXPLORATION, not decision-making
+- Do NOT imply approval or governance
+- Do NOT imply this replaces ADC
+
+--------------------------------------------------
+ICON RULES (NON-NEGOTIABLE)
+
+- Icons are VISUAL CUES only
+- Removing icons must NOT change meaning
+- Icons must not encode status, priority, or recommendation
+- Icons must not differ in size, color, or emphasis between cards
+
+--------------------------------------------------
+STRICTLY FORBIDDEN ON LANDING PAGE
+
+- Portfolio summaries or counts
+- Recent decisions
+- Signals, alerts, or attention cues
+- “Recommended”, “Start here”, or default highlighting
+- Auto-redirect to ADC or ACW
+- Any hierarchy between the two cards
+
+--------------------------------------------------
+SUCCESS CRITERIA
+
+A first-time user must immediately understand:
+
+“I can either:
+1) Form a formal architecture decision (ADC), or
+2) Explore the architecture safely (ACW).”
+
+Icons help recognition — not decision-making.
