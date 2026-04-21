@@ -65,6 +65,7 @@ const SELF_FILENAMES: readonly string[] = [
   "acwTrack3StructureInvariants.test-shape.ts",
   "acwTrack3ForbiddenSemantics.test-shape.ts",
   "acwTrack3DerivationInvariants.test-shape.ts",
+  "acwTrack3FocusIsolationInvariants.test-shape.ts",
 ];
 
 // Positive allowlist: Track 3 source files may import ONLY from

@@ -78,7 +78,14 @@ export interface Track3Canvas3DProps {
   readonly nodes: readonly AcwNode[];
   readonly edges: readonly AcwEdge[];
   readonly collapsedIds: ReadonlySet<string>;
-  readonly focusedParentId: string | null;
+  // Highlight target only. Visibility filtering happens in the
+  // shell BEFORE this component is invoked (see Track3Shell);
+  // the helper below is therefore called with focusedParentId
+  // === null and simply enumerates everything in `nodes`/`edges`.
+  // This keeps a single source of truth for "what is visible"
+  // (the shell) and makes `enumerateLensVisibility` a pure
+  // pass-through here.
+  readonly selectedNodeId: string | null;
   readonly cameraX?: number;
   readonly cameraY?: number;
   readonly cameraZoom?: number;
@@ -106,7 +113,7 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
     nodes,
     edges,
     collapsedIds,
-    focusedParentId,
+    selectedNodeId,
     onCameraChange,
     onNodeClick,
   } = props;
@@ -116,8 +123,10 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
   const testId = props.testId ?? "track3-canvas-3d";
 
   const visibility = useMemo(
-    () => enumerateLensVisibility(nodes, edges, focusedParentId, collapsedIds),
-    [nodes, edges, focusedParentId, collapsedIds],
+    // Visibility was already isolated in the shell; pass null so
+    // the helper is a pure pass-through across the input set.
+    () => enumerateLensVisibility(nodes, edges, null, collapsedIds),
+    [nodes, edges, collapsedIds],
   );
   const visibleNodes: AcwNode[] = useMemo(() => {
     const ids = new Set(visibility.visibleNodeIds);
@@ -230,7 +239,7 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
               const x = (n.x - center.x) * SCALE;
               const y = -(n.y - center.y) * SCALE;
               const z = n.parentId === null ? 0 : 1;
-              const isFocused = focusedParentId === n.id;
+              const isFocused = selectedNodeId === n.id;
               return (
                 <mesh
                   key={n.id}
@@ -274,10 +283,62 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
               const dy = by - ay;
               const dz = bz - az;
               const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+              // Orient the box (which is built along the local
+              // X axis with length=len) to point from a → b.
+              // We compute a quaternion that rotates the unit
+              // vector (1,0,0) onto the unit edge direction,
+              // using axis = X × dir and angle = acos(X · dir).
+              // This is a one-shot per-render computation (no
+              // per-frame hooks, no animation), so it stays
+              // within Track 3's "static, mechanical" envelope.
+              let qx = 0;
+              let qy = 0;
+              let qz = 0;
+              let qw = 1;
+              if (len > 1e-9) {
+                const tx = dx / len;
+                const ty = dy / len;
+                const tz = dz / len;
+                // axis = (1,0,0) × (tx,ty,tz) = (0, -tz, ty)
+                let axx = 0;
+                let axy = -tz;
+                let axz = ty;
+                const axLen = Math.sqrt(
+                  axx * axx + axy * axy + axz * axz,
+                );
+                if (axLen < 1e-9) {
+                  // Edge is parallel to ±X; either no rotation
+                  // (forward) or 180° around any perpendicular
+                  // axis (backward). Pick Z as a stable choice.
+                  if (tx >= 0) {
+                    qx = 0;
+                    qy = 0;
+                    qz = 0;
+                    qw = 1;
+                  } else {
+                    qx = 0;
+                    qy = 0;
+                    qz = 1;
+                    qw = 0;
+                  }
+                } else {
+                  axx /= axLen;
+                  axy /= axLen;
+                  axz /= axLen;
+                  const cosT = Math.max(-1, Math.min(1, tx));
+                  const angle = Math.acos(cosT);
+                  const s = Math.sin(angle / 2);
+                  qx = axx * s;
+                  qy = axy * s;
+                  qz = axz * s;
+                  qw = Math.cos(angle / 2);
+                }
+              }
               return (
                 <mesh
                   key={e.id}
                   position={[mx, my, mz]}
+                  quaternion={[qx, qy, qz, qw]}
                   userData={{ testid: `${testId}-line-${e.id}` }}
                 >
                   <boxGeometry args={[len, 0.02, 0.02]} />

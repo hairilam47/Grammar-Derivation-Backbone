@@ -39,6 +39,7 @@ import {
 import { assertAllAcwTrack3Language } from "@/governance/staticTextGuard";
 import { deriveACWStructure } from "@/acw/track3/track3Derive";
 import { projectBounds } from "@/acw/track3/track3AdcBounds";
+import { isolateAroundNode } from "@/acw/track3/track3FocusIsolation";
 import {
   TRACK3_LAYERS,
   TRACK3_PERSPECTIVES,
@@ -232,7 +233,15 @@ function BoundShell({
   // re-read without changing prefs.
   useViewPrefsDoc();
   const [refreshTick, setRefreshTick] = useState(0);
-  const [focusedParentId, setFocusedParentId] = useState<string | null>(null);
+  // `selectedNodeId` is the user's click target. Isolation is
+  // computed by `isolateAroundNode` (a pure module assertion-
+  // backed function) BEFORE handing the structure to the
+  // renderer; the renderer then displays everything in the
+  // pre-filtered set. This avoids the foot-gun of passing a
+  // leaf id as `focusedParentId` to `enumerateLensVisibility`,
+  // which would (correctly, by its own contract) yield zero
+  // visible nodes for a node with no children.
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   const ctadState = useMemo(
     () => getCtadState(binding),
@@ -292,12 +301,27 @@ function BoundShell({
   // No per-node collapse UI yet; the empty set documents that.
   const collapsedIds = useMemo(() => new Set<string>(), []);
 
+  // Apply focus isolation in the shell (pure transformation
+  // backed by acwTrack3FocusIsolationInvariants). After this
+  // step the renderer receives only the nodes/edges that should
+  // be visible, and uses focusedParentId={null} so the shared
+  // visibility helper just enumerates everything in the input.
+  const isolatedStructure = useMemo(
+    () =>
+      isolateAroundNode(
+        filteredStructure.nodes,
+        filteredStructure.edges,
+        selectedNodeId,
+      ),
+    [filteredStructure, selectedNodeId],
+  );
+
   const handleNodeClick = useCallback((nodeId: string) => {
     // Click toggles isolate-focus on the clicked node. Clicking
     // the currently focused node clears focus.
-    setFocusedParentId((prev) => (prev === nodeId ? null : nodeId));
+    setSelectedNodeId((prev) => (prev === nodeId ? null : nodeId));
   }, []);
-  const handleClearFocus = useCallback(() => setFocusedParentId(null), []);
+  const handleClearFocus = useCallback(() => setSelectedNodeId(null), []);
 
   const handleCameraChange = useCallback(
     (cameraX: number, cameraY: number, cameraZoom: number) => {
@@ -307,10 +331,10 @@ function BoundShell({
   );
 
   const focusedLabel = useMemo(() => {
-    if (focusedParentId === null) return null;
-    const n = structure.nodes.find((x) => x.id === focusedParentId);
-    return n ? n.label : focusedParentId;
-  }, [focusedParentId, structure.nodes]);
+    if (selectedNodeId === null) return null;
+    const n = structure.nodes.find((x) => x.id === selectedNodeId);
+    return n ? n.label : selectedNodeId;
+  }, [selectedNodeId, structure.nodes]);
 
   const handleRefresh = useCallback(() => {
     setRefreshTick((t) => t + 1);
@@ -337,10 +361,10 @@ function BoundShell({
         <CardContent>
           {prefs.viewMode === "3d" ? (
             <Track3Canvas3D
-              nodes={filteredStructure.nodes}
-              edges={filteredStructure.edges}
+              nodes={isolatedStructure.nodes}
+              edges={isolatedStructure.edges}
               collapsedIds={collapsedIds}
-              focusedParentId={focusedParentId}
+              selectedNodeId={selectedNodeId}
               cameraX={prefs.cameraX}
               cameraY={prefs.cameraY}
               cameraZoom={prefs.cameraZoom}
@@ -349,10 +373,10 @@ function BoundShell({
             />
           ) : (
             <Track3Canvas2D
-              nodes={filteredStructure.nodes}
-              edges={filteredStructure.edges}
+              nodes={isolatedStructure.nodes}
+              edges={isolatedStructure.edges}
               collapsedIds={collapsedIds}
-              focusedParentId={focusedParentId}
+              selectedNodeId={selectedNodeId}
               cameraX={prefs.cameraX}
               cameraY={prefs.cameraY}
               cameraZoom={prefs.cameraZoom}

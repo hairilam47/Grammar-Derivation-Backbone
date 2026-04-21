@@ -35,7 +35,11 @@ export interface Track3Canvas2DProps {
   readonly nodes: readonly AcwNode[];
   readonly edges: readonly AcwEdge[];
   readonly collapsedIds: ReadonlySet<string>;
-  readonly focusedParentId: string | null;
+  // Highlight target only. Visibility filtering happens in the
+  // shell BEFORE this component is invoked (see Track3Shell);
+  // the helper below is therefore called with focusedParentId
+  // === null and simply enumerates everything in `nodes`/`edges`.
+  readonly selectedNodeId: string | null;
   readonly cameraX?: number;
   readonly cameraY?: number;
   readonly cameraZoom?: number;
@@ -61,7 +65,7 @@ export function Track3Canvas2D(props: Track3Canvas2DProps) {
     nodes,
     edges,
     collapsedIds,
-    focusedParentId,
+    selectedNodeId,
     onCameraChange,
     onNodeClick,
   } = props;
@@ -71,8 +75,10 @@ export function Track3Canvas2D(props: Track3Canvas2DProps) {
   const testId = props.testId ?? "track3-canvas-2d";
 
   const visibility = useMemo(
-    () => enumerateLensVisibility(nodes, edges, focusedParentId, collapsedIds),
-    [nodes, edges, focusedParentId, collapsedIds],
+    // Visibility was already isolated in the shell; pass null so
+    // the helper is a pure pass-through across the input set.
+    () => enumerateLensVisibility(nodes, edges, null, collapsedIds),
+    [nodes, edges, collapsedIds],
   );
   const visibleNodes: AcwNode[] = useMemo(() => {
     const visible = new Set(visibility.visibleNodeIds);
@@ -223,7 +229,7 @@ export function Track3Canvas2D(props: Track3Canvas2DProps) {
             );
           })}
           {visibleNodes.map((n) => {
-            const isFocused = focusedParentId === n.id;
+            const isFocused = selectedNodeId === n.id;
             return (
               <g
                 key={n.id}
