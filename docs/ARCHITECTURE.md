@@ -2219,8 +2219,13 @@ src/acw/track3/
                                specifiers; per-store named-import allowlists
                                (portfolio = { listEntries, PortfolioEntry };
                                CTAD = { getCtadState, exportCtadState,
-                               CtadStateExport, subscribe, getStoreVersion,
-                               CtadBinding }; lens-structure helper =
+                               CtadStateExport } — strictly the read-only
+                               trio; subscribe, getStoreVersion, and
+                               CtadBinding are explicitly NOT permitted
+                               (Track 3 re-reads CTAD on render and via a
+                               "Refresh from CTAD" button instead, keeping
+                               the surface inert and side-effect-free);
+                               lens-structure helper =
                                { enumerateLensVisibility, LensVisibility,
                                LensDrawable, AcwNode, AcwEdge }). Includes a
                                module-load self-test exercising every
@@ -2235,15 +2240,33 @@ src/acw/track3/
                              — Both Track 3 renderers must call
                                enumerateLensVisibility(...) and must NOT
                                import the authored ACW store, view-state,
-                               validator, or grammar hooks. Comments and
-                               string literals are stripped before scanning
-                               so documentation references do not trip.
+                               validator, or grammar hooks. ONLY comments
+                               are stripped before scanning; string
+                               literals ARE scanned so a smuggled string-
+                               literal import path is still caught.
   acwTrack3ForbiddenSemantics.test-shape.ts
                              — Both renderers must contain ZERO of the
                                animation, judgement, time, traffic-light, or
                                recommendation tokens enumerated in the
-                               invariant. Comments and string literals are
-                               stripped before scanning.
+                               invariant. ONLY comments are stripped; string
+                               literals are scanned so a banned token
+                               smuggled as a runtime label (e.g. `"red"`,
+                               `"recommended"`) is caught.
+  acwTrack3FocusIsolationInvariants.test-shape.ts
+                             — Module-load assertions over the pure
+                               `isolateAroundNode(nodes, edges, selectedId)`
+                               function: null selection passes through;
+                               layer-root selection keeps root + direct
+                               children + edge-neighbours; leaf selection
+                               keeps the leaf + one-hop neighbours + the
+                               layer-root parent of every kept node;
+                               disconnected-leaf selection still keeps
+                               {leaf, parent root} so the canvas is never
+                               empty for an existing node. The shell uses
+                               this function to pre-filter the structure
+                               before it reaches the renderers, so
+                               enumerateLensVisibility is invoked with
+                               focusedParentId=null inside each renderer.
 
 src/components/acw/track3/
   Track3Canvas2D.tsx         — SVG-based 2D renderer. Neutral hex palette,
@@ -2258,9 +2281,18 @@ src/pages/acw/track3/
                                opens the derived view. Read-only.
   Track3Shell.tsx            — Bound shell. Read-only ADC binding panel,
                                view controls (2D/3D, perspective, layer
-                               toggles), and the chosen renderer. Subscribes
-                               to ctadStore via `subscribe` so editing CTAD
-                               re-derives the diagram on the next render.
+                               toggles), and the chosen renderer. Re-reads
+                               CTAD_STATE on every render (CTAD selections
+                               are picked up automatically), and exposes a
+                               "Refresh from CTAD" button that bumps an
+                               internal tick. There is no subscription to
+                               ctadStore; subscribe / getStoreVersion /
+                               CtadBinding are explicitly forbidden by the
+                               isolation invariant. The shell also owns the
+                               selectedNodeId state and runs
+                               `isolateAroundNode` BEFORE handing the
+                               structure to the chosen renderer, so leaf-
+                               click focus works correctly.
 ```
 
 ### The four hardened invariants

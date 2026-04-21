@@ -50,11 +50,15 @@ export const TRACK3_PERSPECTIVES: readonly Track3Perspective[] = Object.freeze(
 export interface AdcBounds {
   readonly adsId: string;
   readonly adsVersion: string;
-  // Which layers the ADC entry declares as present. Layers not in
-  // this set are still derived if CTAD_STATE has selections in
-  // them (CTAD is the authority for technology selections); the
-  // bounds field is informational and surfaces in the binding
-  // panel of the derived shell.
+  // Which layers the ADC entry declares as present. Bounds are
+  // CONSTRAINING, not informational: `deriveACWStructure` filters
+  // out any layer that is not in this set even if CTAD_STATE has
+  // selections in it. This is what makes Track 3 "the structural
+  // view of THIS ADC entry" rather than a global CTAD echo.
+  // The `assertBoundsMaterial` invariant proves this filtering
+  // produces a different derivation across full vs partial
+  // bounds. The bounds field also surfaces in the binding panel
+  // of the derived shell.
   readonly layersPresent: readonly Track3Layer[];
 }
 

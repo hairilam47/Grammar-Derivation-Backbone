@@ -1,9 +1,14 @@
 // ACW Track 3 — forbidden-semantics invariant.
 //
 // Both Track 3 renderers must contain ZERO of the following
-// tokens in their executable source (comments are stripped
-// before scanning so documentation-style references do not trip
-// the invariant):
+// tokens in their executable source. Only `//` and `/* */`
+// comments are stripped before scanning (so this header may
+// reference banned words freely); STRING LITERALS ARE SCANNED.
+// A renderer that smuggles `"red"` or `"recommended"` as a
+// runtime label, alt-text, className suffix, or test id is the
+// most likely leak vector for the forbidden semantics, so the
+// invariant deliberately catches it. The Track 3 surface text
+// is independently asserted by the static-text guard.
 //
 //   - Animation primitives: useFrame, setInterval,
 //     requestAnimationFrame, easing, tween, keyframe, animate.
@@ -33,17 +38,6 @@ function stripComments(src: string): string {
   return src
     .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))
     .replace(/(^|[^:])\/\/[^\n]*/g, (_m, p1) => p1);
-}
-
-// Strip string literals as well so a literal that contains a
-// banned word (e.g. an alt-text string) is treated as data, not
-// behaviour. The Track 3 surface text is independently asserted
-// against ACW_TRACK3_FORBIDDEN by the static-text guard.
-function stripStringLiterals(src: string): string {
-  return src
-    .replace(/`(?:\\[\s\S]|[^\\`])*`/g, '""')
-    .replace(/"(?:\\[\s\S]|[^\\"])*"/g, '""')
-    .replace(/'(?:\\[\s\S]|[^\\'])*'/g, "''");
 }
 
 const FORBIDDEN_TOKENS: ReadonlyArray<{ readonly category: string; readonly tokens: readonly string[] }> = [
@@ -82,7 +76,10 @@ const FORBIDDEN_TOKENS: ReadonlyArray<{ readonly category: string; readonly toke
 
 function assertNoForbiddenSemantics(): void {
   for (const [path, raw] of Object.entries(RENDERER_SOURCES)) {
-    const stripped = stripStringLiterals(stripComments(raw)).toLowerCase();
+    // String literals are NOT stripped: a banned token smuggled
+    // as a runtime label (`"red"`, `"recommended"`, etc.) is
+    // exactly what this invariant must catch.
+    const stripped = stripComments(raw).toLowerCase();
     for (const { category, tokens } of FORBIDDEN_TOKENS) {
       for (const token of tokens) {
         // Token-bounded match so identifiers that contain a

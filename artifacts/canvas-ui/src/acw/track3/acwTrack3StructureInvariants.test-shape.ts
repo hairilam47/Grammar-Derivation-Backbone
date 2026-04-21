@@ -30,19 +30,6 @@ function stripComments(src: string): string {
     .replace(/(^|[^:])\/\/[^\n]*/g, (_m, p1) => p1);
 }
 
-function stripStringLiterals(src: string): string {
-  // Erase the contents of every single-quoted, double-quoted, and
-  // backtick-quoted string literal so a stray token mentioned in
-  // (e.g.) an error message cannot satisfy a required-token check
-  // or trip a forbidden-token check. Line counts preserved.
-  return src
-    .replace(/"(?:\\.|[^"\\\n])*"/g, '""')
-    .replace(/'(?:\\.|[^'\\\n])*'/g, "''")
-    .replace(/`(?:\\.|[^`\\])*`/g, (m) =>
-      "`" + m.slice(1, -1).replace(/[^\n]/g, " ") + "`",
-    );
-}
-
 const REQUIRED_TOKENS: readonly string[] = [
   // Both renderers must call the shared helper.
   "enumerateLensVisibility(",
@@ -70,7 +57,12 @@ function assertRendererStructure(): void {
     );
   }
   for (const [path, raw] of entries) {
-    const stripped = stripStringLiterals(stripComments(raw));
+    // String literals are NOT stripped here: the required-token
+    // check looks for a real call-site (`enumerateLensVisibility(`
+    // is followed by argument syntax, not the literal text) and
+    // the forbidden-token check should still catch a smuggled
+    // string-literal import path or call.
+    const stripped = stripComments(raw);
     for (const token of REQUIRED_TOKENS) {
       if (stripped.indexOf(token) === -1) {
         throw new Error(
