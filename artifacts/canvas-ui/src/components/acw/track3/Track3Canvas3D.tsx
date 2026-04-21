@@ -7,12 +7,35 @@
 // layer-root nodes sit at z = 0; their child param-value nodes
 // sit at z = +1 inside the same XY footprint as their parent.
 //
-// Camera: position is derived from the persisted camera prefs
-// (cameraX/Y/Zoom). Wheel-zoom and drag-pan write back via
-// `onCameraChange`. There is no per-frame animation, no easing,
-// no useFrame hook — the camera is recomputed from props each
-// render, which is both deterministic and read-only relative to
-// CTAD.
+// Camera + pan: the perspective camera is mounted once at a
+// fixed `(0, 0, BASE_CAM_Z)` looking at the origin and never
+// moves. Pan and zoom are applied to a `<group>` transform that
+// wraps every mesh — `position = (-cameraX * SCALE, +cameraY *
+// SCALE, 0)` and `scale = cameraZoom`. Wheel-zoom and drag-pan
+// write back via `onCameraChange`; the shell updates the
+// per-binding view-prefs and re-renders, which feeds the new
+// transform values into the group on the next render.
+//
+// Why a group transform and not a live camera prop: R3F's
+// `<Canvas camera={...}>` initialises the default camera on
+// mount only, so updating `cameraX/Y/Zoom` afterwards would not
+// move the view. Using a group keeps the prop static (correct
+// at mount, never goes stale) and makes pan/zoom genuinely
+// reactive without `useFrame`, `setInterval`, or
+// `requestAnimationFrame` — pure render-time math.
+//
+// Why this also fixes the "blank 3D" symptom on first switch
+// from 2D: the 2D and 3D views share `cameraX/Y/Zoom` in
+// view-prefs, but the 2D values are in pixel-pan space. With
+// the previous implementation the 3D camera was placed at
+// `(cameraX * SCALE, -cameraY * SCALE, ...)` while the scene
+// was recentered around its visible centroid, so any persisted
+// 2D pan pointed the camera at empty space. With the camera
+// fixed and the same numbers driving a group offset, persisted
+// 2D pan now translates the scene by the same amount in scene
+// units — at zoom 1 with cameraX=cameraY=0 the centroid sits
+// dead-centre, and panning shifts the boxes exactly the way it
+// does in 2D.
 //
 // Focus / isolate: clicking a mesh fires `onNodeClick(id)`. The
 // shell sets `focusedParentId` accordingly; the shared
@@ -149,12 +172,24 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
 
   const isEmpty = visibleNodes.length === 0;
 
-  // Convert pan in scene-units to camera-position offset. Higher
-  // zoom → camera moves closer. Camera position is recomputed
-  // each render so the prop is the authoritative camera state.
+  // The camera is mounted once at this fixed position and never
+  // moves — pan/zoom are applied to a group transform below.
+  // See the file-header comment for the rationale.
   const camPos = useMemo<[number, number, number]>(
-    () => [cameraX * SCALE, -cameraY * SCALE, BASE_CAM_Z / cameraZoom],
-    [cameraX, cameraY, cameraZoom],
+    () => [0, 0, BASE_CAM_Z],
+    [],
+  );
+  // Group transform: pan applied as scene translation (in scene
+  // units, via SCALE), zoom applied as uniform scale. Sign of
+  // `position.x` is negative because increasing `cameraX` in 2D
+  // means "pan view to the right", which in this scene means
+  // shifting the scene to the LEFT. `position.y` is positive
+  // because the per-node Y is already flipped (`-(n.y - center.y)
+  // * SCALE`), so increasing `cameraY` in 2D ("pan view down")
+  // corresponds to translating the scene UP in scene-Y.
+  const groupPos = useMemo<[number, number, number]>(
+    () => [-cameraX * SCALE, cameraY * SCALE, 0],
+    [cameraX, cameraY],
   );
 
   const dragRef = useRef<{
@@ -235,6 +270,7 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
           >
             <ambientLight intensity={0.5} />
             <pointLight position={[5, 5, 5]} intensity={0.4} />
+            <group position={groupPos} scale={cameraZoom}>
             {visibleNodes.map((n) => {
               const x = (n.x - center.x) * SCALE;
               const y = -(n.y - center.y) * SCALE;
@@ -346,6 +382,7 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
                 </mesh>
               );
             })}
+            </group>
           </Canvas>
         </WebGLBoundary>
       )}
