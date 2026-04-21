@@ -41,6 +41,7 @@
 // shell sets `focusedParentId` accordingly; the shared
 // visibility helper isolates the node and its neighbours.
 import {
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -48,6 +49,7 @@ import {
   type ReactNode,
   type WheelEvent,
   Component,
+  type ErrorInfo,
 } from "react";
 import { Canvas } from "@react-three/fiber";
 import {
@@ -63,17 +65,26 @@ const NO_WEBGL_HINT = "3D view unavailable in this environment";
 
 assertAllAcwTrack3Language([EMPTY_HINT, LEGEND_LABEL, NO_WEBGL_HINT]);
 
-function detectWebGL(): boolean {
-  if (typeof window === "undefined" || typeof document === "undefined") return false;
+type WebGLContextKind = "webgl2" | "webgl" | "experimental-webgl" | "none";
+interface WebGLDetection {
+  readonly ok: boolean;
+  readonly context: WebGLContextKind;
+}
+
+function detectWebGL(): WebGLDetection {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return { ok: false, context: "none" };
+  }
   try {
     const c = document.createElement("canvas");
-    const gl =
-      c.getContext("webgl2") ||
-      c.getContext("webgl") ||
-      c.getContext("experimental-webgl");
-    return gl !== null;
+    if (c.getContext("webgl2")) return { ok: true, context: "webgl2" };
+    if (c.getContext("webgl")) return { ok: true, context: "webgl" };
+    if (c.getContext("experimental-webgl")) {
+      return { ok: true, context: "experimental-webgl" };
+    }
+    return { ok: false, context: "none" };
   } catch {
-    return false;
+    return { ok: false, context: "none" };
   }
 }
 
@@ -89,8 +100,12 @@ class WebGLBoundary extends Component<BoundaryProps, BoundaryState> {
   static getDerivedStateFromError(): BoundaryState {
     return { hasError: true };
   }
-  componentDidCatch(): void {
-    // intentional no-op
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    console.warn("[track3-canvas-3d] webgl boundary caught error", {
+      message: error.message,
+      stack: error.stack,
+      componentStack: info.componentStack,
+    });
   }
   render(): ReactNode {
     return this.state.hasError ? this.props.fallback : this.props.children;
@@ -168,7 +183,20 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
     return { x: sx / visibleNodes.length, y: sy / visibleNodes.length };
   }, [visibleNodes]);
 
-  const [webgl] = useState<boolean>(() => detectWebGL());
+  const [detection] = useState<WebGLDetection>(() => detectWebGL());
+  const webgl = detection.ok;
+  const initialNodeCountRef = useRef<number>(visibleNodes.length);
+  useEffect(() => {
+    console.info("[track3-canvas-3d] mount", {
+      detected: detection.ok,
+      context: detection.context,
+      userAgent:
+        typeof navigator !== "undefined" ? navigator.userAgent : "n/a",
+      visibleNodes: initialNodeCountRef.current,
+    });
+    // Mount-only diagnostic; deliberately runs once per renderer instance.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const isEmpty = visibleNodes.length === 0;
 
