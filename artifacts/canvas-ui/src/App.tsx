@@ -15,6 +15,8 @@ import SystemLandscape from "@/pages/acw/views/SystemLandscape";
 import IntegrationView from "@/pages/acw/views/Integration";
 import Deployment from "@/pages/acw/views/Deployment";
 import OperationsContinuity from "@/pages/acw/views/OperationsContinuity";
+import CtadEntry from "@/pages/ctad/CtadEntry";
+import CtadShell from "@/pages/ctad/CtadShell";
 // Phase 6 — module-load side effect: importing this module runs the
 // negative-invariant assertions that fail the application bundle if
 // any forbidden surface (structured ADC export, computed lifecycle
@@ -35,6 +37,12 @@ import "@/acw/acwGrammarInvariants.test-shape";
 // judgemental / animated semantics.
 import "@/acw/acw3DStructureInvariants.test-shape";
 import "@/acw/acw3DForbiddenSemantics.test-shape";
+// CTAD module — module-load side effects: build-time isolation
+// invariant (CTAD source must not import from ADC pipeline modules
+// or write helpers of the portfolio store) and grammar invariant
+// (parameter registry shape locked at "ctad-1.0").
+import "@/ctad/ctadIsolationInvariants.test-shape";
+import "@/ctad/ctadGrammarInvariants.test-shape";
 
 function DarkModeApplier() {
   useEffect(() => {
@@ -59,6 +67,8 @@ function Router() {
       <Route path="/workspace/integration" component={IntegrationView} />
       <Route path="/workspace/deployment" component={Deployment} />
       <Route path="/workspace/operations" component={OperationsContinuity} />
+      <Route path="/ctad" component={CtadEntry} />
+      <Route path="/ctad/:adsId/:adsVersion" component={CtadShell} />
       <Route component={NotFound} />
     </Switch>
   );

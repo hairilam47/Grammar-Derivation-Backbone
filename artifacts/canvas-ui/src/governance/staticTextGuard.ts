@@ -445,3 +445,65 @@ export function assertAcwPlaceholderLanguage(text: string): void {
 export function assertAllAcwPlaceholderLanguage(texts: string[]): void {
   for (const t of texts) assertAcwPlaceholderLanguage(t);
 }
+
+// CTAD — Conceptual Technology Architecture Design module.
+//
+// CTAD is an interpretive, reversible technology exploration plane.
+// It must never frame any selection as approval, recommendation,
+// scoring, ranking, or finality. Every static label, helper
+// sentence, parameter name, and option string rendered by a CTAD
+// module file is asserted against this tier at module load.
+//
+// CTAD_FORBIDDEN is a STANDALONE sibling tier — it is not derived
+// from PORTFOLIO/SIGNALS/REFLECTIVE/etc. because CTAD's surface
+// concern is non-authoritative exploration, not the
+// descriptive-only governance reading of the other tiers. The
+// token list is taken verbatim from the CTAD brief.
+//
+// Carve-out notes for substring matching (CTAD surface):
+//   - "approve" matches "approval", "approving". The CTAD entry
+//     page intentionally renders the binding-prerequisite message
+//     "CTAD requires an approved architectural decision." verbatim
+//     from the brief. That single string is exempted from the
+//     substring scan and verified by spec-equality at module load
+//     in the entry page (mirroring the Phase 1 banner / Phase 5
+//     prefix exemption pattern). Every other CTAD string passes
+//     this guard normally and uses the neutral label "Decision
+//     authority" rather than "Approving authority".
+//   - "best" matches "bestow", "asbestos". CTAD surface
+//     intentionally avoids both.
+//   - "must" matches "mustard". CTAD surface intentionally
+//     avoids both.
+//   - "score" matches "underscore", "scoreboard". CTAD surface
+//     intentionally avoids both.
+//   - "final" matches "finally", "finalise". CTAD surface
+//     intentionally avoids both.
+//   - "rank" matches "ranking", "ranked". CTAD surface
+//     intentionally avoids both.
+export const CTAD_FORBIDDEN = [
+  "approve",
+  "approved",
+  "confirm",
+  "recommend",
+  "recommended",
+  "best",
+  "optimal",
+  "optimise",
+  "optimize",
+  "final",
+  "score",
+  "ranked",
+  "ranking",
+  "mandate",
+  "justify",
+  "enforce",
+  "must",
+];
+
+export function assertCtadLanguage(text: string): void {
+  checkAgainst(text, CTAD_FORBIDDEN);
+}
+
+export function assertAllCtadLanguage(texts: string[]): void {
+  for (const t of texts) assertCtadLanguage(t);
+}

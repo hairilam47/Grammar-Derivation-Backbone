@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { FileSignature, Workflow, Layout } from "lucide-react";
+import { FileSignature, Workflow, Layout, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -38,6 +38,21 @@ const CARDS: readonly IntentCard[] = [
     ctaTestId: "intent-cta-adc",
   },
   {
+    testId: "intent-card-ctad",
+    icon: Layers,
+    title: "CTAD \u2014 Technology Exploration",
+    description:
+      "Explore technology configurations permitted by an approved decision.",
+    hints: [
+      "Interpretive and reversible",
+      "Reads an approved decision read-only",
+      "No approval, no recommendation, no scoring",
+    ],
+    ctaLabel: "Open Technology Exploration",
+    ctaHref: "/ctad",
+    ctaTestId: "intent-cta-ctad",
+  },
+  {
     testId: "intent-card-acw",
     icon: Workflow,
     title: "ACW \u2014 Architecture Workspace",
@@ -69,18 +84,18 @@ export default function LandingPage() {
         </div>
       </header>
 
-      <main className="flex-1 container max-w-5xl mx-auto px-4 py-12">
+      <main className="flex-1 container max-w-6xl mx-auto px-4 py-12">
         <div className="mb-10 text-center space-y-3" data-testid="intent-heading">
           <h1 className="text-2xl font-bold tracking-tight">
             Choose how you want to engage with the architecture
           </h1>
           <p className="text-sm text-muted-foreground">
-            Two surfaces are available. They are independent and equal.
+            Three surfaces are available. They are independent and equal.
             Pick the one that matches what you want to do right now.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6" data-testid="intent-cards">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6" data-testid="intent-cards">
           {CARDS.map((card) => {
             const Icon = card.icon;
             return (

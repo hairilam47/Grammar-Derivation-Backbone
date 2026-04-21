@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Home, FileSignature, LayoutGrid, Radio, Eye, Workflow } from "lucide-react";
+import { Home, FileSignature, LayoutGrid, Radio, Eye, Workflow, Layers } from "lucide-react";
 
 interface NavItem {
   href: string;
@@ -23,6 +23,13 @@ const ITEMS: readonly NavItem[] = [
     icon: FileSignature,
     testId: "nav-decision-canvas",
     matches: (loc) => loc === "/decision-canvas",
+  },
+  {
+    href: "/ctad",
+    label: "CTAD",
+    icon: Layers,
+    testId: "nav-ctad",
+    matches: (loc) => loc === "/ctad" || loc.startsWith("/ctad/"),
   },
   {
     href: "/portfolio",
