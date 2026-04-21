@@ -250,6 +250,15 @@ export function exportCtadState(b: CtadBinding): CtadStateExport {
   };
 }
 
+// Documented alias matching the brief's `getCtadState(binding)` API.
+// Some external readers (downstream ACW handoff, future tests) may
+// import this name; we delegate to `exportCtadState` so there is a
+// single source of truth for the canonical, registry-ordered,
+// null-padded snapshot.
+export function getCtadState(b: CtadBinding): CtadStateExport {
+  return exportCtadState(b);
+}
+
 // Internal hook for the build-time grammar invariant ----------------
 export const __ctadStoreInternals = {
   STORAGE_KEY,

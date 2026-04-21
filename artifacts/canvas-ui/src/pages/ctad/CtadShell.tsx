@@ -37,6 +37,11 @@ const LABELS = {
   bindingHint:
     "These fields belong to the underlying frozen decision. CTAD never edits them.",
   fieldProject: "Project",
+  // Brief data field is `approvingAuthority`, but CTAD's vocabulary
+  // tier forbids "approving"-family tokens in CTAD-authored copy.
+  // We deliberately label it "Decision authority" so the binding
+  // panel reads in CTAD-neutral language while still surfacing the
+  // same underlying value from the frozen ADS record.
   fieldDecisionAuthority: "Decision authority",
   fieldDecisionDate: "Decision date",
   fieldAdsId: "ADS id",

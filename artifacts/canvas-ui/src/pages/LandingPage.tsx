@@ -21,6 +21,17 @@ interface IntentCard {
   ctaTestId: string;
 }
 
+// NOTE on the CTAD card copy below: the LandingPage is META — it
+// describes what each surface IS rather than acting as one of them.
+// The CTAD card therefore uses denial vocabulary ("approved
+// decision", "No approval, no recommendation, no scoring") to
+// communicate CTAD's non-authoritative posture. These tokens are on
+// the CTAD vocabulary tier's forbidden list when used inside CTAD-
+// authored UI, but here they appear in the negative — declaring
+// what CTAD does NOT do — so we deliberately do NOT run
+// `assertAllCtadLanguage` over the landing-card strings. The
+// vocabulary guard remains in force on every string rendered from
+// inside `src/ctad/**` and `src/pages/ctad/**`.
 const CARDS: readonly IntentCard[] = [
   {
     testId: "intent-card-adc",
