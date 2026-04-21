@@ -2281,14 +2281,18 @@ src/pages/acw/track3/
                                opens the derived view. Read-only.
   Track3Shell.tsx            — Bound shell. Read-only ADC binding panel,
                                view controls (2D/3D, perspective, layer
-                               toggles), and the chosen renderer. Re-reads
-                               CTAD_STATE on every render (CTAD selections
-                               are picked up automatically), and exposes a
-                               "Refresh from CTAD" button that bumps an
-                               internal tick. There is no subscription to
-                               ctadStore; subscribe / getStoreVersion /
-                               CtadBinding are explicitly forbidden by the
-                               isolation invariant. The shell also owns the
+                               toggles), and the chosen renderer. CTAD_STATE
+                               is re-read on route mount / binding change
+                               and on click of the explicit "Refresh from
+                               CTAD" button (which bumps a local
+                               `refreshTick`). View-prefs changes do NOT
+                               fan out to a fresh CTAD read — the refresh
+                               moment is intentionally explicit so the
+                               diagram never silently shifts under the
+                               user. There is no subscription to ctadStore;
+                               subscribe / getStoreVersion / CtadBinding
+                               are explicitly forbidden by the isolation
+                               invariant. The shell also owns the
                                selectedNodeId state and runs
                                `isolateAroundNode` BEFORE handing the
                                structure to the chosen renderer, so leaf-

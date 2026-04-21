@@ -14,11 +14,14 @@
 // Constitutional CTAD allowlist: only the closed surface
 // `{ getCtadState, exportCtadState, type CtadStateExport }` is
 // imported from the CTAD store. There is no live subscription —
-// re-reading CTAD happens on route mount, on view-control
-// changes (which trigger a re-render via the view-prefs
-// subscription), and on the explicit "Refresh from CTAD"
-// button below. This satisfies the task contract: "navigating
-// back to the derived view reflects the updated structure."
+// CTAD_STATE is re-read on route mount / binding change (the
+// `binding` dep of the `useMemo` below) and on the explicit
+// "Refresh from CTAD" button (the `refreshTick` dep). View-prefs
+// changes only trigger a re-render of the shell with the
+// previously memoised `ctadState`; they do NOT fan out to a
+// fresh CTAD read. This satisfies the task contract:
+// "navigating back to the derived view reflects the updated
+// structure", and keeps the refresh moment explicit.
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { useRoute, Link } from "wouter";
 import { Layers, Crosshair, RefreshCcw } from "lucide-react";
@@ -227,10 +230,15 @@ function BoundShell({
   entry: PortfolioEntry;
 }) {
   // Re-render on view-prefs change (mode/perspective/hidden
-  // layers/camera). CTAD is re-read on every render of this
-  // component, so any view-prefs change also picks up the
-  // latest CTAD_STATE. A "Refresh from CTAD" button forces a
-  // re-read without changing prefs.
+  // layers/camera). CTAD_STATE itself is re-read only when the
+  // ADC binding changes (route mount / navigation) or when the
+  // user clicks the "Refresh from CTAD" button (which bumps the
+  // local `refreshTick`); see the `useMemo` deps below. This is
+  // intentional: CTAD edits in another tab/route do NOT fan out
+  // automatically — the surface is strictly read-only and the
+  // refresh moment is explicit, so a user is never surprised by
+  // the diagram silently shifting underneath them. Navigating
+  // away and back, or clicking Refresh, picks up changes.
   useViewPrefsDoc();
   const [refreshTick, setRefreshTick] = useState(0);
   // `selectedNodeId` is the user's click target. Isolation is
