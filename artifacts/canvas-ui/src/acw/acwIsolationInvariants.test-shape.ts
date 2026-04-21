@@ -51,6 +51,22 @@ const SELF_FILENAMES: readonly string[] = [
   "acwIsolationInvariants.test-shape.ts",
 ];
 
+// Path-prefix exclusions. ACW Track 3 (the derived structural
+// visualisation under `/src/acw/track3/`,
+// `/src/components/acw/track3/`, and `/src/pages/acw/track3/`) has
+// a *different* read-only contract than the authored ACW (it is
+// allowed to read the portfolio store and the CTAD store via a
+// strict read-only named-import allowlist; the authored ACW is
+// forbidden from both). Track 3 brings its own dedicated
+// `acwTrack3IsolationInvariants.test-shape.ts` that enforces its
+// stricter contract; we exclude it here so the two invariants do
+// not contradict each other.
+const EXCLUDED_PATH_PREFIXES: readonly string[] = [
+  "/src/acw/track3/",
+  "/src/components/acw/track3/",
+  "/src/pages/acw/track3/",
+];
+
 // Positive allowlist (PH-ACW-3): ACW source files may import ONLY
 // from this closed set of import-specifier prefixes. This is the
 // stricter half of the isolation invariant — the denylist above
@@ -104,6 +120,7 @@ export function assertNoDecisionPipelineImports(
 ): void {
   for (const [path, contents] of Object.entries(sources)) {
     if (SELF_FILENAMES.some((s) => path.endsWith(s))) continue;
+    if (EXCLUDED_PATH_PREFIXES.some((p) => path.startsWith(p))) continue;
     // Match `from "..."` and `import "..."` style import specifiers
     // only. We deliberately scan substring within those quoted
     // forms so a comment that cites a specifier (e.g. for

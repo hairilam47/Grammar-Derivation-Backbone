@@ -1,3 +1,9 @@
+// ACW Track 3 — entry list of frozen ADC bindings.
+//
+// Lists the same frozen ADS records as `/ctad`, but each row links
+// to the derived structural view rather than the CTAD shell. This
+// page is read-only: it never mutates a portfolio entry, never
+// calls a write helper of any store.
 import { useMemo } from "react";
 import { Link } from "wouter";
 import { Layers } from "lucide-react";
@@ -5,9 +11,7 @@ import {
   listEntries,
   type PortfolioEntry,
 } from "@/governance/portfolioStore";
-import {
-  assertAllCtadLanguage,
-} from "@/governance/staticTextGuard";
+import { assertAllAcwTrack3Language } from "@/governance/staticTextGuard";
 import { GlobalNav } from "@/components/governance/GlobalNav";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,50 +22,33 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-// All static labels rendered by this page. Asserted at module load
-// against the CTAD vocabulary tier so a forbidden token cannot be
-// introduced silently.
 const LABELS = {
-  pageTitle: "CTAD \u2014 Technology Exploration",
+  brandLabel: "Architecture Decision Canvas",
+  pageTitle: "Derived structural view",
   pageSubtitle:
-    "Pick a frozen decision to attach an interpretive technology exploration to. CTAD is reversible and does not alter the underlying decision.",
-  listHeading: "Frozen decisions available for exploration",
+    "Pick a frozen decision to see the structural diagram derived from its bound technology selections. The diagram is exploratory and read-only.",
+  listHeading: "Frozen decisions available for derived view",
   listHint:
-    "Selecting a row opens a bound exploration. The underlying decision is read-only here.",
+    "Selecting a row opens the derived structural diagram for that binding. Editing selections is done from the bound CTAD shell.",
   colProject: "Project",
   colDecisionAuthority: "Decision authority",
   colDecisionDate: "Decision date",
   colAdsId: "ADS id",
   colAdsVersion: "ADS version",
-  openCta: "Open Exploration",
-  openDerivedCta: "Open derived view",
+  openCta: "Open derived view",
   emptyHeading: "No frozen decisions found",
-  brandLabel: "Architecture Decision Canvas",
+  emptyBody:
+    "There are no frozen decisions in the portfolio yet. Freeze one from the Decision Canvas to enable the derived view.",
 } as const;
 
-// Verbatim brief-mandated empty-state sentence. It contains the
-// substring "approved", which is on the CTAD forbidden vocabulary
-// list. Per the carve-out documented in staticTextGuard.ts, this
-// single message is exempt from the substring scan and is verified
-// instead by spec-equality at module load.
-const EMPTY_STATE_MESSAGE =
-  "CTAD requires an approved architectural decision.";
-const EMPTY_STATE_MESSAGE_SPEC =
-  "CTAD requires an approved architectural decision.";
-if (EMPTY_STATE_MESSAGE !== EMPTY_STATE_MESSAGE_SPEC) {
-  throw new Error(
-    "CTAD entry: empty-state message drifted from its constitutional spec.",
-  );
-}
-
-assertAllCtadLanguage(Object.values(LABELS));
+assertAllAcwTrack3Language(Object.values(LABELS));
 
 function formatDate(iso: string): string {
   if (!iso) return "";
   return iso.slice(0, 10);
 }
 
-export default function CtadEntry() {
+export default function Track3Entry() {
   const entries = useMemo<PortfolioEntry[]>(() => listEntries(), []);
 
   return (
@@ -72,7 +59,7 @@ export default function CtadEntry() {
             <Layers className="w-5 h-5" />
             <span
               className="font-bold tracking-tight text-sm uppercase"
-              data-testid="ctad-brand"
+              data-testid="track3-brand"
             >
               {LABELS.brandLabel}
             </span>
@@ -82,7 +69,7 @@ export default function CtadEntry() {
       </header>
 
       <main className="flex-1 container max-w-5xl mx-auto px-4 py-12">
-        <div className="mb-8 space-y-2" data-testid="ctad-entry-heading">
+        <div className="mb-8 space-y-2" data-testid="track3-entry-heading">
           <h1 className="text-2xl font-bold tracking-tight">
             {LABELS.pageTitle}
           </h1>
@@ -92,21 +79,21 @@ export default function CtadEntry() {
         </div>
 
         {entries.length === 0 ? (
-          <Card data-testid="ctad-entry-empty">
+          <Card data-testid="track3-entry-empty">
             <CardHeader>
               <CardTitle className="text-base">
                 {LABELS.emptyHeading}
               </CardTitle>
               <CardDescription
                 className="text-sm"
-                data-testid="ctad-entry-empty-message"
+                data-testid="track3-entry-empty-message"
               >
-                {EMPTY_STATE_MESSAGE}
+                {LABELS.emptyBody}
               </CardDescription>
             </CardHeader>
           </Card>
         ) : (
-          <Card data-testid="ctad-entry-list">
+          <Card data-testid="track3-entry-list">
             <CardHeader>
               <CardTitle className="text-base">
                 {LABELS.listHeading}
@@ -120,28 +107,18 @@ export default function CtadEntry() {
                 <table className="w-full text-xs border-collapse">
                   <thead>
                     <tr className="text-left text-muted-foreground border-b border-border/50">
-                      <th className="py-2 pr-4 font-normal">
-                        {LABELS.colProject}
-                      </th>
-                      <th className="py-2 pr-4 font-normal">
-                        {LABELS.colDecisionAuthority}
-                      </th>
-                      <th className="py-2 pr-4 font-normal">
-                        {LABELS.colDecisionDate}
-                      </th>
-                      <th className="py-2 pr-4 font-normal">
-                        {LABELS.colAdsId}
-                      </th>
-                      <th className="py-2 pr-4 font-normal">
-                        {LABELS.colAdsVersion}
-                      </th>
+                      <th className="py-2 pr-4 font-normal">{LABELS.colProject}</th>
+                      <th className="py-2 pr-4 font-normal">{LABELS.colDecisionAuthority}</th>
+                      <th className="py-2 pr-4 font-normal">{LABELS.colDecisionDate}</th>
+                      <th className="py-2 pr-4 font-normal">{LABELS.colAdsId}</th>
+                      <th className="py-2 pr-4 font-normal">{LABELS.colAdsVersion}</th>
                       <th className="py-2"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {entries.map((e) => {
-                      const href = `/ctad/${encodeURIComponent(e.adsId)}/${encodeURIComponent(e.adsVersion)}`;
-                      const rowTestId = `ctad-entry-row-${e.adsId}-${e.adsVersion}`;
+                      const href = `/acw/derived/${encodeURIComponent(e.adsId)}/${encodeURIComponent(e.adsVersion)}`;
+                      const rowTestId = `track3-entry-row-${e.adsId}-${e.adsVersion}`;
                       return (
                         <tr
                           key={`${e.adsId}@${e.adsVersion}`}
@@ -161,18 +138,7 @@ export default function CtadEntry() {
                           <td className="py-2 pr-4 font-mono text-muted-foreground">
                             {e.adsVersion}
                           </td>
-                          <td className="py-2 text-right space-x-2 whitespace-nowrap">
-                            <Link
-                              href={`/acw/derived/${encodeURIComponent(e.adsId)}/${encodeURIComponent(e.adsVersion)}`}
-                            >
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                data-testid={`${rowTestId}-derived-cta`}
-                              >
-                                {LABELS.openDerivedCta}
-                              </Button>
-                            </Link>
+                          <td className="py-2 text-right">
                             <Link href={href}>
                               <Button
                                 size="sm"

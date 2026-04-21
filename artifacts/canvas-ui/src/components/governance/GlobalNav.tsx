@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Home, FileSignature, LayoutGrid, Radio, Eye, Workflow, Layers } from "lucide-react";
+import { Home, FileSignature, LayoutGrid, Radio, Eye, Workflow, Layers, Boxes } from "lucide-react";
 
 interface NavItem {
   href: string;
@@ -58,6 +58,13 @@ const ITEMS: readonly NavItem[] = [
     icon: Workflow,
     testId: "nav-workspace",
     matches: (loc) => loc === "/workspace" || loc.startsWith("/workspace/"),
+  },
+  {
+    href: "/acw/derived",
+    label: "Derived view",
+    icon: Boxes,
+    testId: "nav-acw-derived",
+    matches: (loc) => loc === "/acw/derived" || loc.startsWith("/acw/derived/"),
   },
 ];
 

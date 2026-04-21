@@ -22,6 +22,12 @@
 // localStorage.
 import type { AcwNode, AcwEdge } from "./acwStore";
 
+// Re-export the structurally-relevant types so downstream readers
+// (notably ACW Track 3, which is forbidden from importing the
+// authored ACW store) can obtain the AcwNode / AcwEdge type
+// shapes through a single read-only entry point.
+export type { AcwNode, AcwEdge } from "./acwStore";
+
 export interface LensDrawable {
   readonly node: AcwNode;
   /** True iff this direct sibling has at least one child in `nodes`. */

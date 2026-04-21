@@ -507,3 +507,80 @@ export function assertCtadLanguage(text: string): void {
 export function assertAllCtadLanguage(texts: string[]): void {
   for (const t of texts) assertCtadLanguage(t);
 }
+
+// ACW Track 3 — Derived Structural Visualisation vocabulary tier.
+//
+// Track 3 mechanically derives a structural diagram from a CTAD
+// binding's CTAD_STATE plus a small projection of ADC bounds. It
+// must never frame any element as judgement, recommendation,
+// scoring, ranking, urgency, or workflow. Every static label,
+// hint, control caption, and label-registry string rendered by a
+// Track 3 module file is asserted against this tier at module load.
+//
+// ACW_TRACK3_FORBIDDEN is a STANDALONE sibling tier — it is not
+// derived from the ACW placeholder tier or the CTAD tier. Track 3
+// surface concerns are: never imply judgement (priority/risk/
+// severity/score/weight/urgency/importance/health/maturity/
+// correctness), never imply traffic-light health (warning/danger/
+// critical), never imply recommendation or finality (recommend/
+// best/optimal/optimise/optimize/validated/approved/final), never
+// imply prescription (must/should/submit), never imply ranking
+// (rank/ranked/ranking).
+//
+// Carve-out notes for substring matching (Track 3 surface):
+//   - "approve" matches "approval"/"approved"/"approving". Track 3
+//     surface text intentionally avoids every embedding.
+//   - "recommend" matches "recommendation"/"recommended"/
+//     "recommends". Track 3 surface intentionally avoids all.
+//   - "best" matches "bestow"/"asbestos". Track 3 surface
+//     intentionally avoids both.
+//   - "must" matches "mustard". Track 3 surface intentionally
+//     avoids it.
+//   - "score" matches "underscore"/"scoreboard". Track 3 surface
+//     intentionally avoids both.
+//   - "rank" matches "ranking"/"ranked"/"ranks". Track 3 surface
+//     intentionally avoids all.
+//   - "final" matches "finally"/"finalise". Track 3 surface
+//     intentionally avoids both.
+//   - "weight" matches "weighted"/"weighting"/"weights". Track 3
+//     surface intentionally avoids all.
+//   - "warning"/"danger"/"critical" — Track 3 surface uses neutral
+//     hex palette only and never says "danger"/"warning"/"critical".
+export const ACW_TRACK3_FORBIDDEN = [
+  "approve",
+  "recommend",
+  "best",
+  "optimal",
+  "optimise",
+  "optimize",
+  "optimised",
+  "optimized",
+  "validated",
+  "validate",
+  "priority",
+  "risk",
+  "severity",
+  "score",
+  "weight",
+  "urgency",
+  "importance",
+  "health",
+  "maturity",
+  "correctness",
+  "warning",
+  "danger",
+  "critical",
+  "must",
+  "should",
+  "submit",
+  "rank",
+  "final",
+];
+
+export function assertAcwTrack3Language(text: string): void {
+  checkAgainst(text, ACW_TRACK3_FORBIDDEN);
+}
+
+export function assertAllAcwTrack3Language(texts: string[]): void {
+  for (const t of texts) assertAcwTrack3Language(t);
+}

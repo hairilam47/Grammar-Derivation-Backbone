@@ -17,6 +17,8 @@ import Deployment from "@/pages/acw/views/Deployment";
 import OperationsContinuity from "@/pages/acw/views/OperationsContinuity";
 import CtadEntry from "@/pages/ctad/CtadEntry";
 import CtadShell from "@/pages/ctad/CtadShell";
+import Track3Entry from "@/pages/acw/track3/Track3Entry";
+import Track3Shell from "@/pages/acw/track3/Track3Shell";
 // Phase 6 — module-load side effect: importing this module runs the
 // negative-invariant assertions that fail the application bundle if
 // any forbidden surface (structured ADC export, computed lifecycle
@@ -43,6 +45,17 @@ import "@/acw/acw3DForbiddenSemantics.test-shape";
 // (parameter registry shape locked at "ctad-1.0").
 import "@/ctad/ctadIsolationInvariants.test-shape";
 import "@/ctad/ctadGrammarInvariants.test-shape";
+// ACW Track 3 — module-load side effects: build-time isolation
+// (allowlist + denylist + read-only named-import scan), structural
+// identity (both renderers consume `enumerateLensVisibility`),
+// forbidden semantics (no animation / judgement / traffic-light /
+// recommendation tokens), and derivation purity (deterministic,
+// empty-in → empty-out, sensitive to input). Importing them here
+// fails the bundle at load time if any Track 3 invariant regresses.
+import "@/acw/track3/acwTrack3IsolationInvariants.test-shape";
+import "@/acw/track3/acwTrack3StructureInvariants.test-shape";
+import "@/acw/track3/acwTrack3ForbiddenSemantics.test-shape";
+import "@/acw/track3/acwTrack3DerivationInvariants.test-shape";
 
 function DarkModeApplier() {
   useEffect(() => {
@@ -69,6 +82,8 @@ function Router() {
       <Route path="/workspace/operations" component={OperationsContinuity} />
       <Route path="/ctad" component={CtadEntry} />
       <Route path="/ctad/:adsId/:adsVersion" component={CtadShell} />
+      <Route path="/acw/derived" component={Track3Entry} />
+      <Route path="/acw/derived/:adsId/:adsVersion" component={Track3Shell} />
       <Route component={NotFound} />
     </Switch>
   );

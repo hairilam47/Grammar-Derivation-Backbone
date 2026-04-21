@@ -84,6 +84,13 @@ adds none.
 
 ## 3. Layer Diagram
 
+> **ACW Track 3 (`/acw/derived`) sits beside the layer stack as a
+> read-only derived view.** It reads CTAD_STATE (via the read-only
+> named-import surface of `ctad/ctadStore`) plus a small projection
+> of ADC bounds (via `governance/portfolioStore.listEntries`) and
+> mechanically derives a structural diagram. It writes nothing
+> back to any store. See §18D for the full design.
+
 ```
 +--------------------------------------------------------------+
 |  Layer 6  Reflective Governance View                         |
@@ -578,6 +585,8 @@ resolve consistently).
 | `/workspace/operations` | `OperationsContinuity` | ACW Operations & Continuity lens (cross-layer, descriptive only) |
 | `/ctad` | `CtadEntry` | CTAD entry — lists every frozen ADC decision; bound exploration is opened from a row |
 | `/ctad/:adsId/:adsVersion` | `CtadShell` | CTAD bound exploration — read-only ADC binding panel + four collapsible state-driven sections + live `CTAD_STATE` preview + references catalogues |
+| `/acw/derived` | `Track3Entry` | ACW Track 3 — lists every frozen ADC decision; the derived structural view is opened from a row (see §18D) |
+| `/acw/derived/:adsId/:adsVersion` | `Track3Shell` | ACW Track 3 — derived structural view bound to one ADC. Read-only binding panel + view controls (2D/3D, perspective, layer toggles) + a structural diagram mechanically derived from CTAD_STATE + ADC bounds. Writes nothing back; the only persistent storage owned by Track 3 is `acw.track3.viewprefs.v1`. |
 
 Header navigation (`components/governance/GlobalNav.tsx`) is
 shared across all routes and exposes top-level links to Landing,
@@ -603,6 +612,7 @@ not from the global nav.
 | Decision Exposure (Phases 1–5) | (none) | `pages/Exposure.tsx` + `governance/exposure*`, `responsibilityLens.ts`, `scenarioReading.ts`, `decisionReentry.ts` | n/a — pure derivation from one `PortfolioEntry` per render | persists nothing |
 | TOGAF / ArchiMate Containment (Phase 6) | (none) | `pages/Containment.tsx` + `governance/togafContainment.ts`, `governance/misusePlaybooks.ts` | n/a — pure refusal validators and static tables | persists nothing |
 | CTAD Bound Exploration (`/ctad/:adsId/:adsVersion`) | `ctad.state.v1` (`localStorage`) | `ctad/ctadStore.ts` (write goes through `findParam` registry validation; per-binding state is keyed by `${adsId}@${adsVersion}`) | Document is `{ schemaVersion: "ctad-1.0", bindings: { [bindingKey]: { adsId, adsVersion, params: { [paramId]: string \| string[] }, updatedAt } } }`. Binding entries are NEVER materialised empty — clearing the last param of a binding deletes the binding key entirely, and clearing a param on a binding that does not exist is a fast-path no-op. Validated against `ctadRegistry`: every persisted `paramId` must exist in the registry; every `single` value must be a string from `param.options`; every `multi` value must be an array whose every element is a string from `param.options`. The schema version is locked at module load by `ctadGrammarInvariants`. | per-binding interpretive state only; no derivation, no scoring, no recommendation, no flow back into ADC, signals, exposure, or the grammar engine |
+| ACW Track 3 Derived View (`/acw/derived/*`) | `acw.track3.viewprefs.v1` (`localStorage`) | `acw/track3/track3ViewPrefs.ts` (schema-locked at `acw-track3-viewprefs-1.0`) | Document is `{ schemaVersion: "acw-track3-viewprefs-1.0", byBinding: { [bindingKey]: { viewMode: "2d"\|"3d", perspective: Track3Perspective, hiddenLayers: string[], cameraX: number, cameraY: number, cameraZoom: number } } }`. Locked top-level allow-list (`schemaVersion`, `byBinding`) and per-binding allow-list (`viewMode`, `perspective`, `hiddenLayers`, `cameraX`, `cameraY`, `cameraZoom`). Validated by `assertValidPrefsDoc` on read; the entire diagram structure itself is **not persisted** — it is recomputed on every render via `deriveACWStructure(getCtadState(binding), projectBounds(entry))`. | view preferences only; the diagram is purely derived |
 | ACW Workspace (`/workspace/*`) — v1 grammar diagram | `acw.workspace.v1` (`localStorage`) | `acw/acwStore.ts` (write goes through `acwValidator.ts`; allow-list `assertAllowedFields` and read-validate `isValidWorkspace`); registry in `acw/acwGrammar.ts`; React subscription via `acw/acwGrammarHooks.ts#useAcwWorkspace`; surfaces `pages/acw/WorkspaceShell.tsx` + 5 lens views, `components/acw/AuthoringPanel.tsx`, `components/acw/LiveStructurePanel.tsx`, `components/acw/Canvas2D.tsx`, `Canvas3D.tsx` | Document is `{ schemaVersion: "acw-1.0", structureGraph: { nodes, edges } }`; node fields = `{ id, type, parentId, label, x, y }`; edge fields = `{ id, kind, fromId, toId }`. Locked allow-list at every nested level, validated by `__acwStoreInternals.isValidWorkspace` on read and `assertAllowedFields` on write. Containment is also materialised via `parentId` at node-creation time; the explicit edge kinds the user can author are CONTAINS, CONNECTS, INTERFACES_WITH, DATA_FLOW. CONTAINS is therefore representable both as the child's `parentId` and as a redundant-but-permitted edge record between the two existing nodes. | structure-only persistence; no semantics, no scoring, no ranking, no derivation |
 
 No store ever feeds back into the grammar engine. The grammar
@@ -2152,3 +2162,191 @@ CTAD is strictly removable to the pre-CTAD bundle. To remove:
 No other surface depends on CTAD. ADC, ACW, the Reflection view,
 the Decision Exposure View, and the Phase 6 Containment surface
 all continue to function unchanged.
+
+---
+
+## 18D. ACW Track 3 — Derived Structural Visualisation
+
+A **strictly read-only** workspace at `/acw/derived` that
+mechanically derives a structural diagram from `CTAD_STATE` plus
+a small projection of ADC bounds. Track 3 is not authored, has
+no save/freeze/export/share affordance, never mutates any
+upstream store, and cannot influence ADC, CTAD, signals, the
+Reflective view, or the Decision Exposure View.
+
+### Position in the system
+
+CTAD is the interpretive technology overlay (§19). Track 3 is
+the *derived view* of that overlay: it answers "what would the
+structure look like if we drew the selections we have so far?"
+without forming, recommending, or finalising anything. The same
+diagram is rendered by both a 2D and a 3D renderer; the two
+renderers consume the same in-memory graph through the shared
+helper `enumerateLensVisibility(...)` so they cannot diverge.
+
+### Files
+
+```
+src/acw/track3/
+  track3Types.ts             — Track3Layer, Track3Perspective, AdcBounds,
+                               AcwTrack3Structure, stable-id helpers
+                               (nodeIdForLayer, nodeIdForParamValue, edgeId,
+                               optionSlug). Imports AcwNode/AcwEdge types
+                               via the re-export from acw/acwLensStructure.
+  track3LabelRegistry.ts     — Generic, vendor-free display labels for layers,
+                               params, and option overrides (e.g. "React-like"
+                               option key → "Component-tree frontend" label).
+                               assertNoVendorNames denylist enforced at module
+                               load.
+  track3Adjacency.ts         — Pure adjacency-rule table (param-value pairs
+                               that imply a CONNECTS edge in the derived
+                               structure). Canonicalises edge id ordering.
+  track3AdcBounds.ts         — projectBounds(entry: PortfolioEntry): AdcBounds.
+                               Reads only the read-only surface of the
+                               portfolio store.
+  track3Derive.ts            — deriveACWStructure(ctadState, bounds):
+                               AcwTrack3Structure. Pure, total, deterministic.
+                               Empty input → empty output (no synthesised
+                               defaults). Stable ids of the form
+                               node:<sectionId>:<paramId>:<optionSlug>.
+  track3ViewPrefs.ts         — Schema-locked persistence of per-binding view
+                               preferences only (acw.track3.viewprefs.v1).
+                               Validated by assertValidPrefsDoc on read.
+  acwTrack3IsolationInvariants.test-shape.ts
+                             — Build-time isolation: denylist of decision-
+                               pipeline modules and ACW write surfaces;
+                               positive allowlist of permitted import
+                               specifiers; per-store named-import allowlists
+                               (portfolio = { listEntries, PortfolioEntry };
+                               CTAD = { getCtadState, exportCtadState,
+                               CtadStateExport, subscribe, getStoreVersion,
+                               CtadBinding }; lens-structure helper =
+                               { enumerateLensVisibility, LensVisibility,
+                               LensDrawable, AcwNode, AcwEdge }). Includes a
+                               module-load self-test exercising every
+                               forbidden form.
+  acwTrack3DerivationInvariants.test-shape.ts
+                             — Module-load assertions that derive is
+                               deterministic (same input → same output),
+                               empty-in → empty-out (no fabricated defaults),
+                               and sensitive to input (different input →
+                               different output).
+  acwTrack3StructureInvariants.test-shape.ts
+                             — Both Track 3 renderers must call
+                               enumerateLensVisibility(...) and must NOT
+                               import the authored ACW store, view-state,
+                               validator, or grammar hooks. Comments and
+                               string literals are stripped before scanning
+                               so documentation references do not trip.
+  acwTrack3ForbiddenSemantics.test-shape.ts
+                             — Both renderers must contain ZERO of the
+                               animation, judgement, time, traffic-light, or
+                               recommendation tokens enumerated in the
+                               invariant. Comments and string literals are
+                               stripped before scanning.
+
+src/components/acw/track3/
+  Track3Canvas2D.tsx         — SVG-based 2D renderer. Neutral hex palette,
+                               no animation, no easing, no per-frame hooks.
+  Track3Canvas3D.tsx         — R3F-based 3D renderer. Depth represents
+                               containment only (layer roots at z=0,
+                               param-value children at z=1). No camera
+                               motion, no useFrame, no easing.
+
+src/pages/acw/track3/
+  Track3Entry.tsx            — Entry list of frozen ADC decisions; each row
+                               opens the derived view. Read-only.
+  Track3Shell.tsx            — Bound shell. Read-only ADC binding panel,
+                               view controls (2D/3D, perspective, layer
+                               toggles), and the chosen renderer. Subscribes
+                               to ctadStore via `subscribe` so editing CTAD
+                               re-derives the diagram on the next render.
+```
+
+### The four hardened invariants
+
+1. **Track 3 isolation invariant** —
+   `acwTrack3IsolationInvariants.test-shape.ts`. Track 3 sources
+   may only import from a closed allowlist; every read-only
+   store import is constrained to a per-store named-import
+   allowlist; namespace, default, side-effect, and dynamic
+   imports of read-only stores are all rejected. A self-test
+   proves each forbidden shape throws and each approved shape
+   passes.
+2. **Track 3 derivation-purity invariant** —
+   `acwTrack3DerivationInvariants.test-shape.ts`. `deriveACWStructure`
+   is asserted at module load to be (a) deterministic, (b) empty-in
+   → empty-out, and (c) sensitive to input. Closes regressions to
+   `Date.now`, `Math.random`, mutable closures, or silent default-
+   synthesis.
+3. **Track 3 structural-identity invariant** —
+   `acwTrack3StructureInvariants.test-shape.ts`. Both Track 3
+   renderers must call `enumerateLensVisibility(...)` and must
+   not reference the authored ACW store / view-state / validator /
+   grammar hooks. Comments and string literals are stripped
+   before the scan.
+4. **Track 3 forbidden-semantics invariant** —
+   `acwTrack3ForbiddenSemantics.test-shape.ts`. Both renderers
+   must contain ZERO animation primitives (`useFrame`,
+   `setInterval`, `requestAnimationFrame`, easing, tween,
+   keyframe, animate), ZERO judgement / weighting tokens
+   (priority, risk, severity, score, weight, urgency, importance,
+   health, maturity, correctness), ZERO time tokens (timeline,
+   duration, elapsed), ZERO traffic-light colour names, and ZERO
+   recommendation tokens (recommended, optimal, optimised,
+   optimized, best, validated, approved). Comments and string
+   literals are stripped before scanning.
+
+All four are imported as side effects from `App.tsx` so any
+regression fails the application bundle at module load.
+
+### Vocabulary tier
+
+`ACW_TRACK3_FORBIDDEN` (in `governance/staticTextGuard.ts`) is a
+**standalone sibling tier** — not derived from the ACW
+placeholder tier or from CTAD. Every static label, hint, control
+caption, and label-registry string rendered by a Track 3 module
+file is asserted against this tier at module load via
+`assertAllAcwTrack3Language`. The tier bans judgement,
+traffic-light, recommendation, prescription, and ranking tokens.
+A complementary vendor-name denylist (`assertNoVendorNames` in
+`track3LabelRegistry.ts`) bans product / vendor names so labels
+remain generic ("Component-tree frontend", not "React-like
+frontend").
+
+### Stable ids
+
+Every node and edge in the derived structure has a stable,
+content-addressable id of the form
+`node:<sectionId>:<paramId>:<optionSlug>` (or `node:<sectionId>`
+for layer roots) and `edge:<fromId>::<toId>` (with canonical
+ordering of the two endpoints). The same input therefore always
+produces the same id set, which is what makes the derivation
+invariant assertable.
+
+### View preferences
+
+Track 3 owns **only** `acw.track3.viewprefs.v1`. The diagram
+itself is never persisted — it is recomputed on every render from
+the live `CTAD_STATE` of the bound binding plus
+`projectBounds(entry)`. This is what allows Track 3 to remain
+strictly read-only: there is no write path back into CTAD or the
+portfolio.
+
+### Strictly removable
+
+Removing the entire Track 3 surface is a four-step delete:
+- delete the directories `src/acw/track3/`,
+  `src/components/acw/track3/`, and `src/pages/acw/track3/`,
+- remove the four side-effect imports of the Track 3 invariants
+  and the two component imports / route declarations from
+  `src/App.tsx`,
+- remove the "Derived view" entry from
+  `components/governance/GlobalNav.tsx` and the per-row
+  "Open derived view" CTA from `pages/ctad/CtadEntry.tsx`,
+- delete `acw.track3.viewprefs.v1` from localStorage (optional
+  cleanup; the bundle stops reading it once Track 3 is gone).
+
+No other surface depends on Track 3. ADC, CTAD, ACW Tracks 1–2,
+the Reflection view, the Decision Exposure View, and the Phase 6
+Containment surface all continue to function unchanged.
