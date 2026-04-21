@@ -75,7 +75,19 @@ function readDoc(): CtadStoreDoc {
 function writeDoc(doc: CtadStoreDoc): void {
   if (typeof window === "undefined" || !window.localStorage) return;
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
+  storeVersion += 1;
   notify();
+}
+
+// Monotonic version counter incremented on every successful write.
+// Views that adapt this store to React's `useSyncExternalStore`
+// MUST use `getStoreVersion` as the snapshot — returning a fresh
+// timestamp or new object identity from the snapshot function
+// breaks the contract and triggers React's "snapshot should be
+// cached" warning / re-render loops.
+let storeVersion = 0;
+export function getStoreVersion(): number {
+  return storeVersion;
 }
 
 // Subscription model mirroring the ACW store: views call

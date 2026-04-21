@@ -24,6 +24,7 @@ import {
 import {
   exportCtadState,
   getBindingDoc,
+  getStoreVersion,
   setCtadParam,
   subscribe,
   type CtadBinding,
@@ -78,15 +79,13 @@ assertAllCtadLanguage([
 ]);
 
 function useCtadStore(): number {
-  return useSyncExternalStore(
-    subscribe,
-    () => {
-      // Tick value is only used to force re-render; we read the doc
-      // directly from the store when needed.
-      return Date.now();
-    },
-    () => 0,
-  );
+  // The snapshot MUST be a stable, equality-checkable value that
+  // only changes when the store actually mutates. `getStoreVersion`
+  // is a monotonic counter incremented inside `writeDoc`, satisfying
+  // React's `useSyncExternalStore` contract; returning `Date.now()`
+  // here would produce a fresh value on every call and trigger
+  // re-render loops under React strict mode.
+  return useSyncExternalStore(subscribe, getStoreVersion, () => 0);
 }
 
 function formatDate(iso: string): string {
