@@ -103,7 +103,7 @@ const LABELS = {
   layerCrossCutting: "Cross-Cutting",
   diagramHeading: "Derived diagram",
   diagramHint:
-    "The diagram is recomputed from CTAD_STATE on every render. It is not persisted.",
+    "The diagram is derived from CTAD_STATE at the moment this view was opened or last refreshed. It is not persisted; use \"Refresh from CTAD\" to pick up CTAD edits made elsewhere.",
   bindingNotFoundHeading: "Binding not found",
   bindingNotFoundBody:
     "No frozen decision matches this binding. Return to the entry list to pick a different one.",

@@ -2319,8 +2319,9 @@ src/pages/acw/track3/
    `acwTrack3StructureInvariants.test-shape.ts`. Both Track 3
    renderers must call `enumerateLensVisibility(...)` and must
    not reference the authored ACW store / view-state / validator /
-   grammar hooks. Comments and string literals are stripped
-   before the scan.
+   grammar hooks. ONLY comments are stripped before the scan;
+   string literals are scanned so a smuggled string-literal
+   import path or call cannot evade the gate.
 4. **Track 3 forbidden-semantics invariant** —
    `acwTrack3ForbiddenSemantics.test-shape.ts`. Both renderers
    must contain ZERO animation primitives (`useFrame`,
