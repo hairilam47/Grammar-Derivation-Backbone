@@ -19,6 +19,23 @@ observed through a read-only reflective view.
 The system is descriptive: it never assesses, ranks, prescribes, or
 requires action.
 
+Three peer surfaces sit on top of this foundation, independent and
+equal:
+
+- **ADC — Decision Canvas (`/`).** Forms, approves and records the
+  formal architecture decision. Authoritative.
+- **CTAD — Conceptual Technology Architecture Design (`/ctad`).** An
+  interpretive, reversible, *non-authoritative* technology
+  exploration plane bound to a frozen ADC decision. Adds no new
+  authority and writes nothing back to the decision.
+- **ACW — Architecture Composition Workspace (`/workspace/*`).** A
+  structural visualisation surface (TOGAF-aligned lenses, 2D and 3D
+  canvas) strictly isolated from the decision pipeline.
+
+CTAD and ACW are siblings of, not consumers of, each other; both
+read the portfolio strictly read-only and neither can mutate the
+decision pipeline.
+
 ---
 
 ## 2. Monorepo Layout
@@ -56,6 +73,7 @@ Numbering reflects build order, not architectural priority.
 | Phase 5 | Decision Re-Entry Lens | *"Legitimate Re-Entry"* card; two new approval-time portfolio fields (`approvalFunctionsAffected`, `approvalDominantFunctions`) | Phase 4 (drop two fields, delete card) |
 | Phase 6 | TOGAF / ArchiMate Constitutional Layer | `/governance/containment`; mandatory non-authority disclaimer in PDF/DOCX exports; advisory-only misuse hint in the wizard freeze form; build-time invariants module | Phase 5 (delete files, remove disclaimer injection, remove invariants import) |
 | ACW | Architecture Composition Workspace | `/workspace/*` (5 TOGAF lenses, 2D/3D canvas primitives, empty by default) | Pre-ACW (delete `src/acw/`, `src/components/acw/`, `src/pages/acw/`, route definitions) |
+| CTAD | Conceptual Technology Architecture Design — third peer plane | `/ctad`, `/ctad/:adsId/:adsVersion` (state-driven, non-wizard, four collapsible categorical sections, live `CTAD_STATE` preview, references catalogues); landing page promoted from two cards to three equal peer cards; CTAD entry added to `GlobalNav` between Decision Canvas and Portfolio | Pre-CTAD (delete `src/ctad/`, `src/pages/ctad/`, the two CTAD routes + invariant side-effect imports in `App.tsx`, the CTAD nav entry in `GlobalNav.tsx`, the CTAD card in `LandingPage.tsx`, the CTAD vocabulary tier in `staticTextGuard.ts`) |
 
 The portfolio entry allow-list grew from 13 fields (Core) to 15 (Phase 1)
 to 17 (Phase 5). It has not changed since. Phase 6 explicitly refuses
@@ -135,6 +153,22 @@ adds none.
   |    components/acw/Canvas2D.tsx, Canvas3D.tsx             |
   |    acw/acwGrammarHooks.ts (empty stubs)                  |
   |    acw/acwIsolationInvariants.test-shape.ts              |
+  +----------------------------------------------------------+
+
+  Sibling third peer plane (read-only on portfolio, no read of
+  any other decision-pipeline module):
+
+  +----------------------------------------------------------+
+  |  CTAD — Conceptual Technology Architecture Design        |
+  |    (/ctad, /ctad/:adsId/:adsVersion)                     |
+  |    ctad/ctadRegistry.ts          (4 sections, frozen)    |
+  |    ctad/ctadStore.ts             (localStorage,          |
+  |                                   per-binding,           |
+  |                                   reversible, no derive) |
+  |    ctad/ctadIsolationInvariants.test-shape.ts            |
+  |    ctad/ctadGrammarInvariants.test-shape.ts              |
+  |    pages/ctad/CtadEntry.tsx      (frozen-decision list)  |
+  |    pages/ctad/CtadShell.tsx      (bound exploration)     |
   +----------------------------------------------------------+
 ```
 
@@ -459,6 +493,25 @@ sibling pairs is interchangeable in either direction.
 | `DECISION_REENTRY_FORBIDDEN` | strict superset of `SCENARIO_READING_FORBIDDEN` (sibling of `TOGAF_CONTAINMENT_FORBIDDEN`, not interchangeable) | `fix`, `change`, `update`, `revise`, `rework`, `should`, `must`, `need`, `urgent`, `critical`, `failed`, `overdue` |
 | `TOGAF_CONTAINMENT_FORBIDDEN` | strict superset of `SCENARIO_READING_FORBIDDEN` (sibling of `DECISION_REENTRY_FORBIDDEN`, not interchangeable) | `mandate`, `justify`, `trigger`, `score`, `rank`, `sequence`, `prioritise`, `prioritize`, `evaluate`, `enforce` |
 | `ACW_PLACEHOLDER_FORBIDDEN` | strict superset of `TOGAF_CONTAINMENT_FORBIDDEN` | `optimise`, `optimize`, `recommend`, `recommended`, `target`, `best` (each restated literally per the ACW brief; some are already present transitively via the REFLECTIVE / SCENARIO_READING chain or the PORTFOLIO base) |
+| `CTAD_FORBIDDEN` | **standalone tier** (sibling of every governance tier above; it does NOT extend any of them and is NOT extended by any of them) | `approve`, `approved`, `confirm`, `recommend`, `recommended`, `best`, `optimal`, `optimise`, `optimize`, `final`, `score`, `ranked`, `ranking`, `mandate`, `justify`, `enforce`, `must` |
+
+`CTAD_FORBIDDEN` is intentionally a sibling tier rather than an
+extension of `PORTFOLIO_FORBIDDEN` or any descendant. The CTAD
+plane is non-authoritative by construction (it forms no decision,
+records nothing into ADC artefacts, and writes only to its own
+`ctad.state.v1` localStorage document). Forbidding approval,
+recommendation, ranking, scoring and obligation vocabulary in CTAD-
+authored copy keeps the surface from accidentally reading as if it
+were participating in the decision pipeline.
+
+There is exactly one carve-out: the empty-state sentence "CTAD
+requires an approved architectural decision." is mandated verbatim
+by the brief and contains the forbidden token "approved". CTAD
+handles this by **spec-equality exemption** — the entry page
+asserts the literal sentence against a frozen constant and skips
+`assertAllCtadLanguage` for that one string only. Every other
+CTAD label, hint, parameter name, parameter option, section title
+and reference label is asserted at module load.
 
 `REFLECTIVE_FORBIDDEN`, `EXPOSURE_NARRATIVE_FORBIDDEN`, and
 `RESPONSIBILITY_LENS_FORBIDDEN` all extend `SIGNALS_FORBIDDEN` in
@@ -489,6 +542,7 @@ are not interchangeable.
 - `assertDecisionReentryLanguage`, `assertAllDecisionReentryLanguage` — used by `governance/decisionReentry.ts` and by `pages/Exposure.tsx` for the Phase 5 re-entry surface
 - `assertTogafContainmentLanguage`, `assertAllTogafContainmentLanguage` — used by `governance/togafContainment.ts`, `governance/misusePlaybooks.ts`, and `pages/Containment.tsx` for the Phase 6 constitutional surface
 - `assertAcwPlaceholderLanguage`, `assertAllAcwPlaceholderLanguage` — used by `acw/acwGrammarHooks.ts`, `pages/acw/WorkspaceShell.tsx`, the five ACW lens views, and the two ACW canvas primitives for every static label rendered by the ACW workspace
+- `assertCtadLanguage`, `assertAllCtadLanguage` — used by `ctad/ctadRegistry.ts` (asserted over every section title, parameter label and parameter option at module load), `pages/ctad/CtadEntry.tsx` (every static label except the spec-exempt empty-state sentence), and `pages/ctad/CtadShell.tsx` (every binding-panel label, hint, button, references-panel item)
 
 ### Layering carve-out
 
@@ -522,14 +576,19 @@ resolve consistently).
 | `/workspace/integration` | `IntegrationView` | ACW Integration lens (Application + Data; empty placeholders) |
 | `/workspace/deployment` | `Deployment` | ACW Deployment & Infrastructure lens (TOGAF Technology; embeds 3D canvas) |
 | `/workspace/operations` | `OperationsContinuity` | ACW Operations & Continuity lens (cross-layer, descriptive only) |
+| `/ctad` | `CtadEntry` | CTAD entry — lists every frozen ADC decision; bound exploration is opened from a row |
+| `/ctad/:adsId/:adsVersion` | `CtadShell` | CTAD bound exploration — read-only ADC binding panel + four collapsible state-driven sections + live `CTAD_STATE` preview + references catalogues |
 
 Header navigation (`components/governance/GlobalNav.tsx`) is
 shared across all routes and exposes top-level links to Landing,
-Decision Canvas, Portfolio, Signals, Reflection, and Architecture
-Workspace. Exposure is reached from a portfolio row, not from the
-global nav. The five
-ACW lenses are reached through the workspace shell's lens-style
-sub-navigation, which has no progress indicator and no next/previous.
+Decision Canvas, **CTAD**, Portfolio, Signals, Reflection, and
+Architecture Workspace (in that order; CTAD sits between Decision
+Canvas and Portfolio). Exposure is reached from a portfolio row,
+not from the global nav. The five ACW lenses are reached through
+the workspace shell's lens-style sub-navigation, which has no
+progress indicator and no next/previous. The CTAD bound shell at
+`/ctad/:adsId/:adsVersion` is reached from the CTAD entry list,
+not from the global nav.
 
 ---
 
@@ -543,12 +602,18 @@ sub-navigation, which has no progress indicator and no next/previous.
 | Reflection (Layer 6) | (none) | `pages/Reflection.tsx` | n/a — pure aggregation | persists nothing |
 | Decision Exposure (Phases 1–5) | (none) | `pages/Exposure.tsx` + `governance/exposure*`, `responsibilityLens.ts`, `scenarioReading.ts`, `decisionReentry.ts` | n/a — pure derivation from one `PortfolioEntry` per render | persists nothing |
 | TOGAF / ArchiMate Containment (Phase 6) | (none) | `pages/Containment.tsx` + `governance/togafContainment.ts`, `governance/misusePlaybooks.ts` | n/a — pure refusal validators and static tables | persists nothing |
+| CTAD Bound Exploration (`/ctad/:adsId/:adsVersion`) | `ctad.state.v1` (`localStorage`) | `ctad/ctadStore.ts` (write goes through `findParam` registry validation; per-binding state is keyed by `${adsId}@${adsVersion}`) | Document is `{ schemaVersion: "ctad-1.0", bindings: { [bindingKey]: { adsId, adsVersion, params: { [paramId]: string \| string[] }, updatedAt } } }`. Binding entries are NEVER materialised empty — clearing the last param of a binding deletes the binding key entirely, and clearing a param on a binding that does not exist is a fast-path no-op. Validated against `ctadRegistry`: every persisted `paramId` must exist in the registry; every `single` value must be a string from `param.options`; every `multi` value must be an array whose every element is a string from `param.options`. The schema version is locked at module load by `ctadGrammarInvariants`. | per-binding interpretive state only; no derivation, no scoring, no recommendation, no flow back into ADC, signals, exposure, or the grammar engine |
 | ACW Workspace (`/workspace/*`) — v1 grammar diagram | `acw.workspace.v1` (`localStorage`) | `acw/acwStore.ts` (write goes through `acwValidator.ts`; allow-list `assertAllowedFields` and read-validate `isValidWorkspace`); registry in `acw/acwGrammar.ts`; React subscription via `acw/acwGrammarHooks.ts#useAcwWorkspace`; surfaces `pages/acw/WorkspaceShell.tsx` + 5 lens views, `components/acw/AuthoringPanel.tsx`, `components/acw/LiveStructurePanel.tsx`, `components/acw/Canvas2D.tsx`, `Canvas3D.tsx` | Document is `{ schemaVersion: "acw-1.0", structureGraph: { nodes, edges } }`; node fields = `{ id, type, parentId, label, x, y }`; edge fields = `{ id, kind, fromId, toId }`. Locked allow-list at every nested level, validated by `__acwStoreInternals.isValidWorkspace` on read and `assertAllowedFields` on write. Containment is also materialised via `parentId` at node-creation time; the explicit edge kinds the user can author are CONTAINS, CONNECTS, INTERFACES_WITH, DATA_FLOW. CONTAINS is therefore representable both as the child's `parentId` and as a redundant-but-permitted edge record between the two existing nodes. | structure-only persistence; no semantics, no scoring, no ranking, no derivation |
 
-Neither store ever feeds back into the grammar engine. The grammar
-remains the single source of structural truth. No surface added in
-Phase 1 onward introduces a new persistence key, network call, or
-cache.
+No store ever feeds back into the grammar engine. The grammar
+remains the single source of structural truth. The portfolio store
+is the only authoritative governance read-model; the signals store
+is a leadership read-model that may reference portfolio entries by
+identity; the CTAD store is a per-binding interpretive overlay
+that may reference portfolio entries by identity but writes
+nothing back. ACW persists structural diagrams and reads nothing
+from any decision-pipeline module. No surface added in Phase 1
+onward introduces a network call or cache.
 
 ---
 
@@ -754,6 +819,9 @@ fails the bundle. There is no runtime fallback, retry, or override.
 | `acw/acw3DForbiddenSemantics.test-shape.ts` (case-insensitive substring scan, comment-stripped, against `Canvas3DStructural.tsx`) | `App.tsx` (side-effect import) | ACW v3 forbidden semantics: the 3D canvas source contains no animation primitive (`useFrame`, `useSpring`, `setInterval`, `requestAnimationFrame`, `easing`, `tween`, `keyframe`, `animate`), no judgement / weighting token (`priority`, `risk`, `severity`, `score`, `weight`, `urgency`, `importance`), no time token (`timeline`, `duration`, `elapsed`), and no traffic-light colour name (`warning`, `danger`). Comments are stripped before scanning so documentation that NAMES the forbidden tokens does not trip the assertion. |
 | `governance/portfolioStore.ts` (`assertAllowedFields` at write, `isValidEntry` at read) | called from the freeze flow and on every portfolio read | The 17-field allow-list is the only shape that ever reaches storage; corrupted entries are silently dropped at read time. |
 | `governance/signalsStore.ts` (`assertAllowedTopLevel`, `assertAllowedEvidenceInput`, `endsWithQuestionMark` validator, `isValidSignal`) | called from the signals create / advance flow and on every read | The 11-field top-level allow-list, the nested `evidenceSummary` / `relatedEntries` allow-lists, and the question-mark constraint on `interpretationGuidance` are enforced both at write and at read. |
+| `ctad/ctadIsolationInvariants.test-shape.ts` (denylist + allowlist scan over raw CTAD sources via two Vite globs — `/src/ctad/**/*.{ts,tsx}` and `/src/pages/ctad/**/*.{ts,tsx}` — loaded with `{ eager: true, query: '?raw', import: 'default' }`; PLUS five hardened portfolioStore import-form scans; PLUS a module-load self-test that proves each forbidden form throws and the approved form passes) | `App.tsx` (side-effect import) | CTAD imports nothing from any decision-mutating module: the denylist forbids any import of `governance/adsBuilder`, `governance/ecpBuilder`, `governance/ecpSections`, `governance/exposureDerive`, `governance/exposureNarratives`, `governance/responsibilityLens`, `governance/scenarioReading`, `governance/decisionReentry`, `governance/signalsStore`, `governance/export`, `governance/hash`, `governance/identity`, `governance/togafContainment`, `governance/misusePlaybooks`, the architecture grammar package, and any module under `acw/`. The portfolio store is reachable only through a NAMED-IMPORT block restricted to the read-only allowlist `{ listEntries, type PortfolioEntry }`; namespace imports (`import * as`), default imports, mixed default+named imports, side-effect-only imports, and dynamic `import("...portfolioStore")` are all rejected outright with explicit error messages. The self-test exercises each forbidden shape against a synthetic source string at module load so a future loosening of the regex patterns is itself caught synchronously. |
+| `ctad/ctadGrammarInvariants.test-shape.ts` (synchronous module-load assertions over the v1 CTAD registry, store schema, and an in-memory probe round-trip) | `App.tsx` (side-effect import) | CTAD v1 grammar shape is locked: schema version is exactly `ctad-1.0`; the registry contains exactly the four canonical sections in canonical order (`infrastructure`, `application`, `integration`, `crossCutting`); every section is non-empty; every parameter id is unique and matches camelCase shape; every parameter declares a non-empty options list; no parameter is marked `required` (CTAD is optional everywhere by construction). A live probe set/clear round-trip then asserts that clearing the only param of an otherwise-empty binding removes the binding from the persisted document — the empty-binding-leak path is closed at module load. |
+| `governance/staticTextGuard.ts` (`assertAllCtadLanguage` invocations + spec-equality exemption for the brief-mandated empty-state sentence) | `ctad/ctadRegistry.ts` (registry assertion at module load), `pages/ctad/CtadEntry.tsx`, `pages/ctad/CtadShell.tsx` | Every CTAD-authored static label, hint, parameter name, parameter option, section title, button caption, references-panel item, and binding-panel field label is asserted against `CTAD_FORBIDDEN`. Exactly one literal sentence is exempt and is enforced by a frozen-constant equality check. |
 
 These invariants are intentionally redundant with manual review: a
 reviewer can always be persuaded; a thrown exception during
@@ -1853,3 +1921,234 @@ iteration if needed.
   invariant continues to scan v3 source files; the only new
   external imports are `three` and `@react-three/fiber`, both
   already on the ACW allowlist.
+
+---
+
+## 19. CTAD — Conceptual Technology Architecture Design
+
+The third peer plane of the Architecture Decision Canvas. Sits
+alongside ADC (decision authority) and ACW (structural
+visualisation). Surfaces an interpretive, reversible categorical
+exploration of the technology configurations that *would be
+permitted* by an already-frozen architecture decision, without
+ever participating in the decision itself.
+
+### Position in the system
+
+CTAD is **not** a wizard, **not** a builder, **not** a recommender,
+and **not** an authority. It records nothing into ADS, ECP, the
+portfolio entry, the policy signals store, the exposure surface,
+the constitutional containment surface, or the grammar engine. It
+holds a per-binding state document in its own localStorage key
+(`ctad.state.v1`) and exposes that state as a deterministic
+`CTAD_STATE` snapshot that downstream surfaces (a future ACW
+intake, a future export, etc.) can read read-only.
+
+CTAD reads from exactly one place: `governance/portfolioStore.ts`,
+restricted by build-time invariant to the named-import allowlist
+`{ listEntries, type PortfolioEntry }`. Every other import form
+of the portfolio store is rejected at module load.
+
+### Files
+
+- `artifacts/canvas-ui/src/ctad/ctadRegistry.ts` — frozen
+  4-section registry with all categorical parameters; deep-frozen
+  at module load; every label and option asserted against the
+  CTAD vocabulary tier.
+- `artifacts/canvas-ui/src/ctad/ctadStore.ts` — `localStorage`
+  store at `ctad.state.v1`, per-binding write API, deterministic
+  `CTAD_STATE` export, monotonic store-version counter for React
+  `useSyncExternalStore` consumers.
+- `artifacts/canvas-ui/src/ctad/ctadIsolationInvariants.test-shape.ts`
+  — module-load denylist + allowlist scan over raw CTAD sources
+  PLUS hardened multi-form portfolioStore read-only scan PLUS a
+  self-test fixture proving each forbidden import shape throws and
+  the approved shape passes.
+- `artifacts/canvas-ui/src/ctad/ctadGrammarInvariants.test-shape.ts`
+  — module-load grammar shape lock + empty-binding leak probe.
+- `artifacts/canvas-ui/src/pages/ctad/CtadEntry.tsx` — frozen
+  decisions list at `/ctad`; empty state shows the brief-mandated
+  verbatim sentence and no other affordance.
+- `artifacts/canvas-ui/src/pages/ctad/CtadShell.tsx` — bound
+  exploration at `/ctad/:adsId/:adsVersion`: read-only ADC
+  binding panel, four collapsible state-driven sections, live
+  `CTAD_STATE` JSON preview, references catalogues panel.
+
+### Registry — four canonical sections
+
+The registry is the single source of truth for what CTAD lets a
+user explore. It is deep-frozen at module load and every label /
+option is asserted against `CTAD_FORBIDDEN`.
+
+| Section id | TOGAF-aligned theme | Examples of parameters |
+| --- | --- | --- |
+| `infrastructure` | Compute, storage, network, runtime | compute model, storage class, network components (multi), deployment fabric, runtime platform |
+| `application` | Application platform, framework, data plane | application style, framework family, data store class, processing pattern |
+| `integration` | Integration style, protocols, contracts | integration style, transport protocol, contract style, async pattern |
+| `crossCutting` | Cross-cutting concerns | observability surface, identity model, secrets handling, packaging |
+
+Each parameter is one of:
+
+- `single` — exactly one option (or unspecified).
+- `multi` — zero or more options (used only for `networkComponents`
+  in v1).
+
+No parameter is `required`. The registry is intentionally
+permissive: every parameter defaults to "Not specified" and the
+user may leave the entire shell blank.
+
+### Store contract
+
+```
+localStorage["ctad.state.v1"] =
+  {
+    schemaVersion: "ctad-1.0",
+    bindings: {
+      "<adsId>@<adsVersion>": {
+        adsId, adsVersion,
+        params: { [paramId]: string | string[] },
+        updatedAt: ISO8601
+      },
+      ...
+    }
+  }
+```
+
+Invariants enforced in code:
+
+1. **Schema lock** — `schemaVersion` is exactly `"ctad-1.0"`; any
+   other value causes the store to read as empty.
+2. **Registry validation on write** — `setCtadParam(b, paramId, v)`
+   throws if `paramId` is not in the registry, or if `v` is not a
+   permitted option (single) / not an array of permitted options
+   (multi).
+3. **No empty-binding leak** — clearing the only param of a binding
+   removes the binding key from the document; clearing a param on
+   a binding that does not exist is a fast-path no-op. The grammar
+   invariant exercises a probe round-trip at module load to prove
+   this.
+4. **Deterministic export** — `exportCtadState(b)` (and its alias
+   `getCtadState(b)`) walks `CTAD_SECTIONS` in registry order and,
+   for every parameter in registry order, writes either the stored
+   value or `null`. Output is grouped by section id and is safe to
+   `JSON.stringify` for downstream consumers.
+5. **Subscription is contract-correct** — views adapt the store
+   to React via `useSyncExternalStore(subscribe, getStoreVersion)`.
+   `getStoreVersion` is a monotonic counter incremented inside
+   `writeDoc`, satisfying React's snapshot-stability requirement.
+   Returning `Date.now()` or any fresh-identity value from the
+   snapshot function is documented as a banned pattern in the
+   store source.
+
+### Vocabulary tier
+
+CTAD has its own **standalone** vocabulary tier
+`CTAD_FORBIDDEN`, sibling to every existing governance tier and
+not a strict superset of any of them (see §10). Forbidden tokens:
+`approve`, `approved`, `confirm`, `recommend`, `recommended`,
+`best`, `optimal`, `optimise`, `optimize`, `final`, `score`,
+`ranked`, `ranking`, `mandate`, `justify`, `enforce`, `must`.
+
+Asserted at module load via `assertAllCtadLanguage` over:
+
+- every section title and option in `ctadRegistry.ts`,
+- every static label, hint, button caption, and references-panel
+  item in `CtadShell.tsx`,
+- every static label in `CtadEntry.tsx` *except* the
+  brief-mandated sentence "CTAD requires an approved
+  architectural decision." (spec-equality exemption — see §10).
+
+The bound shell deliberately labels the underlying portfolio
+field `approvingAuthority` as **"Decision authority"** to keep
+CTAD-authored copy free of "approving"-family tokens. The
+`LandingPage.tsx` CTAD card uses denial vocabulary
+("approved decision", "No approval, no recommendation, no
+scoring") to describe what CTAD is NOT; that copy lives outside
+`src/ctad/**` and `src/pages/ctad/**` and is intentionally not
+asserted against the CTAD tier — the rationale is documented
+inline in `LandingPage.tsx`.
+
+### UI behaviour
+
+- **`/ctad` (entry).** Lists every frozen ADC entry returned by
+  `listEntries()`, with project name, decision authority, decision
+  date, and ADS id/version. Clicking a row opens the bound shell.
+  When `listEntries()` is empty, the page shows the verbatim
+  brief-mandated sentence and no CTA.
+- **`/ctad/:adsId/:adsVersion` (bound shell).** Renders four
+  panels in fixed order:
+  1. **ADC binding (read-only)** — project, decision authority,
+     decision date, ADS id, ADS version, organisation type,
+     sensitivity level, system intent, expected lifespan,
+     in-scope capability count. Hint copy makes the read-only
+     contract explicit.
+  2. **Technology parameters** — four collapsible sections from
+     the registry. Each parameter renders as a single-select or
+     multi-select control with explicit "Not specified"
+     semantics. Selections are reversible at any time.
+  3. **`CTAD_STATE` (live preview)** — pretty-printed JSON of
+     `exportCtadState(binding)`, refreshed on every store
+     mutation via the `useSyncExternalStore` adapter.
+  4. **References** — plain-link catalogues for vendor-neutral
+     reference reading; the panel description carries no
+     ranking, scoring or selection signal.
+- **No wizard, no progress, no submit, no finalise.** There is no
+  "submit" button, no "approve" button, no "validate" call, no
+  step counter, no progress bar.
+
+### Routes and navigation
+
+- `/ctad` → `pages/ctad/CtadEntry.tsx`
+- `/ctad/:adsId/:adsVersion` → `pages/ctad/CtadShell.tsx`
+
+`App.tsx` mounts both routes and side-effect-imports both CTAD
+invariant modules so a corrupted registry, a regressed isolation
+boundary, or a regressed grammar shape fails the bundle
+synchronously at module load.
+
+`GlobalNav.tsx` adds a CTAD entry between *Decision Canvas* and
+*Portfolio*. `LandingPage.tsx` is updated from two cards to three
+equal peer cards (ADC | CTAD | ACW) with the heading copy "Three
+surfaces are available".
+
+### Non-goals (intentional, documentary)
+
+- CTAD does **not** recommend, score, rank, approve, finalise,
+  weight, evaluate, or validate technology choices.
+- CTAD does **not** mutate ADC artefacts (ADS, ECP, portfolio
+  entry).
+- CTAD does **not** import from `governance/adsBuilder`,
+  `governance/ecpBuilder`, `governance/ecpSections`,
+  `governance/exposureDerive`, `governance/exposureNarratives`,
+  `governance/responsibilityLens`, `governance/scenarioReading`,
+  `governance/decisionReentry`, `governance/signalsStore`,
+  `governance/export`, `governance/hash`, `governance/identity`,
+  `governance/togafContainment`, `governance/misusePlaybooks`,
+  the architecture grammar package, or any module under `acw/`.
+  The isolation invariant rejects each of these at module load.
+- CTAD does **not** participate in the Phase 6 constitutional
+  refusal surface; it is a plane *under* the constitutional layer
+  in the same sense ACW is.
+- CTAD does **not** have a 3D rendering, animation, or live
+  derivation. The live preview is a pretty-print of stored state.
+
+### Strictly removable
+
+CTAD is strictly removable to the pre-CTAD bundle. To remove:
+
+- delete `src/ctad/`, `src/pages/ctad/`,
+- remove the two CTAD route definitions and the two CTAD
+  invariant side-effect imports from `App.tsx`,
+- remove the CTAD entry from `GlobalNav.tsx`,
+- remove the CTAD card from `LandingPage.tsx` (and revert the
+  heading copy to "Two surfaces are available"),
+- remove the `CTAD_FORBIDDEN` tier and the
+  `assertCtadLanguage` / `assertAllCtadLanguage` helpers from
+  `governance/staticTextGuard.ts`,
+- delete the `ctad.state.v1` localStorage key for every user
+  (optional cleanup; the bundle will not read it once the store
+  is removed).
+
+No other surface depends on CTAD. ADC, ACW, the Reflection view,
+the Decision Exposure View, and the Phase 6 Containment surface
+all continue to function unchanged.
