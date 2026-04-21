@@ -2331,8 +2331,17 @@ src/pages/acw/track3/
    health, maturity, correctness), ZERO time tokens (timeline,
    duration, elapsed), ZERO traffic-light colour names, and ZERO
    recommendation tokens (recommended, optimal, optimised,
-   optimized, best, validated, approved). Comments and string
-   literals are stripped before scanning.
+   optimized, best, validated, approved). ONLY comments are
+   stripped before scanning; string literals ARE scanned, so a
+   banned token smuggled as a runtime label, alt-text,
+   className suffix, or test id (e.g. `"red"`, `"recommended"`)
+   is caught — that is precisely the leak vector this gate
+   exists to close. The scan is genuinely case-insensitive (the
+   source is lowercased and each token's regex is built from
+   the lowercased token spelling), and a module-load
+   `selfTestCaseInsensitivity()` proves the scanner detects
+   `useFrame`, `setInterval`, and `requestAnimationFrame` in
+   their authored camelCase against synthetic source.
 
 All four are imported as side effects from `App.tsx` so any
 regression fails the application bundle at module load.

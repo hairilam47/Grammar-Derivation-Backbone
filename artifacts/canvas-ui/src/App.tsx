@@ -57,6 +57,7 @@ import "@/acw/track3/acwTrack3StructureInvariants.test-shape";
 import "@/acw/track3/acwTrack3ForbiddenSemantics.test-shape";
 import "@/acw/track3/acwTrack3DerivationInvariants.test-shape";
 import "@/acw/track3/acwTrack3FocusIsolationInvariants.test-shape";
+import "@/acw/track3/acwTrack3ViewPrefsInvariants.test-shape";
 
 function DarkModeApplier() {
   useEffect(() => {
