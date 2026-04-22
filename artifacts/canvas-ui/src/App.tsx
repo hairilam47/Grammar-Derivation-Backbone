@@ -51,6 +51,7 @@ import "@/ctad/ctadGrammarInvariants.test-shape";
 // catalog validation (every binding hint targets a paramId /
 // option that exists in the live CTAD registry).
 import "@/cncf/cncfIsolationInvariants.test-shape";
+import "@/diagramspec/diagramspecIsolationInvariants.test-shape";
 import "@/cncf/cncfCatalog";
 import "@/components/ctad/quotedSourceBoundary.test-shape";
 // ACW Track 3 — module-load side effects: build-time isolation

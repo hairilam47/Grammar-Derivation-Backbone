@@ -23,6 +23,12 @@
     },
     {
       "path": "../../lib/cncf-catalog"
+    },
+    {
+      "path": "../../lib/diagramspec"
+    },
+    {
+      "path": "../../lib/diagram-layout"
     }
   ]
 }
