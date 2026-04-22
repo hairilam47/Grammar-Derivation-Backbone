@@ -122,8 +122,6 @@ export function getActiveJustifications(
   binding: CtadBinding,
   paramId: string,
 ): readonly { readonly cardId: string; readonly rationale: string }[] {
-  const doc = getBindingDoc(binding);
-  void doc;
   const out: { cardId: string; rationale: string }[] = [];
   for (const e of getAppliedCardsForBinding(binding)) {
     for (const j of e.justifies) {

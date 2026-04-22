@@ -841,7 +841,6 @@ function CardRow({
 }
 
 function PreviewModal({
-  binding,
   card,
   preview,
   onCancel,
@@ -853,7 +852,6 @@ function PreviewModal({
   onCancel: () => void;
   onCommit: () => void;
 }) {
-  void binding; // accepted for future use; not currently read
   const blocked = preview.conflicts.length > 0;
   const empty =
     preview.setEffects.length === 0 &&
