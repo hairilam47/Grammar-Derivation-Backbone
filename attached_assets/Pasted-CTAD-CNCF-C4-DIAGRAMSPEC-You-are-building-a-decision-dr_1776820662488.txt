@@ -1,0 +1,167 @@
+CTAD / CNCF / C4 / DIAGRAMSPEC
+You are building a decision‑driven Architecture Configuration and Visualization System.
+
+========================
+AUTHORITATIVE MODELS
+========================
+- CTAD_STATE is the ONLY source of architectural truth.
+- CNCF Cloud Native Landscape is a reference catalog only.
+  Source of truth: https://github.com/cncf/landscape
+- C4 Model is used as a DIAGRAM ARCHITECTURE CONTRACT (not documentation).
+- DiagramSpec is a STRICT intermediate representation.
+- ELK.js performs layout only.
+- Three.js is a renderer only and must never decide layout or semantics.
+
+========================
+CORE NON‑NEGOTIABLE PRINCIPLES
+========================
+1. Users interact ONLY via:
+   - Step‑based CTAD configuration
+   - Cards (including CNCF cards)
+   - Toggles, lists, discrete inputs
+
+2. Diagrams are:
+   - Derived
+   - Read‑only
+   - Deterministic
+   - Reactive to CTAD_STATE
+   - Never directly editable
+
+3. Rendering stack separation must be enforced:
+   CTAD_STATE
+     → CTAD → DiagramSpec Transformer (semantic compiler)
+     → DiagramSpec
+     → ELK Layout
+     → Three.js Render
+
+Any renderer reading CTAD_STATE directly is a bug.
+
+========================
+CNCF INTEGRATION (REFERENCE CATALOG)
+========================
+- CNCF data is mirrored locally as read‑only JSON.
+- CNCF is vocabulary only, not architecture.
+- CNCF cards NEVER create structure or diagram nodes.
+- CNCF cards may emit explicit decision signals via bindingHints:
+    - "sets"       (assign CTAD value)
+    - "constrains" (limit allowable options)
+    - "justifies"  (record rationale)
+
+If a CNCF card has no bindingHints, it is reference‑only.
+
+========================
+CTAD → DIAGRAMSPEC TRANSFORMER (MANDATORY)
+========================
+Implement a pure, deterministic compiler that:
+
+1. Reads a CTAD_STATE snapshot (read‑only).
+2. Determines whether a diagram is valid.
+3. Selects EXACTLY ONE C4 view type:
+   - context
+   - container
+   - component
+   - deployment
+4. Selects the appropriate architecture layer.
+5. Emits ONLY nodes and relationships implied by CTAD_STATE.
+6. Enforces C4 semantics (no mixed views).
+7. Outputs a valid DiagramSpec JSON object.
+
+The compiler MUST NOT:
+- compute coordinates
+- style visuals
+- access Three.js
+- access ELK
+- mutate CTAD
+- access CNCF data
+
+All diagrams MUST originate from DiagramSpec.
+
+========================
+ARCHITECTURE STRATA (3D Z‑AXIS MEANING)
+========================
+Z‑axis represents architecture layers ONLY:
+- organization
+- strategy
+- business
+- application
+- technology
+
+Users do not edit architecture in 3D.
+Users select a layer → a constrained view is rendered inside it.
+
+========================
+C4 VIEW CONTRACT (STRICT)
+========================
+Each DiagramSpec declares ONE viewType:
+
+- context       → organization, strategy
+- container     → business, application
+- component     → application
+- deployment    → technology
+
+Mixing C4 semantics in one diagram is forbidden.
+
+========================
+LAYOUT RULES (ELK)
+========================
+- ELK.js is the only layout engine.
+- Axis meaning is fixed:
+    X → interaction / flow
+    Y → containment / C4 depth
+    Z → architecture layer
+- If an axis has no explicit meaning, do not render it.
+
+========================
+DEPLOYMENT VIEW
+========================
+- Deployment view uses hierarchical ELK graphs.
+- Environments are rendered as nested containers.
+- Runtime nodes are allocated inside environments.
+- Relationships:
+    - hosts
+    - connects-to
+- No other view may emit environments.
+
+========================
+ANIMATED CTAD TRANSITIONS
+========================
+- On CTAD_STATE change:
+   1. Recompile DiagramSpec
+   2. Re‑run ELK layout once
+   3. Animate node position changes (lerp)
+- No physics engines
+- No random motion
+- Topology changes are discrete; movement is animated.
+
+========================
+LAYER TOGGLE (NO RELAYOUT)
+========================
+- Layout is global and cached.
+- Each architecture layer is a Three.js Group.
+- Toggling a layer only changes visibility or opacity.
+- ELK is never re‑run for visibility changes.
+
+========================
+DIAGRAMSPEC CONTRACT
+========================
+Enforce a DiagramSpec JSON schema containing:
+- viewType
+- layer
+- layout metadata (engine, axis meaning)
+- nodes (id, type, ctadRef)
+- edges (from, to, relation)
+
+Reject invalid DiagramSpec at runtime and in tests.
+
+========================
+UX GOAL
+========================
+The system must feel like configuring a serious cloud platform:
+- rigid
+- guided
+- auditable
+- calm
+- confidence‑inducing
+
+Never free‑form diagram editing.
+Never exploratory diagram theatre.
