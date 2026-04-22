@@ -44,11 +44,24 @@ async function runOnLoad(): Promise<void> {
     const path = await import("node:path");
     const url = await import("node:url");
     const here = url.fileURLToPath(import.meta.url);
-    const dir = path.dirname(here);
+    const root = path.dirname(here);
     const sources: Record<string, string> = {};
-    for (const name of fs.readdirSync(dir)) {
-      if (!name.endsWith(".ts")) continue;
-      sources[name] = fs.readFileSync(path.join(dir, name), "utf8");
+    // Recursive walk: future reorganisation into nested
+    // subdirectories under `lib/diagramspec/src/` should remain
+    // covered by this module-load invariant without code changes.
+    const stack: string[] = [root];
+    while (stack.length > 0) {
+      const dir = stack.pop() as string;
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          stack.push(full);
+          continue;
+        }
+        if (!entry.isFile() || !entry.name.endsWith(".ts")) continue;
+        const rel = path.relative(root, full);
+        sources[rel] = fs.readFileSync(full, "utf8");
+      }
     }
     assertNoForbiddenDiagramspecImports(sources);
   } catch (err) {
