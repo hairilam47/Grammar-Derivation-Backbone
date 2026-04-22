@@ -52,6 +52,7 @@ import "@/ctad/ctadGrammarInvariants.test-shape";
 // option that exists in the live CTAD registry).
 import "@/cncf/cncfIsolationInvariants.test-shape";
 import "@/cncf/cncfCatalog";
+import "@/components/ctad/quotedSourceBoundary.test-shape";
 // ACW Track 3 — module-load side effects: build-time isolation
 // (allowlist + denylist + read-only named-import scan), structural
 // identity (both renderers consume `enumerateLensVisibility`),

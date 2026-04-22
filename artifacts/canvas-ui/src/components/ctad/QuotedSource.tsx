@@ -22,9 +22,10 @@ export interface QuotedSourceProps {
   readonly source: string;
   readonly children: ReactNode;
   readonly testId?: string;
+  readonly inline?: boolean;
 }
 
-export function QuotedSource({ source, children, testId }: QuotedSourceProps) {
+export function QuotedSource({ source, children, testId, inline = false }: QuotedSourceProps) {
   return (
     <span
       data-quoted-source={source}
@@ -34,9 +35,11 @@ export function QuotedSource({ source, children, testId }: QuotedSourceProps) {
       <span aria-hidden="true">&ldquo;</span>
       {children}
       <span aria-hidden="true">&rdquo;</span>
-      <span className="not-italic ml-1 text-[10px] uppercase tracking-wider text-muted-foreground/70">
-        — {source}
-      </span>
+      {inline ? null : (
+        <span className="not-italic ml-1 text-[10px] uppercase tracking-wider text-muted-foreground/70">
+          — {source}
+        </span>
+      )}
     </span>
   );
 }

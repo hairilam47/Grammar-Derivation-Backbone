@@ -1,29 +1,20 @@
-// CNCF binding-hint engine.
+// CNCF binding-hint engine — READ-ONLY surface.
 //
-// Pure helpers that translate a CNCF card's binding hints into:
-//   (a) a deterministic preview of what applying the card would
-//       do to a CTAD binding, including any conflicts with
-//       previously-applied constraints; and
-//   (b) the side-effecting `applyCard` / `removeAppliedCard`
-//       routines that mutate the value store, the constraints
-//       store, and the applied-cards audit log.
+// This module is the boundary between the frozen CNCF catalog and
+// the CTAD store. It deliberately does not import any write-side
+// CTAD APIs (no setCtadParam, no addContribution, no
+// recordAppliedCard). All it does is:
 //
-// `previewCardApplication` writes nothing. It is safe to invoke
-// from a render path (e.g. inside the preview-before-commit
-// modal) without any cleanup.
+//   - compute a deterministic, side-effect-free preview of what
+//     applying a card would do, given the current binding state;
+//   - report which paramIds in a card's hints belong to which
+//     CTAD section, for the per-section "Relevant cards" panel.
 //
-// `applyCard` writes in this order:
-//   1. constraints store (so set effects are validated against
-//      the post-apply constraint state, not the pre-apply state)
-//   2. value store (set effects)
-//   3. applied-cards audit log
-//
-// `removeAppliedCard` writes in inverse order:
-//   1. applied-cards audit log
-//   2. value store (restore `before` only if the current value
-//      still equals `after`; if the user has already changed it,
-//      do not clobber the user's choice)
-//   3. constraints store
+// The side-effecting `applyCard` / `removeAppliedCard` /
+// `getActiveJustifications` / `contributingCardIds` operations live
+// in @/ctad/cncfApplyService — outside the @/cncf isolation
+// boundary — so the CTAD store retains exclusive ownership of all
+// state mutation.
 
 import type { CncfCard } from "./cncfTypes";
 import {
@@ -32,25 +23,11 @@ import {
   type CtadSectionId,
 } from "@/ctad/ctadRegistry";
 import {
-  getBindingDoc,
   getCtadParam,
-  setCtadParam,
   type CtadBinding,
   type CtadParamValue,
 } from "@/ctad/ctadStore";
-import {
-  addContribution,
-  getActiveAllowedOptions,
-  getContributions,
-  removeCardContributions,
-} from "@/ctad/ctadConstraintsStore";
-import {
-  getAppliedEntry,
-  isCardApplied,
-  recordAppliedCard,
-  removeAppliedCardEntry,
-  type AppliedCardEntry,
-} from "@/ctad/ctadAppliedCardsStore";
+import { getActiveAllowedOptions } from "@/ctad/ctadConstraintsStore";
 
 export interface PreviewSetEffect {
   readonly paramId: string;
@@ -105,8 +82,6 @@ export function previewCardApplication(
       });
       continue;
     }
-    // Existing active allowed (or the full registry option list
-    // if no contributions exist yet).
     const currentActive =
       getActiveAllowedOptions(binding, hint.paramId) ?? [...param.options];
     const allow = new Set(hint.allowedOptions);
@@ -135,9 +110,6 @@ export function previewCardApplication(
         });
         continue;
       }
-      // Validate against the simulated post-apply constraint set
-      // if this card also constrains this param; otherwise the
-      // current active set; otherwise the full option list.
       const postActive =
         simulatedConstraints.get(hint.paramId) ??
         getActiveAllowedOptions(binding, hint.paramId) ??
@@ -173,137 +145,6 @@ export function previewCardApplication(
   };
 }
 
-// Side-effecting. Returns the AppliedCardEntry that was
-// recorded. Throws if the card is already applied (caller should
-// remove it first) or if the preview reports any conflict.
-export function applyCard(
-  binding: CtadBinding,
-  card: CncfCard,
-): AppliedCardEntry {
-  if (isCardApplied(binding, card.id)) {
-    throw new Error(
-      `CNCF engine: card "${card.id}" is already applied to this binding. Remove it first.`,
-    );
-  }
-  const preview = previewCardApplication(binding, card);
-  if (preview.conflicts.length > 0) {
-    throw new Error(
-      `CNCF engine: cannot apply card "${card.id}" — ${preview.conflicts.length} conflict(s): ${preview.conflicts.map((c) => c.reason).join("; ")}`,
-    );
-  }
-  const appliedAt = new Date().toISOString();
-
-  // (1) Constraints first.
-  for (const eff of preview.constraintEffects) {
-    addContribution(binding, eff.paramId, {
-      cardId: card.id,
-      allowedOptions: eff.addsAllowedOptions,
-      appliedAt,
-    });
-  }
-  // (2) Value sets next (now validated against post-apply constraints).
-  for (const eff of preview.setEffects) {
-    setCtadParam(binding, eff.paramId, eff.after);
-  }
-  // (3) Audit log.
-  const entry: AppliedCardEntry = {
-    cardId: card.id,
-    appliedAt,
-    sets: preview.setEffects.map((e) => ({
-      paramId: e.paramId,
-      before: e.before,
-      after: e.after,
-    })),
-    constrains: preview.constraintEffects.map((e) => ({
-      paramId: e.paramId,
-      allowedOptions: e.addsAllowedOptions,
-    })),
-    justifies: preview.justifyEffects.map((e) => ({
-      paramId: e.paramId,
-      rationale: e.rationale,
-    })),
-  };
-  recordAppliedCard(binding, entry);
-  return entry;
-}
-
-// Side-effecting. Removes a previously-applied card. Restores
-// `before` values for each set effect ONLY IF the current value
-// still equals `after`; otherwise leaves the user's manual choice
-// alone. Always removes the constraint contributions and the
-// audit entry.
-export function removeAppliedCard(
-  binding: CtadBinding,
-  cardId: string,
-): boolean {
-  const entry = getAppliedEntry(binding, cardId);
-  if (!entry) return false;
-
-  // (1) Audit entry first so re-entrant subscribers see the
-  // applied-cards list shrink before the value/constraint changes
-  // ripple through.
-  removeAppliedCardEntry(binding, cardId);
-
-  // (2) Restore set effects, but only when the current value
-  // still equals what we set.
-  for (const eff of entry.sets) {
-    const current = getCtadParam(binding, eff.paramId);
-    if (paramValueEquals(current, eff.after)) {
-      setCtadParam(binding, eff.paramId, eff.before);
-    }
-  }
-
-  // (3) Remove constraint contributions for this card.
-  removeCardContributions(binding, cardId);
-
-  return true;
-}
-
-function paramValueEquals(a: CtadParamValue, b: CtadParamValue): boolean {
-  if (a === b) return true;
-  if (a == null || b == null) return false;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-    return true;
-  }
-  return false;
-}
-
-// Helper: inspect the active justifications for a param across
-// all currently-applied cards. Used by the parameter-row UI to
-// show "Why this option set is constrained" tooltips.
-export function getActiveJustifications(
-  binding: CtadBinding,
-  paramId: string,
-): readonly { readonly cardId: string; readonly rationale: string }[] {
-  const doc = getBindingDoc(binding);
-  void doc; // touch to participate in the value-store version surface
-  const out: { cardId: string; rationale: string }[] = [];
-  // Iterate the audit log directly so we capture every justify
-  // effect from every applied card, in insertion order.
-  // (Imported lazily to avoid a circular surface from this helper
-  // back into the audit module's typings.)
-  const entries = getAppliedCardsForBindingLocal(binding);
-  for (const e of entries) {
-    for (const j of e.justifies) {
-      if (j.paramId === paramId) {
-        out.push({ cardId: e.cardId, rationale: j.rationale });
-      }
-    }
-  }
-  return out;
-}
-
-function getAppliedCardsForBindingLocal(b: CtadBinding) {
-  // Re-import via the module surface (TS treats the local require
-  // as side-effect-free re-export). We use a normal import at the
-  // top of the file and call it here for clarity.
-  return _getAppliedCardsForBinding(b);
-}
-
-import { getAppliedCardsForBinding as _getAppliedCardsForBinding } from "@/ctad/ctadAppliedCardsStore";
-
 // Section relevance pass-through, re-exported for the UI panel.
 export function paramIdsBySection(
   card: CncfCard,
@@ -321,14 +162,4 @@ export function paramIdsBySection(
     out[sec].push(hint.paramId);
   }
   return out;
-}
-
-// Contribution preview for the parameter-row "constraint badge"
-// UI: returns the set of contributing card ids for a paramId,
-// derived from the live constraint store.
-export function contributingCardIds(
-  binding: CtadBinding,
-  paramId: string,
-): readonly string[] {
-  return getContributions(binding, paramId).map((c) => c.cardId);
 }

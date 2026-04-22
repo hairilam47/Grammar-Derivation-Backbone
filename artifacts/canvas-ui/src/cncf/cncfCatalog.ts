@@ -276,6 +276,7 @@ const CARDS_RAW: readonly CncfCard[] = [
     bindingHints: [
       { kind: "constrains", paramId: "cryptographyScope", allowedOptions: ["In-transit", "Both"] },
       { kind: "constrains", paramId: "containerOrchestration", allowedOptions: ["Kubernetes"] },
+      { kind: "justifies", paramId: "secretsHandling", rationale: "Issued TLS material is delivered as Kubernetes Secret objects; co-locates well with a vault-backed secret manager." },
     ],
   },
   {
@@ -302,6 +303,7 @@ const CARDS_RAW: readonly CncfCard[] = [
       "Strongly consistent, distributed key-value store used as the backing store for cluster configuration, including in Kubernetes.",
     bindingHints: [
       { kind: "constrains", paramId: "databaseClass", allowedOptions: ["Key-Value"] },
+      { kind: "justifies", paramId: "configurationManagement", rationale: "Provides a centralised, strongly-consistent backing store for distributed configuration data." },
     ],
   },
   {
@@ -371,6 +373,7 @@ const CARDS_RAW: readonly CncfCard[] = [
       "Kubernetes-based platform for deploying and managing serverless workloads with event-driven autoscaling.",
     bindingHints: [
       { kind: "constrains", paramId: "containerOrchestration", allowedOptions: ["Kubernetes"] },
+      { kind: "constrains", paramId: "applicationStyle", allowedOptions: ["Microservices", "Event-driven"] },
     ],
   },
   {
@@ -407,7 +410,11 @@ const CARDS_RAW: readonly CncfCard[] = [
     maturity: "incubating",
     description:
       "Open platform for building developer portals, unifying tooling, services, and documentation in a single experience.",
-    bindingHints: [],
+    bindingHints: [
+      { kind: "constrains", paramId: "frontendArchitecture", allowedOptions: ["SPA"] },
+      { kind: "constrains", paramId: "frontendFrameworkClass", allowedOptions: ["React-like"] },
+      { kind: "justifies", paramId: "applicationStyle", rationale: "Service catalog and software-template hub for internal applications; complements modular and microservice estates." },
+    ],
   },
 ];
 
@@ -509,4 +516,26 @@ export function cardSections(card: CncfCard): readonly CtadSectionId[] {
 
 export function cardsForSection(sectionId: CtadSectionId): readonly CncfCard[] {
   return CNCF_CARDS.filter((c) => cardSections(c).includes(sectionId));
+}
+
+// (3) Section coverage invariant -------------------------------------
+// Every CTAD section must have at least one relevant card so that the
+// per-section "Relevant cards" panel is never empty for any section.
+{
+  const ALL_SECTIONS: readonly CtadSectionId[] = [
+    "infrastructure",
+    "application",
+    "integration",
+    "crossCutting",
+    "ops",
+  ];
+  const missing: CtadSectionId[] = [];
+  for (const s of ALL_SECTIONS) {
+    if (cardsForSection(s).length === 0) missing.push(s);
+  }
+  if (missing.length > 0) {
+    throw new Error(
+      `CNCF catalog: no cards are relevant to CTAD section(s) "${missing.join(", ")}". Every CTAD section must have at least one binding-hint reference in the frozen catalog.`,
+    );
+  }
 }

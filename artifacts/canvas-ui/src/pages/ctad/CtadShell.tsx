@@ -57,13 +57,17 @@ import {
 } from "@/ctad/ctadAppliedCardsStore";
 import {
   cardsForSection,
+  findCard,
 } from "@/cncf/cncfCatalog";
 import {
-  applyCard,
   previewCardApplication,
-  removeAppliedCard,
   type CardApplicationPreview,
 } from "@/cncf/cncfBindingEngine";
+import {
+  applyCard,
+  contributingCardIds,
+  removeAppliedCard,
+} from "@/ctad/cncfApplyService";
 import type { CncfCard } from "@/cncf/cncfTypes";
 import { QuotedSource } from "@/components/ctad/QuotedSource";
 
@@ -116,6 +120,8 @@ const LABELS = {
   constrainedToLabel: "Narrowed to",
   constraintConflictLabel: "No options remain",
   contributingCardsLabel: "From",
+  contributingCardRemove: "Remove",
+  contributingCardListLabel: "Applied cards on this parameter",
   // Preview modal.
   previewHeading: "Card application preview",
   previewSubheading: "Inspect the changes before they are written.",
@@ -527,6 +533,7 @@ function ParameterRow({
         </label>
         <ConstraintBadge
           paramId={param.id}
+          binding={binding}
           allowedSet={allowedSet}
           contribs={contribs}
         />
@@ -579,6 +586,7 @@ function ParameterRow({
       </div>
       <ConstraintBadge
         paramId={param.id}
+        binding={binding}
         allowedSet={allowedSet}
         contribs={contribs}
       />
@@ -588,10 +596,12 @@ function ParameterRow({
 
 function ConstraintBadge({
   paramId,
+  binding,
   allowedSet,
   contribs,
 }: {
   paramId: string;
+  binding: CtadBinding;
   allowedSet: Set<string> | null;
   contribs: ReturnType<typeof getContributions>;
 }) {
@@ -604,7 +614,7 @@ function ConstraintBadge({
       data-testid={`ctad-param-${paramId}-constraint-badge`}
     >
       <Lock className="w-3 h-3 mt-px shrink-0" aria-hidden="true" />
-      <div className="space-y-0.5 min-w-0">
+      <div className="space-y-1 min-w-0 flex-1">
         {conflict ? (
           <div>{LABELS.constraintConflictLabel}</div>
         ) : (
@@ -615,11 +625,49 @@ function ConstraintBadge({
             <span className="font-mono">{allowedList.join(", ")}</span>
           </div>
         )}
-        <div className="text-[10px] text-muted-foreground">
-          <span className="uppercase tracking-wider">
-            {LABELS.contributingCardsLabel}:
-          </span>{" "}
-          {contribs.map((c) => c.cardId).join(", ")}
+        <div
+          className="space-y-0.5"
+          data-testid={`ctad-param-${paramId}-contrib-list`}
+        >
+          <div className="uppercase tracking-wider text-muted-foreground">
+            {LABELS.contributingCardListLabel}:
+          </div>
+          <ul className="space-y-0.5">
+            {contribs.map((c) => {
+              const card = findCard(c.cardId);
+              return (
+                <li
+                  key={c.cardId}
+                  className="flex items-center justify-between gap-2"
+                  data-testid={`ctad-param-${paramId}-contrib-${c.cardId}`}
+                >
+                  <span className="font-mono">
+                    {c.cardId}
+                    {card ? (
+                      <>
+                        {" \u2014 "}
+                        <QuotedSource
+                          source="CNCF"
+                          testId={`ctad-param-${paramId}-contrib-${c.cardId}-name`}
+                          inline
+                        >
+                          {card.name}
+                        </QuotedSource>
+                      </>
+                    ) : null}
+                  </span>
+                  <button
+                    type="button"
+                    className="px-1.5 py-0.5 rounded border border-border/60 hover:bg-muted/30 text-[10px]"
+                    onClick={() => removeAppliedCard(binding, c.cardId)}
+                    data-testid={`ctad-param-${paramId}-contrib-${c.cardId}-remove`}
+                  >
+                    {LABELS.contributingCardRemove}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       </div>
     </div>
@@ -636,6 +684,15 @@ function RelevantCardsPanel({
   onPreviewCard: (card: CncfCard) => void;
 }) {
   const cards = useMemo(() => cardsForSection(sectionId), [sectionId]);
+  const grouped = useMemo(() => {
+    const map = new Map<string, CncfCard[]>();
+    for (const card of cards) {
+      const list = map.get(card.subcategory) ?? [];
+      list.push(card);
+      map.set(card.subcategory, list);
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [cards]);
   return (
     <div
       className="border border-border/30 rounded-md p-2 bg-card/20"
@@ -657,16 +714,35 @@ function RelevantCardsPanel({
           {LABELS.noRelevantCards}
         </p>
       ) : (
-        <ul className="space-y-1.5">
-          {cards.map((card) => (
-            <CardRow
-              key={card.id}
-              card={card}
-              binding={binding}
-              onPreview={() => onPreviewCard(card)}
-            />
+        <div className="space-y-2">
+          {grouped.map(([sub, items]) => (
+            <div
+              key={sub}
+              className="space-y-1"
+              data-testid={`ctad-relevant-cards-${sectionId}-group-${sub.replace(/\s+/g, "-").toLowerCase()}`}
+            >
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground/80 border-b border-border/30 pb-0.5">
+                <QuotedSource
+                  source="CNCF"
+                  testId={`ctad-relevant-cards-${sectionId}-group-${sub.replace(/\s+/g, "-").toLowerCase()}-label`}
+                  inline
+                >
+                  {sub}
+                </QuotedSource>
+              </div>
+              <ul className="space-y-1.5">
+                {items.map((card) => (
+                  <CardRow
+                    key={card.id}
+                    card={card}
+                    binding={binding}
+                    onPreview={() => onPreviewCard(card)}
+                  />
+                ))}
+              </ul>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
     </div>
   );
@@ -689,9 +765,24 @@ function CardRow({
     >
       <div className="min-w-0 space-y-0.5">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-bold">{card.name}</span>
+          <span className="text-xs font-bold">
+            <QuotedSource
+              source="CNCF"
+              testId={`ctad-card-${card.id}-name`}
+              inline
+            >
+              {card.name}
+            </QuotedSource>
+          </span>
           <span className="text-[10px] text-muted-foreground">
-            {LABELS.cardCategoryLabel}: {card.category} / {card.subcategory}
+            {LABELS.cardCategoryLabel}:{" "}
+            <QuotedSource
+              source="CNCF"
+              testId={`ctad-card-${card.id}-category`}
+              inline
+            >
+              {card.category} / {card.subcategory}
+            </QuotedSource>
           </span>
         </div>
         <div className="text-[10px]">
@@ -781,7 +872,13 @@ function PreviewModal({
           <CardTitle className="text-sm flex items-center justify-between">
             <span>{LABELS.previewHeading}</span>
             <span className="text-xs font-normal text-muted-foreground">
-              {card.name}
+              <QuotedSource
+                source="CNCF"
+                testId={`ctad-preview-${card.id}-name`}
+                inline
+              >
+                {card.name}
+              </QuotedSource>
             </span>
           </CardTitle>
           <CardDescription className="text-xs">
