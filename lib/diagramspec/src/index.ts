@@ -40,3 +40,10 @@ export type { ValidationResult } from "./validator";
 export { DIAGRAMSPEC_JSON_SCHEMA, evaluateAgainstSchema } from "./schema";
 
 export { assertNoForbiddenDiagramspecImports } from "./diagramspecIsolation";
+
+// Side-effect import: runs the package-local module-load
+// invariant so any consumer of `@workspace/diagramspec` immediately
+// fails closed if a forbidden renderer/layout/catalog import
+// sneaks into a package source file. See
+// `diagramspecIsolationInvariant.ts` for the environment notes.
+import "./diagramspecIsolationInvariant";

@@ -239,10 +239,16 @@ export function compileDiagramSpec(
 
     const seenNode = new Set<string>();
     const peerNodeIds: string[] = [];
-    for (const sel of selections) {
-      // One node per (env, selection) pair so containment is
-      // explicit and deterministic.
-      for (const envId of parentEnvs) {
+    // Iterate ENV-major / SELECTION-minor so peer node ids land in
+    // env-grouped runs in `peerNodeIds`. `appendPeerChainEdges`
+    // chains adjacent items only when they share the same env
+    // bucket — interleaved order would produce zero connects-to
+    // edges for any multi-env deployment, which violates the
+    // contract.
+    for (const envId of parentEnvs) {
+      for (const sel of selections) {
+        // One node per (env, selection) pair so containment is
+        // explicit and deterministic.
         const nodeId = `${nodeIdForParamValue(sel.section, sel.paramId, sel.option)}::${envId}`;
         if (seenNode.has(nodeId)) continue;
         seenNode.add(nodeId);

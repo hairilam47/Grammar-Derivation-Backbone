@@ -138,6 +138,44 @@ describe("compileDiagramSpec — empty in / empty out", () => {
   });
 });
 
+describe("compileDiagramSpec — deployment connects-to within multi-env", () => {
+  it("emits at least one connects-to edge per environment when 2+ technology selections exist", () => {
+    // FIXTURE_STATE has Distributed + Hybrid topology+hosting,
+    // which `synthesizeEnvironments` expands into multiple envs,
+    // and several technology-stratum selections (orchestration,
+    // resilience, network components). A regression in the
+    // peer-chain bucketing produced ZERO connects-to edges
+    // because adjacent ids straddled env boundaries.
+    const spec = compileDiagramSpec(FIXTURE_STATE, {
+      viewType: "deployment",
+      stratum: "technology",
+    });
+    const envs = spec.nodes.filter((n) => n.kind === "environment");
+    expect(envs.length).toBeGreaterThanOrEqual(2);
+    const connectsTo = spec.edges.filter((e) => e.relation === "connects-to");
+    expect(connectsTo.length).toBeGreaterThan(0);
+    // Every connects-to edge must stay within a single env.
+    const parentOf = new Map(spec.nodes.map((n) => [n.id, n.parentId] as const));
+    for (const e of connectsTo) {
+      expect(parentOf.get(e.from)).toBe(parentOf.get(e.to));
+      expect(parentOf.get(e.from)).not.toBeNull();
+    }
+    // And every env that contains 2+ host nodes must have at
+    // least one connects-to edge among its children.
+    for (const env of envs) {
+      const children = spec.nodes.filter(
+        (n) => n.parentId === env.id && n.kind !== "environment",
+      );
+      if (children.length >= 2) {
+        const inEnv = connectsTo.filter(
+          (e) => parentOf.get(e.from) === env.id,
+        );
+        expect(inEnv.length).toBeGreaterThan(0);
+      }
+    }
+  });
+});
+
 describe("compileDiagramSpec — deployment fallback when env synthesis is empty", () => {
   it("preserves technology selections even when topology+hosting are both null", () => {
     const stateNoEnvInputs: CtadStateLike = {
