@@ -390,39 +390,52 @@ function BoundShell({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {layoutPending ? (
-            <div
-              className="text-[11px] text-muted-foreground italic h-[360px] flex items-center justify-center border border-border/40 rounded-md bg-card/30"
-              data-testid="track3-layout-pending"
-            >
-              {LABELS.layoutPending}
-            </div>
-          ) : prefs.viewMode === "3d" ? (
-            <Track3Canvas3D
-              key={`3d:${binding.adsId}:${binding.adsVersion}`}
-              positionedDiagrams={positionedDiagrams}
-              hiddenSections={hiddenSections}
-              isolatedKeptIds={isolatedKeptIds}
-              selectedNodeId={selectedNodeId}
-              cameraX={prefs.cameraX}
-              cameraY={prefs.cameraY}
-              cameraZoom={prefs.cameraZoom}
-              onCameraChange={handleCameraChange}
-              onNodeClick={handleNodeClick}
-            />
-          ) : (
-            <Track3Canvas2D
-              positionedDiagrams={positionedDiagrams}
-              hiddenSections={hiddenSections}
-              isolatedKeptIds={isolatedKeptIds}
-              selectedNodeId={selectedNodeId}
-              cameraX={prefs.cameraX}
-              cameraY={prefs.cameraY}
-              cameraZoom={prefs.cameraZoom}
-              onCameraChange={handleCameraChange}
-              onNodeClick={handleNodeClick}
-            />
-          )}
+          {/* Render the canvas continuously across layout recomputes
+            * — replacing it with a placeholder would unmount the
+            * renderer and wipe the lerp/exit-lifecycle state in
+            * `MeshAnimator` (`prevTargetsRef`, `lastNodeSnapshotRef`,
+            * `exitingRef`), causing a hard cut on every CTAD refresh
+            * instead of the deterministic old→new interpolation the
+            * task contract requires. The pending state is surfaced
+            * as a non-destructive overlay on top of the canvas so
+            * the previous positioned set remains available as the
+            * lerp source. */}
+          <div className="relative">
+            {prefs.viewMode === "3d" ? (
+              <Track3Canvas3D
+                key={`3d:${binding.adsId}:${binding.adsVersion}`}
+                positionedDiagrams={positionedDiagrams}
+                hiddenSections={hiddenSections}
+                isolatedKeptIds={isolatedKeptIds}
+                selectedNodeId={selectedNodeId}
+                cameraX={prefs.cameraX}
+                cameraY={prefs.cameraY}
+                cameraZoom={prefs.cameraZoom}
+                onCameraChange={handleCameraChange}
+                onNodeClick={handleNodeClick}
+              />
+            ) : (
+              <Track3Canvas2D
+                positionedDiagrams={positionedDiagrams}
+                hiddenSections={hiddenSections}
+                isolatedKeptIds={isolatedKeptIds}
+                selectedNodeId={selectedNodeId}
+                cameraX={prefs.cameraX}
+                cameraY={prefs.cameraY}
+                cameraZoom={prefs.cameraZoom}
+                onCameraChange={handleCameraChange}
+                onNodeClick={handleNodeClick}
+              />
+            )}
+            {layoutPending && (
+              <div
+                className="absolute top-2 right-2 text-[10px] uppercase tracking-widest text-muted-foreground italic px-2 py-1 rounded-md bg-card/80 border border-border/40 backdrop-blur"
+                data-testid="track3-layout-pending"
+              >
+                {LABELS.layoutPending}
+              </div>
+            )}
+          </div>
           <p
             className="text-[11px] text-muted-foreground/80 italic mt-3"
             data-testid="track3-inline-note"
