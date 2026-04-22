@@ -47,6 +47,11 @@ import {
 } from "@workspace/diagramspec";
 import type { PositionedDiagram } from "@workspace/diagram-layout";
 import { ctadSectionOfNodeId } from "@/acw/track3/track3DiagramAdapter";
+import {
+  computeRenderEntries,
+  dropExiting,
+  type LifecycleEntry,
+} from "@/acw/track3/track3RenderLifecycle";
 import { assertAllAcwTrack3Language } from "@/governance/staticTextGuard";
 
 const EMPTY_HINT = "No selections yet — open the bound CTAD shell to add some.";
@@ -188,21 +193,36 @@ interface MeshAnimatorProps {
   readonly id: string;
   readonly target: readonly [number, number, number];
   readonly previous: readonly [number, number, number] | null;
+  // Target opacity in [0,1]. Drives the per-mesh fade-in /
+  // fade-out lifecycle: a brand-new node is mounted with previous
+  // = null → opacity is seeded at 0 and lerps toward 1; a node
+  // that becomes hidden (layer toggle) or is removed from the
+  // positioned set has targetOpacity set to 0 and lerps back.
+  readonly targetOpacity: number;
+  // Reports the current lerped opacity to the parent so it can
+  // garbage-collect "exiting" entries once they have fully
+  // faded out. Called at most once per frame and only when the
+  // value crosses the threshold.
+  readonly onFadedOut?: () => void;
   readonly children: ReactNode;
   readonly testId: string;
   readonly onClick?: () => void;
 }
-// Imperatively lerps a Group's position toward `target` every
-// frame. Prevents per-frame React re-renders and keeps motion
-// purely a function of (previous, target, dt).
+// Imperatively lerps a Group's position AND its descendants'
+// material opacity every frame. Prevents per-frame React
+// re-renders and keeps both motion and fade purely a function of
+// (previous, target, dt).
 function MeshAnimator(props: MeshAnimatorProps) {
   const ref = useRef<THREE_GroupLike | null>(null);
+  const opacityRef = useRef<number>(props.previous === null ? 0 : 1);
+  const fadedOutFiredRef = useRef<boolean>(false);
   // Initialise at previous (or target if no previous known).
   useEffect(() => {
     const g = ref.current;
     if (!g) return;
     const start = props.previous ?? props.target;
     g.position.set(start[0], start[1], start[2]);
+    setGroupOpacity(g, opacityRef.current);
     // Mount-once seed; subsequent target changes are handled by
     // useFrame below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -214,6 +234,19 @@ function MeshAnimator(props: MeshAnimatorProps) {
     g.position.x += (props.target[0] - g.position.x) * alpha;
     g.position.y += (props.target[1] - g.position.y) * alpha;
     g.position.z += (props.target[2] - g.position.z) * alpha;
+    opacityRef.current += (props.targetOpacity - opacityRef.current) * alpha;
+    setGroupOpacity(g, opacityRef.current);
+    // Fire the parent callback once when an exiting node has
+    // effectively faded out so the parent can drop it.
+    if (
+      props.targetOpacity <= 0 &&
+      opacityRef.current < FADE_OUT_THRESHOLD &&
+      !fadedOutFiredRef.current
+    ) {
+      fadedOutFiredRef.current = true;
+      props.onFadedOut?.();
+    }
+    if (props.targetOpacity > 0) fadedOutFiredRef.current = false;
   });
   return (
     <group
@@ -230,6 +263,28 @@ function MeshAnimator(props: MeshAnimatorProps) {
       {props.children}
     </group>
   );
+}
+
+// Threshold below which an exiting node is considered "faded
+// out" and may be removed from the scene graph.
+const FADE_OUT_THRESHOLD = 0.02;
+
+// Imperatively walks a group and sets transparent + opacity on
+// every Mesh material. Branded `unknown` because the THREE typing
+// is not imported here; we pattern-match defensively.
+function setGroupOpacity(group: unknown, opacity: number): void {
+  const g = group as { traverse?: (cb: (obj: unknown) => void) => void };
+  if (typeof g.traverse !== "function") return;
+  g.traverse((obj) => {
+    const o = obj as {
+      isMesh?: boolean;
+      material?: { transparent?: boolean; opacity?: number };
+    };
+    if (o.isMesh && o.material) {
+      o.material.transparent = true;
+      o.material.opacity = opacity;
+    }
+  });
 }
 
 export function Track3Canvas3D(props: Track3Canvas3DProps) {
@@ -263,21 +318,20 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
     [visibility],
   );
 
-  // Apply layer-toggle filter on top — visibility-only, no
-  // re-layout, no re-compile.
-  const visibleNodes = useMemo(
-    () =>
-      flat.nodes.filter((n) => {
-        if (!visibleIds.has(n.id)) return false;
-        if (n.section !== null && hiddenSections.has(n.section)) return false;
-        return true;
-      }),
-    [flat.nodes, visibleIds, hiddenSections],
-  );
-  const visibleNodeIds = useMemo(
-    () => new Set(visibleNodes.map((n) => n.id)),
-    [visibleNodes],
-  );
+  // Pure visibility computation derived from the lens helper +
+  // layer toggle. Used to drive opacity targets per node and to
+  // filter the edge set rendered this frame. NEVER used as input
+  // to the per-node lerp target — that would re-purpose layer
+  // toggle into a re-layout.
+  const visibleNodeIds = useMemo(() => {
+    const out = new Set<string>();
+    for (const n of flat.nodes) {
+      if (!visibleIds.has(n.id)) continue;
+      if (n.section !== null && hiddenSections.has(n.section)) continue;
+      out.add(n.id);
+    }
+    return out;
+  }, [flat.nodes, visibleIds, hiddenSections]);
   const visibleEdges = useMemo(
     () =>
       visibility.visibleEdges.filter(
@@ -302,40 +356,69 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
     return { x: sx / flat.nodes.length, y: sy / flat.nodes.length };
   }, [flat.nodes]);
 
-  // Track previous targets for the lerp seed. Keyed by node id.
-  // Targets are computed for ALL positioned nodes (not just the
-  // currently-visible subset) so that hiding/unhiding a layer
-  // never alters per-node target positions and therefore never
-  // triggers a lerp. Local target z is 0; stratum depth is
-  // applied as a group transform below.
-  const prevTargetsRef = useRef<Map<string, [number, number, number]>>(
+  // ---- Render-entry lifecycle ----------------------------------
+  // We render an entry per node id. An entry's lifecycle:
+  //   1. mount: previous = null → opacity seeded at 0 → fades in.
+  //   2. update: target/opacity updated when (positioned, hidden)
+  //      change. Position lerps; opacity lerps.
+  //   3. exit: when a node is no longer in the positioned set
+  //      OR its layer is hidden, targetOpacity is forced to 0
+  //      so it fades out. The entry is kept in the scene until
+  //      `onFadedOut` fires, then the entry is dropped.
+  //
+  // The entries map persists ACROSS positioned-diagram updates,
+  // not just within a single render, so removed nodes can fade
+  // smoothly rather than disappear abruptly.
+  const prevTargetsRef = useRef<Map<string, readonly [number, number, number]>>(
     new Map(),
   );
-  const targetByIdAndPrev = useMemo(() => {
-    const out = new Map<
-      string,
-      {
-        readonly target: [number, number, number];
-        readonly previous: [number, number, number] | null;
-      }
-    >();
-    for (const n of flat.nodes) {
-      const x = (n.x - center.x) * SCALE;
-      const y = -(n.y - center.y) * SCALE;
-      const target: [number, number, number] = [x, y, 0];
-      const previous = prevTargetsRef.current.get(n.id) ?? null;
-      out.set(n.id, { target, previous });
-    }
-    // Snapshot for next pass.
-    const next = new Map<string, [number, number, number]>();
-    for (const [id, e] of out) next.set(id, e.target);
-    prevTargetsRef.current = next;
-    return out;
-  }, [flat.nodes, center]);
+  // Snapshot of the FlatNode for any id we have ever rendered,
+  // so an exiting entry can keep its geometry even after the
+  // positioned set drops it.
+  const lastNodeSnapshotRef = useRef<Map<string, FlatNode>>(new Map());
+  // Exiting ids kept across renders. Mutated synchronously
+  // inside the entries useMemo (when a node disappears from
+  // flat.nodes) and inside handleFadedOut (when its mesh has
+  // fully faded out). A monotonically-increasing tick forces a
+  // re-render after handleFadedOut so the dropped entry is no
+  // longer emitted by the next render pass.
+  const exitingRef = useRef<Set<string>>(new Set());
+  const [exitTick, setExitTick] = useState<number>(0);
+
+  const entries = useMemo<readonly LifecycleEntry<FlatNode>[]>(() => {
+    const result = computeRenderEntries<FlatNode>({
+      flatNodes: flat.nodes,
+      center,
+      scale: SCALE,
+      visibleNodeIds,
+      prevTargets: prevTargetsRef.current,
+      exitingIds: exitingRef.current,
+      snapshots: lastNodeSnapshotRef.current,
+    });
+    prevTargetsRef.current = new Map(result.nextPrevTargets);
+    // exitTick participates in the dep list; bumping it from
+    // handleFadedOut forces this useMemo to recompute and stop
+    // emitting the dropped exiting entry.
+    void exitTick;
+    return result.entries;
+  }, [flat.nodes, center, visibleNodeIds, exitTick]);
+
+  // Drop an exiting id once its mesh has reported `onFadedOut`.
+  // Mutates the refs synchronously and bumps a tick so React
+  // re-renders without the dropped entry.
+  function handleFadedOut(id: string) {
+    const dropped = dropExiting(
+      id,
+      exitingRef.current,
+      prevTargetsRef.current,
+      lastNodeSnapshotRef.current,
+    );
+    if (dropped) setExitTick((t) => t + 1);
+  }
 
   const [detection] = useState<WebGLDetection>(() => detectWebGL());
   const webgl = detection.ok;
-  const initialNodeCountRef = useRef<number>(visibleNodes.length);
+  const initialNodeCountRef = useRef<number>(visibleNodeIds.size);
   useEffect(() => {
     console.info("[track3-canvas-3d] mount", {
       detected: detection.ok,
@@ -346,7 +429,7 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const isEmpty = visibleNodes.length === 0;
+  const isEmpty = visibleNodeIds.size === 0;
 
   const initialPrefsRef = useRef({ cameraX, cameraY, cameraZoom });
   const initialTarget = useMemo<[number, number, number]>(
@@ -379,17 +462,47 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
     onCameraChange?.(nextX, nextY, nextZoom);
   }
 
-  // Group visible nodes by stratum so each stratum gets its own
-  // Three.js Group along Z.
-  const nodesByStratum = useMemo(() => {
-    const m = new Map<DiagramStratum, FlatNode[]>();
-    for (const n of visibleNodes) {
-      const arr = m.get(n.stratum) ?? [];
-      arr.push(n);
-      m.set(n.stratum, arr);
+  // Group ALL render entries (active + exiting) by stratum.
+  // Group identity is keyed off the stratum produced by the
+  // layout pipeline (positionedDiagrams), NOT off the
+  // currently-visible subset, so per-stratum groups are stable
+  // across layer toggles and never destroyed/recreated when a
+  // section becomes hidden.
+  // Stratum order is the union of (a) strata from the current
+  // layout output and (b) strata from active+exiting render
+  // entries. Including (b) ensures that when the LAST node in a
+  // stratum is removed and the stratum disappears from
+  // positionedDiagrams, any still-fading exiting entries in that
+  // stratum continue to render (and animate to opacity 0)
+  // instead of being culled abruptly.
+  const stratumOrder = useMemo<readonly DiagramStratum[]>(() => {
+    const seen = new Set<DiagramStratum>();
+    const out: DiagramStratum[] = [];
+    for (const p of positionedDiagrams) {
+      if (!seen.has(p.stratum)) {
+        seen.add(p.stratum);
+        out.push(p.stratum);
+      }
+    }
+    for (const e of entries) {
+      if (!seen.has(e.stratum)) {
+        seen.add(e.stratum);
+        out.push(e.stratum);
+      }
+    }
+    // Stable order along Z by stratum index.
+    return [...out].sort((a, b) => STRATUM_INDEX[a] - STRATUM_INDEX[b]);
+  }, [positionedDiagrams, entries]);
+  const entriesByStratum = useMemo(() => {
+    const m = new Map<DiagramStratum, LifecycleEntry<FlatNode>[]>();
+    for (const s of stratumOrder) m.set(s, []);
+    for (const e of entries) {
+      const arr = m.get(e.stratum) ?? [];
+      arr.push(e);
+      m.set(e.stratum, arr);
     }
     return m;
-  }, [visibleNodes]);
+  }, [entries, stratumOrder]);
 
   return (
     <div
@@ -437,59 +550,68 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
               target={initialTarget}
               onChange={handleControlsChange}
             />
-            {Array.from(nodesByStratum.entries()).map(([stratum, ns]) => (
-              <group
-                key={stratum}
-                position={[0, 0, STRATUM_INDEX[stratum] * (Z_GAP * SCALE * 60)]}
-                userData={{ testid: `${testId}-stratum-${stratum}` }}
-              >
-                {ns.map((n) => {
-                  const entry = targetByIdAndPrev.get(n.id);
-                  if (!entry) return null;
-                  const isFocused = selectedNodeId === n.id;
-                  return (
-                    <MeshAnimator
-                      key={n.id}
-                      id={n.id}
-                      target={entry.target}
-                      previous={entry.previous}
-                      testId={`${testId}-mesh-${n.id}`}
-                      onClick={() => onNodeClick?.(n.id)}
-                    >
-                      <mesh>
-                        <NodeGeometry node={n} />
-                        <meshStandardMaterial
-                          color={
-                            isFocused
-                              ? "#fbbf24"
-                              : n.parentId === null
-                                ? "#475569"
-                                : "#334155"
-                          }
-                        />
-                      </mesh>
-                    </MeshAnimator>
-                  );
-                })}
-              </group>
-            ))}
+            {stratumOrder.map((stratum) => {
+              const list = entriesByStratum.get(stratum) ?? [];
+              return (
+                <group
+                  key={stratum}
+                  position={[0, 0, STRATUM_INDEX[stratum] * (Z_GAP * SCALE * 60)]}
+                  userData={{ testid: `${testId}-stratum-${stratum}` }}
+                >
+                  {list.map((entry) => {
+                    const n = entry.node;
+                    const isFocused = selectedNodeId === n.id;
+                    return (
+                      <MeshAnimator
+                        key={entry.id}
+                        id={entry.id}
+                        target={entry.target}
+                        previous={entry.previous}
+                        targetOpacity={entry.targetOpacity}
+                        onFadedOut={
+                          entry.exiting
+                            ? () => handleFadedOut(entry.id)
+                            : undefined
+                        }
+                        testId={`${testId}-mesh-${entry.id}`}
+                        onClick={() => onNodeClick?.(entry.id)}
+                      >
+                        <mesh>
+                          <NodeGeometry node={n} />
+                          <meshStandardMaterial
+                            transparent
+                            color={
+                              isFocused
+                                ? "#fbbf24"
+                                : n.parentId === null
+                                  ? "#475569"
+                                  : "#334155"
+                            }
+                          />
+                        </mesh>
+                      </MeshAnimator>
+                    );
+                  })}
+                </group>
+              );
+            })}
             {visibleEdges.map((e) => {
-              const a = visibleNodes.find((n) => n.id === e.fromId);
-              const b = visibleNodes.find((n) => n.id === e.toId);
+              const a = flat.nodes.find((n) => n.id === e.fromId);
+              const b = flat.nodes.find((n) => n.id === e.toId);
               if (!a || !b) return null;
-              const ea = targetByIdAndPrev.get(a.id);
-              const eb = targetByIdAndPrev.get(b.id);
+              const ea = prevTargetsRef.current.get(a.id);
+              const eb = prevTargetsRef.current.get(b.id);
               if (!ea || !eb) return null;
               // Edges live outside the per-stratum group, so we
               // must add stratum z back into world coords here.
               const az = STRATUM_INDEX[a.stratum] * (Z_GAP * SCALE * 60);
               const bz = STRATUM_INDEX[b.stratum] * (Z_GAP * SCALE * 60);
               const positions = new Float32Array([
-                ea.target[0],
-                ea.target[1],
+                ea[0],
+                ea[1],
                 az,
-                eb.target[0],
-                eb.target[1],
+                eb[0],
+                eb[1],
                 bz,
               ]);
               return (
