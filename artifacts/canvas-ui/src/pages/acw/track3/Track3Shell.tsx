@@ -46,7 +46,6 @@ import { projectBounds } from "@/acw/track3/track3AdcBounds";
 import {
   compileTrack3Specs,
   layoutTrack3Specs,
-  ctadSectionOfNodeId,
 } from "@/acw/track3/track3DiagramAdapter";
 import type { PositionedDiagram } from "@workspace/diagram-layout";
 import {
@@ -367,9 +366,6 @@ function BoundShell({
   const handleRefresh = useCallback(() => {
     setRefreshTick((t) => t + 1);
   }, []);
-
-  // Strip the section reference for an unused-import-style guard.
-  void ctadSectionOfNodeId;
 
   return (
     <>
