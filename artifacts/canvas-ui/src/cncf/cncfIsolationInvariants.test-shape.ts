@@ -71,6 +71,14 @@ const ALLOWED_IMPORT_PREFIXES: readonly string[] = [
   // CTAD constraint store — READ ONLY (getActiveAllowedOptions,
   // getContributions). Same rule.
   "@/ctad/ctadConstraintsStore",
+  // CNCF reference catalog data + types — bundled, frozen,
+  // network-free workspace package. Per task #74 step 1 the
+  // catalog data lives in `lib/cncf-catalog`; the canvas-ui
+  // adapter (cncfCatalog.ts) imports CNCF_CARDS / findCard /
+  // BindingHint / CncfCard from this package and runs the
+  // CTAD-coupled validations against it. The package itself
+  // has no dependency on CTAD or on any application module.
+  "@workspace/cncf-catalog",
 ];
 
 // Per-module read-only allowlist. Any named import from these

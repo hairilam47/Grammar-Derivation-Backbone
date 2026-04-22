@@ -227,6 +227,9 @@ importers:
       '@workspace/architecture-grammar':
         specifier: workspace:*
         version: link:../../lib/architecture-grammar
+      '@workspace/cncf-catalog':
+        specifier: workspace:*
+        version: link:../../lib/cncf-catalog
       docx:
         specifier: ^9.6.1
         version: 9.6.1
@@ -632,6 +635,8 @@ importers:
         version: 3.25.76
 
   lib/architecture-grammar: {}
+
+  lib/cncf-catalog: {}
 
   lib/db:
     dependencies:
