@@ -1,8 +1,8 @@
 # Overview
 
-This project is a pnpm workspace monorepo using TypeScript, centered around the **Architecture Decision Canvas**. This system provides a deterministic, grammar-based approach to map organizational context, capability selections, and trade-off settings to a required set of architecture components, risks, and complexity indicators. Upon approval, it generates immutable governance artifacts (Architecture Decision Snapshot - ADS, and Execution Constraint Profile - ECP), records them in a portfolio, and allows for referencing by leadership-recorded policy signals, forming an institutional memory layer. The system is descriptive, not prescriptive, and does not make recommendations.
+This project is a pnpm workspace monorepo using TypeScript, centred on the **Architecture Decision Canvas (ADC)** — a deterministic, grammar-based system that maps an organisation's context, capability selections, and trade-off settings to a required set of architecture components, applicable risks, and complexity indicators. Approved decisions are frozen as immutable governance artefacts (Architecture Decision Snapshot — ADS, and Execution Constraint Profile — ECP), recorded in a portfolio, and referenced over time by leadership-recorded policy signals. Two peer planes sit beside ADC: **CTAD** (Conceptual Technology Architecture Design) for reversible categorical technology exploration, and **ACW** (Architecture Composition Workspace) for TOGAF-aligned structural visualisation. The system is descriptive, not prescriptive — it never assesses, ranks, prescribes, or requires action.
 
-> For the canonical, full architecture reference — including the layer diagram, every module path, persistence contracts, and the end-to-end flow — see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+> For the canonical architecture reference — including the layer diagram, every module path, persistence contracts, vocabulary tiers, build-time invariants, and the end-to-end flow — see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 # User Preferences
 
@@ -10,60 +10,125 @@ I prefer iterative development. Ask before making major changes. I prefer detail
 
 # System Architecture
 
-The project is structured as a pnpm workspace monorepo.
+The project is a pnpm workspace monorepo. Each top-level package belongs to either `artifacts/*` (deployable surfaces) or `lib/*` (shared libraries). Workspace conventions and shared dev-tooling live in `pnpm-workspace.yaml` (catalog, supply-chain `minimumReleaseAge: 1440`, esbuild Linux-only override).
 
 ## Stack
-- **Monorepo tool**: pnpm workspaces
-- **Node.js version**: 24
-- **Package manager**: pnpm
-- **TypeScript version**: 5.9
-- **API framework**: Express 5
-- **Database**: PostgreSQL + Drizzle ORM
-- **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
 
-## Core Components
+| Concern | Choice |
+| --- | --- |
+| Monorepo tool | pnpm workspaces (catalog + project references) |
+| Node.js | 24 |
+| TypeScript | ~5.9.2 (strict, project references via `tsconfig.base.json`) |
+| Frontend | React 19.1.0 + Vite 7 + Tailwind 4 + lucide-react |
+| 3D / canvas | React Three Fiber, three.js, ELK (`@workspace/diagram-layout`) |
+| API framework | Express 5 (`artifacts/api-server`) |
+| Database (scaffolded) | PostgreSQL + Drizzle ORM 0.45 |
+| Validation | Zod 3.25 (`zod`), `drizzle-zod` |
+| API codegen | Orval (from `lib/api-spec/openapi.yaml`) |
+| Client export | `jspdf` (PDF), `docx` (DOCX) — fully client-side |
+| Mockup preview | Vite preview server (`artifacts/mockup-sandbox`) |
+| Build | esbuild for server bundle; Vite for browser |
+| Format / lint | Prettier 3.8 |
 
-### Architecture Grammar Engine
-`lib/architecture-grammar` is a pure TypeScript library encoding the core logic. It defines 7 canonical Capabilities and 18 canonical Components, along with rules for deriving architecture components, identifying dependencies, applying context constraints, and modifying complexity scores based on trade-offs. It also includes risk detection mechanisms. The main function `deriveArchitecture(context, capabilitySelections, tradeOffs)` serves as the entry point.
+## Repository Layout
 
-### Architecture Decision Canvas UI
-`artifacts/canvas-ui` is a React + Vite web application with four main routes:
-- **`/` (Wizard)**: A five-screen flow for creating and approving an Architecture Decision.
-  - **ContextForm**: Collects `OrganisationContext`.
-  - **CapabilitySelector**: Classifies all 7 capabilities.
-  - **ArchitectureResultDisplay**: Displays derived components, risks, and complexity indicators based on baseline trade-offs.
-  - **TradeOffExplorer**: Allows "What-If Exploration" of indicator scores based on alternative trade-off settings, while components and risks remain frozen.
-  - **FreezeAndExport**: Terminal screen to freeze a decision, collect project metadata, generate ADS and ECP previews, and export artifacts. Freezing also writes the decision to the portfolio store.
-- **`/portfolio` (Portfolio Governance)**: A read-only board of all approved decisions, offering sortable columns, filters, cross-portfolio summaries (Risk Concentration, Indicator Distribution), and viewers for ADS and ECP.
-- **`/signals` (Policy Signals)**: A leadership-only interface for recording and tracking patterns observed across the approved portfolio using seven fixed signal categories with a three-state lifecycle (`Observed → Under Discussion → Acknowledged`). Signals can optionally link to portfolio entries.
-- **`/reflection` (Reflective Governance View)**: A read-only observational view showing decision lineage, governance attention over time, and memory overview (including silence awareness), without making judgments or recommendations.
-- **`/governance/containment` (Phase 6 Constitutional Layer)**: Read-only documentation of the TOGAF / ArchiMate non-authority position of ADC artefacts (docking table, mandatory disclaimer, advisory misuse playbook).
-- **`/workspace/*` (ACW — Architecture Composition Workspace)**: An empty TOGAF-aligned workspace shell with five lens views (Context & Domain, System Landscape, Integration, Deployment & Infrastructure, Operations & Continuity) plus reusable 2D and 3D canvas primitives. Strictly isolated from the Decision Canvas pipeline by a build-time invariant; ships no architecture content.
-- **`/ctad`, `/ctad/:adsId/:adsVersion` (CTAD — Conceptual Technology Architecture Design)**: The third peer plane alongside ADC and ACW. State-driven, non-wizard, reversible categorical exploration of the technology configurations permitted by an already-frozen architecture decision. Four collapsible sections (infrastructure, application, integration, cross-cutting), live `CTAD_STATE` JSON preview, and reference catalogues. Per-binding `localStorage` document at `ctad.state.v1` keyed by `${adsId}@${adsVersion}` with schema `ctad-1.0`. Records nothing back into ADS, ECP, the portfolio entry, signals, exposure, containment, or the grammar engine. Reads only `{ listEntries, type PortfolioEntry }` from the portfolio store; every other import form is rejected at module load by the CTAD isolation invariant. Has its own standalone vocabulary tier `CTAD_FORBIDDEN` (no approve / recommend / score / rank / mandate / must language) with a single spec-equality exemption for the brief-mandated empty-state sentence. Strictly removable to the pre-CTAD bundle. Reachable from `GlobalNav` between Decision Canvas and Portfolio, and from the third peer card on the landing page.
-- **`/acw/derived`, `/acw/derived/:adsId/:adsVersion` (ACW Track 3 — Derived Structural Visualisation)**: A strictly read-only derived view that mechanically derives a structural diagram from `CTAD_STATE` plus a small projection of ADC bounds. Two renderers (2D SVG and 3D R3F) consume the same in-memory graph through the shared helper `enumerateLensVisibility(...)` so they cannot diverge. Per-binding view preferences (mode, perspective, hidden layers, camera) persist as `acw.track3.viewprefs.v1` (schema `acw-track3-viewprefs-1.0`); the diagram itself is never persisted — it is recomputed on every render. Four hardened invariants (isolation, derivation purity, structural identity, forbidden semantics) fail the bundle at module load if any regression is introduced. Standalone sibling vocabulary tier `ACW_TRACK3_FORBIDDEN` (no judgement / traffic-light / recommendation / prescription / ranking language) plus a vendor-name denylist on the label registry (so labels are generic, e.g. "Component-tree frontend" not "React-like frontend"). Stable, content-addressable node ids of the form `node:<sectionId>:<paramId>:<optionSlug>`. Strictly removable to the pre-Track-3 bundle. Reachable from `GlobalNav` ("Derived view") and from a per-row "Open derived view" CTA on the CTAD entry page.
+```
+.
+├─ artifacts/
+│  ├─ canvas-ui/         React + Vite SPA — the entire user-facing product (ADC, CTAD, ACW, governance views)
+│  ├─ api-server/        Express 5 service (health + logger; not on the decision path)
+│  └─ mockup-sandbox/    Vite preview server for component prototyping (one URL per component)
+├─ lib/
+│  ├─ architecture-grammar/  Pure TS grammar engine (7 capabilities, 18 components, Rules A–D, risk detection)
+│  ├─ diagramspec/       Pure TS DiagramSpec compiler (CTAD_STATE → strict DiagramSpec graph)
+│  ├─ diagram-layout/    ELK-based layout (DiagramSpec → PositionedDiagram), used by 2D/3D renderers
+│  ├─ cncf-catalog/      Frozen CNCF reference cards (maturity, category, binding hints) — vendor-neutral
+│  ├─ api-spec/          OpenAPI source-of-truth + Orval config
+│  ├─ api-zod/           Drizzle-derived Zod schemas (scaffolded; not on decision path)
+│  ├─ api-client-react/  Generated React Query client (Orval output) + custom fetcher
+│  └─ db/                Drizzle schema + Postgres bindings (scaffolded)
+├─ scripts/              Functional sanity scripts (e.g. derive-example) and post-merge.sh
+├─ docs/ARCHITECTURE.md  Canonical architecture reference
+├─ pnpm-workspace.yaml   Catalog, packages, supply-chain settings
+└─ replit.md             This file
+```
 
-## Governance & Persistence
+## Surfaces (routes inside `artifacts/canvas-ui`)
 
-- **Governance Export Layer**: Client-side TypeScript layer generating two artifacts:
-    - **ADS (Architecture Decision Snapshot)**: 6 fixed sections, with a deterministic version hash based on core decision parameters.
-    - **ECP (Execution Constraint Profile)**: 9 sections, category-level wording, with runtime validation.
-    - **Exports**: PDF and DOCX generation using `jspdf` and `docx` libraries, including an integrity footer. All derivation and exports run client-side.
-- **Governance Read-Models**: Decisions and signals are persisted into `localStorage` as reduced read-models (`adc.portfolio.v1` and `adc.policy-signals.v1` respectively). The ACW workspace persists a structural diagram document (`acw.workspace.v1`), and CTAD persists per-binding interpretive state (`ctad.state.v1`, schema `ctad-1.0`). None of these stores feed back into the grammar engine, ensuring it remains the single source of structural truth.
-- **Governance Language Guard**: `src/governance/staticTextGuard.ts` enforces vocabulary constraints for static labels across the Portfolio, Signals, Reflective, Exposure, Containment, ACW, and CTAD surfaces, preventing judgmental or prescriptive language. Most tiers are stacked extensions of `PORTFOLIO_FORBIDDEN`; the `CTAD_FORBIDDEN` tier is intentionally standalone (sibling of every governance tier) because the CTAD plane is non-authoritative by construction.
+- **`/` (Wizard)** — five-screen ADC flow: ContextForm → CapabilitySelector → ArchitectureResultDisplay → TradeOffExplorer → FreezeMetadataForm → FreezeAndExport. Generates ADS (6 sections) + ECP (9 sections), exports PDF + DOCX with integrity footer, writes to portfolio on freeze.
+- **`/portfolio`** — read-only board of approved decisions; sortable, filterable, with cross-portfolio summaries (Risk Concentration, Indicator Distribution) and ADS/ECP modal viewers rendered from the persisted entry (never re-derived).
+- **`/signals`** — leadership-only policy-signal recorder; 7 fixed categories, lifecycle `Observed → Under Discussion → Acknowledged`; every `interpretationGuidance` entry must end with `?`.
+- **`/reflection`** — read-only observational view: decision lineage, governance attention over time, memory overview, silence awareness. Plain counts only — no scores, thresholds, percentages, or comparisons.
+- **`/exposure/:adsId`** — Decision Exposure View covering Phases 1–5 (baseline, exposure narratives, cross-functional responsibility lens, scenario-conditioned reading, decision re-entry lens). All re-derived on every render from a single `PortfolioEntry`; never writes back.
+- **`/governance/containment`** — Phase 6 Constitutional Layer: TOGAF / ArchiMate non-authority docking table, mandatory non-authority disclaimer, advisory misuse playbook.
+- **`/workspace/*` (ACW)** — TOGAF-aligned workspace shell with five lens views (Context & Domain, System Landscape, Integration, Deployment & Infrastructure, Operations & Continuity) plus reusable 2D and 3D canvas primitives. Build-time isolation invariant — imports nothing from the decision pipeline.
+- **`/ctad`, `/ctad/:adsId/:adsVersion` (CTAD)** — third peer plane. State-driven, non-wizard, reversible categorical exploration of technology configurations permitted by an already-frozen ADC decision. Five collapsible sections (`infrastructure`, `application`, `integration`, `crossCutting`, `ops`), live `CTAD_STATE` JSON preview, reference catalogues, **first-class environments panel** (Task #77), CNCF Applied-Cards panel, and contextual constraints surfacing. Per-binding `localStorage` document at `ctad.state.v1` keyed by `${adsId}@${adsVersion}` with schema **`ctad-1.1`** (deterministic read-time migration from `ctad-1.0`). Records nothing back into ADS, ECP, the portfolio entry, signals, exposure, containment, or the grammar engine.
+- **`/acw/derived`, `/acw/derived/:adsId/:adsVersion` (ACW Track 3)** — strictly read-only derived structural view. The compiler in `@workspace/diagramspec` mechanically derives a `DiagramSpec` from `CTAD_STATE` (including first-class environments) plus a small projection of ADC bounds; `@workspace/diagram-layout` runs ELK; two renderers (2D SVG, 3D R3F) consume the same in-memory graph through `enumerateLensVisibility(...)` so they cannot diverge. Per-binding view preferences persist as `acw.track3.viewprefs.v1`; the diagram itself is never persisted.
+
+## CTAD Subsystem (current state, post Task #77)
+
+CTAD owns four `localStorage` documents, each per-binding and bumpable independently:
+
+| Key | Schema | Owned by | Contents |
+| --- | --- | --- | --- |
+| `ctad.state.v1` | `ctad-1.1` | `ctad/ctadStore.ts` | Section param values + `environments: EnvironmentDef[]` per binding |
+| `ctad.applied-cards.v1` | `ctad-applied-cards-1.0` | `ctad/ctadAppliedCardsStore.ts` | Audit log of CNCF cards applied (with set / constrain / justify effects) |
+| `ctad.constraints.v1` | `ctad-constraints-1.0` | `ctad/ctadConstraintsStore.ts` | Annotation-only constraint contributions per param (allowed-option subsets, with source card id) |
+| `acw.track3.viewprefs.v1` | `acw-track3-viewprefs-1.0` | `acw/track3/track3ViewPrefs.ts` | View mode, perspective, hidden layers, camera (per binding) |
+
+### Environments (first-class, Task #77)
+
+`EnvironmentDef = { id: string; name: string; kind: EnvironmentKind; hostingModel: HostingModel | null }`. Authored through the **EnvironmentsPanel** in `pages/ctad/CtadShell.tsx`. CRUD goes through `ctad/ctadStore.ts` (`addEnvironment`, `renameEnvironment`, `setEnvironmentKind`, `setEnvironmentHostingModel`, `removeEnvironment`). Validators reject duplicate ids, non-canonical identifier shape, and empty names. The legacy synthesis path (`synthesizeEnvironments.ts` + `env:default` fallback) is **deleted** — the `@workspace/diagramspec` compiler reads `ctadState.environments ?? []` directly and fans hosts out per environment when a non-empty list is present, otherwise emits a flat host listing under `parentId: null`.
+
+### CNCF Apply Layer
+
+`@workspace/cncf-catalog` ships frozen, vendor-neutral cards. `src/cncf/cncfBindingEngine.ts` evaluates cards against the live binding (read-only). `ctad/cncfApplyService.ts` is the **only** module that mutates the applied-cards and constraints stores in tandem; this asymmetric placement (`@/ctad`, not `@/cncf`) keeps the CNCF module surface read-only with respect to CTAD state and gives the CTAD store exclusive ownership of all writes.
+
+### Architectural rule — environments are adjacent, not a sixth section
+
+Environments are a first-class CTAD concept but deliberately not a member of `CTAD_SECTIONS`. Sections are categorical *parameter* groups (single/multi-select over a fixed vocabulary) whose grammar invariant pins exactly five canonical sections. Environments are *named records* with a different shape (`{ id, name, kind, hostingModel }`); modelling them as a section would break the grammar invariant and the CTAD_STATE block-serialisation contract. They live as a peer field on `CtadStateExport` and are read by downstream consumers (compiler, renderers) directly, never through `findParam` / `CTAD_REGISTRY` traversal. Documented in `ctad/ctadRegistry.ts`.
+
+## Governance & Persistence (decision plane)
+
+- **Governance Export Layer** — Client-side TS layer in `src/governance/`. `adsBuilder.ts` builds the ADS (6 sections, fixed order). `ecpBuilder.ts` + `ecpSections.ts` build the ECP (9 sections, sorted by `sectionOrder`). Version hash: `fnv1aHex(canonicalJSON({ context, selections, baselineTradeOffs }))` — Project Name and Approving Authority are intentionally excluded so renaming does not bump the version. `adsId` is a slug of project name. `export.ts` produces PDF (jspdf) and DOCX (docx) with integrity footer. All exports run client-side.
+- **Portfolio store** — `governance/portfolioStore.ts`, key `adc.portfolio.v1`, allow-listed entries with exactly 17 fields. `assertAllowedFields` throws on unknown fields at write; `isValidEntry` silently drops corrupted entries on read. Phase 6 enforces `assertNoComputedADCFields` — no new portfolio field may be added.
+- **Signals store** — `governance/signalsStore.ts`, key `adc.policy-signals.v1`, 11-field allow-listed signals over 7 fixed categories with forward-only lifecycle and read-only-after-acknowledged terminality.
+- **Static-text governance guard** — `governance/staticTextGuard.ts` enforces nine vocabulary tiers (lattice, not chain). Each page registers every static label into a single dictionary asserted against its own tier at module load; JSX references only those constants so the guard cannot be bypassed.
+  - Base: `PORTFOLIO_FORBIDDEN` ⊂ `SIGNALS_FORBIDDEN`.
+  - Sibling tier 1: `REFLECTIVE_FORBIDDEN`, `EXPOSURE_NARRATIVE_FORBIDDEN`, `RESPONSIBILITY_LENS_FORBIDDEN` (all strict supersets of `SIGNALS_FORBIDDEN`, not interchangeable).
+  - Sibling tier 2: `SCENARIO_READING_FORBIDDEN` (strict superset of all three above).
+  - Sibling tier 3: `DECISION_REENTRY_FORBIDDEN`, `TOGAF_CONTAINMENT_FORBIDDEN`, `ACW_PLACEHOLDER_FORBIDDEN` (the last is a strict superset of TOGAF Containment).
+  - Standalone siblings: `CTAD_FORBIDDEN` and `ACW_TRACK3_FORBIDDEN` — intentionally outside the chain because both planes are non-authoritative by construction. Both ban `must`, `approve`, `recommend`, `score`, `rank`, `mandate`, `optimal`, `best`, `final`, etc. A complementary `assertNoVendorNames` denylist on the ACW Track 3 label registry keeps labels generic.
+
+## Build-Time Invariants
+
+The system uses **`*Invariants.test-shape.ts`** modules that run at module load (side-effect imported from `App.tsx`). A regression makes the bundle fail to start. Current invariant modules:
+
+- `ctad/ctadGrammarInvariants.test-shape.ts` — schema is exactly `ctad-1.1`; exactly five canonical sections in canonical order; every paramId unique; every option non-empty; environments vocabulary (`KIND`, `HOSTING`) frozen; live probe round-trip closes the empty-binding-leak path.
+- `ctad/ctadIsolationInvariants.test-shape.ts` — CTAD module surface only imports `{ listEntries, type PortfolioEntry }` from the portfolio store; every other import form is rejected at module load.
+- `acw/acwIsolationInvariants.test-shape.ts` — ACW workspace imports nothing from the decision pipeline.
+- `acw/acwGrammar*Invariants.test-shape.ts`, `acw3DStructureInvariants.test-shape.ts`, `acw3DForbiddenSemantics.test-shape.ts` — ACW grammar / structure / vocabulary locks.
+- `acw/track3/acwTrack3IsolationInvariants.test-shape.ts`, `…StructureInvariants…`, `…ForbiddenSemantics…`, `…RendererIsolationInvariants…`, `…FocusIsolationInvariants…`, `…ViewPrefsInvariants…` — Track 3 isolation, derivation purity, structural identity, forbidden semantics.
+- `governance/togafContainmentInvariants.test-shape.ts` — Phase 6 refusal lattice + no-new-portfolio-field.
+- `cncf/cncfIsolationInvariants.test-shape.ts` — CNCF module is read-only with respect to CTAD; only `cncfApplyService.ts` may mutate the applied-cards / constraints stores.
 
 ## Design Principles
 
-- **Strict Stratification**: Upper layers only read from lower layers; no upper layer influences lower layer derivation.
-- **Immutability of Frozen Decisions**: Once a decision is frozen, it cannot be edited.
-- **Deterministic Derivation**: The grammar engine guarantees the same inputs always yield the same output.
-- **Read-Only Views**: Portfolio, Signals, and Reflection pages are strictly read-only for decision and signal data, providing observational insights without mutation capabilities.
+- **Strict stratification** — upper layers only read from lower layers; no upper layer influences lower-layer derivation.
+- **Immutability of frozen decisions** — once frozen, ADS/ECP cannot be edited.
+- **Deterministic derivation** — same inputs always yield identical output (grammar engine and DiagramSpec compiler).
+- **Read-only views** — Portfolio, Signals, Reflection, Exposure, Containment, Track 3 derived view are strictly read-only on the decision plane.
+- **Non-authority of CTAD** — CTAD never writes back to ADS/ECP/portfolio/signals/exposure/containment/grammar engine.
+- **Strict removability** — every phase / sibling plane is documented as a finite delete sequence that returns the bundle to its pre-phase state.
+- **Structural identity** — both 2D and 3D Track 3 renderers consume the same in-memory `DiagramSpec` through a single helper so they cannot diverge.
+- **Build-time refusals over runtime checks** — invariants run at module load; regressions fail the bundle.
 
 # External Dependencies
 
-- **PostgreSQL**: Used as the primary database.
-- **Drizzle ORM**: Object-relational mapper for database interactions.
-- **Orval**: API code generator from OpenAPI specifications.
-- **jspdf**: Client-side library for generating PDF documents.
-- **docx**: Client-side library for generating DOCX documents.
+- **PostgreSQL** — primary database (scaffolded; not on decision path).
+- **Drizzle ORM** — database interactions.
+- **Orval** — generates the React Query client (`lib/api-client-react`) from `lib/api-spec/openapi.yaml`.
+- **jspdf** — client-side PDF generation for ADS / ECP exports.
+- **docx** — client-side DOCX generation for ADS / ECP exports.
+- **ELK (`elkjs`)** — automatic graph layout for Track 3 derived diagrams.
+- **React Three Fiber + three.js** — 3D canvas for ACW and Track 3 3D renderer.

@@ -44,16 +44,29 @@ The project is a pnpm workspace.
 
 | Location | Role |
 | --- | --- |
-| `artifacts/canvas-ui` | React + Vite single-page application — the entire user-facing product |
+| `artifacts/canvas-ui` | React + Vite single-page application — the entire user-facing product (ADC, CTAD, ACW, governance views) |
 | `artifacts/api-server` | Express 5 service (health + logger; not on the decision path) |
-| `artifacts/mockup-sandbox` | Vite preview server used during component prototyping |
+| `artifacts/mockup-sandbox` | Vite preview server used during component prototyping (one URL per component) |
 | `lib/architecture-grammar` | Pure TypeScript grammar engine — no UI or persistence dependencies |
-| `lib/db`, `lib/api-spec`, `lib/api-zod` | Infrastructure scaffolding (not exercised by the canvas flow) |
+| `lib/diagramspec` | Pure TypeScript DiagramSpec compiler (`CTAD_STATE → DiagramSpec`); consumed by the Track 3 derived view |
+| `lib/diagram-layout` | ELK-backed layout (`DiagramSpec → PositionedDiagram`); consumed by 2D and 3D renderers |
+| `lib/cncf-catalog` | Frozen CNCF reference cards (maturity, category, vendor-neutral binding hints) |
+| `lib/api-spec` | OpenAPI source-of-truth + Orval config |
+| `lib/api-zod` | Drizzle-derived Zod schemas (scaffolded; not on decision path) |
+| `lib/api-client-react` | Generated React Query client (Orval output) + custom fetcher |
+| `lib/db` | Drizzle schema + Postgres bindings (scaffolded) |
 | `scripts/src/derive-example.ts` | Functional sanity script that exercises the grammar engine end to end |
+| `scripts/post-merge.sh` | Post-merge reconciliation hook (re-installs deps, re-runs codegen) |
 
-Stack: Node.js 24, pnpm, TypeScript 5.9, React + Vite (canvas UI),
-Express 5 (api-server), Drizzle ORM + PostgreSQL (scaffolded), Zod, jspdf,
-docx, React Three Fiber (ACW 3D canvas).
+Stack: Node.js 24, pnpm (workspaces + catalog), TypeScript ~5.9.2 (strict,
+project references via `tsconfig.base.json`), React 19.1.0 + Vite 7 +
+Tailwind 4 + lucide-react (canvas UI), Express 5 (api-server),
+Drizzle ORM 0.45 + PostgreSQL (scaffolded), Zod 3.25, jspdf, docx,
+React Three Fiber + three.js (ACW + Track 3 3D), `elkjs` (layout),
+esbuild (server bundle), Prettier 3.8. Supply-chain defence:
+`pnpm-workspace.yaml` enforces `minimumReleaseAge: 1440` (24 h delay) on
+all non-`@replit/*` packages; an esbuild platform override pins the
+Linux-x64 binary only.
 
 ---
 
@@ -74,6 +87,9 @@ Numbering reflects build order, not architectural priority.
 | Phase 6 | TOGAF / ArchiMate Constitutional Layer | `/governance/containment`; mandatory non-authority disclaimer in PDF/DOCX exports; advisory-only misuse hint in the wizard freeze form; build-time invariants module | Phase 5 (delete files, remove disclaimer injection, remove invariants import) |
 | ACW | Architecture Composition Workspace | `/workspace/*` (5 TOGAF lenses, 2D/3D canvas primitives, empty by default) | Pre-ACW (delete `src/acw/`, `src/components/acw/`, `src/pages/acw/`, route definitions) |
 | CTAD | Conceptual Technology Architecture Design — third peer plane | `/ctad`, `/ctad/:adsId/:adsVersion` (state-driven, non-wizard, four collapsible categorical sections, live `CTAD_STATE` preview, references catalogues); landing page promoted from two cards to three equal peer cards; CTAD entry added to `GlobalNav` between Decision Canvas and Portfolio | Pre-CTAD (delete `src/ctad/`, `src/pages/ctad/`, the two CTAD routes + invariant side-effect imports in `App.tsx`, the CTAD nav entry in `GlobalNav.tsx`, the CTAD card in `LandingPage.tsx`, the CTAD vocabulary tier in `staticTextGuard.ts`) |
+| CTAD §`ops` | Fifth canonical CTAD section — operations parameters | New `ops` section in `ctad/ctadRegistry.ts`; `ops` block on `CtadStateExport`; grammar invariant pinned to **five** sections in canonical order (`infrastructure`, `application`, `integration`, `crossCutting`, `ops`); Track 3 stratum plan maps `ops` to the technology / deployment stratum alongside `infrastructure` | Removable to four-section CTAD by deleting the `ops` registry section, dropping `state.ops` from the export type, lowering the grammar invariant to four sections, and removing `ops` from the technology stratum plan |
+| CTAD CNCF Apply Layer | First mutation surface that lives outside `ctad/ctadStore.ts` | `lib/cncf-catalog` (frozen card data), `src/cncf/cncfBindingEngine.ts` (read-only evaluation), `src/cncf/cncfTypes.ts`, `src/cncf/cncfCatalog.ts`, `src/cncf/cncfIsolationInvariants.test-shape.ts`, `src/ctad/cncfApplyService.ts` (the only writer of the applied-cards / constraints stores), `src/ctad/ctadAppliedCardsStore.ts` (`ctad.applied-cards.v1`), `src/ctad/ctadConstraintsStore.ts` (`ctad.constraints.v1`); CTAD shell gains the AppliedCards and Constraints panels | Removable by deleting both stores, the apply service, the CNCF module and lib, the AppliedCards / Constraints panels in `CtadShell.tsx`, and the two new `localStorage` keys; CTAD continues to function on `ctad.state.v1` only |
+| CTAD §Environments (Task #77) | Environments promoted to a first-class CTAD concept | New `EnvironmentDef` type (`{ id, name, kind, hostingModel }`) and `EnvironmentsPanel` in `pages/ctad/CtadShell.tsx`; env CRUD on `ctad/ctadStore.ts` with v1.0→v1.1 deterministic read-time migration; `CtadStateExport.environments` field; **schema bumped from `ctad-1.0` to `ctad-1.1`**; `lib/diagramspec/src/compile.ts` reads `ctadState.environments` directly and fans hosts out per environment when present (env-node id `env:<id>`, ctadRef.section `"environments"`), or emits a flat host listing under `parentId: null` when the list is empty; **`synthesizeEnvironments.ts` deleted** along with the `env:default` fallback and TODO marker | Reversible to ctad-1.0 by lowering the schema version, removing `environments` from the export type and registry, deleting the EnvironmentsPanel, and reintroducing a flat-only deployment fan-out in the compiler (no env-major grouping) |
 
 The portfolio entry allow-list grew from 13 fields (Core) to 15 (Phase 1)
 to 17 (Phase 5). It has not changed since. Phase 6 explicitly refuses
@@ -611,7 +627,9 @@ not from the global nav.
 | Reflection (Layer 6) | (none) | `pages/Reflection.tsx` | n/a — pure aggregation | persists nothing |
 | Decision Exposure (Phases 1–5) | (none) | `pages/Exposure.tsx` + `governance/exposure*`, `responsibilityLens.ts`, `scenarioReading.ts`, `decisionReentry.ts` | n/a — pure derivation from one `PortfolioEntry` per render | persists nothing |
 | TOGAF / ArchiMate Containment (Phase 6) | (none) | `pages/Containment.tsx` + `governance/togafContainment.ts`, `governance/misusePlaybooks.ts` | n/a — pure refusal validators and static tables | persists nothing |
-| CTAD Bound Exploration (`/ctad/:adsId/:adsVersion`) | `ctad.state.v1` (`localStorage`) | `ctad/ctadStore.ts` (write goes through `findParam` registry validation; per-binding state is keyed by `${adsId}@${adsVersion}`) | Document is `{ schemaVersion: "ctad-1.0", bindings: { [bindingKey]: { adsId, adsVersion, params: { [paramId]: string \| string[] }, updatedAt } } }`. Binding entries are NEVER materialised empty — clearing the last param of a binding deletes the binding key entirely, and clearing a param on a binding that does not exist is a fast-path no-op. Validated against `ctadRegistry`: every persisted `paramId` must exist in the registry; every `single` value must be a string from `param.options`; every `multi` value must be an array whose every element is a string from `param.options`. The schema version is locked at module load by `ctadGrammarInvariants`. | per-binding interpretive state only; no derivation, no scoring, no recommendation, no flow back into ADC, signals, exposure, or the grammar engine |
+| CTAD Bound Exploration (`/ctad/:adsId/:adsVersion`) | `ctad.state.v1` (`localStorage`) | `ctad/ctadStore.ts` (write goes through `findParam` registry validation; per-binding state is keyed by `${adsId}@${adsVersion}`) | Document is `{ schemaVersion: "ctad-1.1", bindings: { [bindingKey]: { adsId, adsVersion, params: { [paramId]: string \| string[] }, environments: EnvironmentDef[], updatedAt } } }`. Binding entries are NEVER materialised empty — clearing the last param **and** removing the last environment of a binding deletes the binding key entirely; clearing a param / removing an env on a binding that does not exist is a fast-path no-op. Validated against `ctadRegistry`: every persisted `paramId` must exist; every `single` value must be a string from `param.options`; every `multi` value must be an array of strings from `param.options`; every `environment.kind` must be in `EnvironmentDef.KIND`; every non-null `environment.hostingModel` must be in `EnvironmentDef.HOSTING`; environment ids must be unique within a binding and match the canonical identifier shape. **Read-time migration** from `ctad-1.0` is deterministic: a persisted v1.0 doc is read as v1.1 with `environments: []` per binding (CTAD store performs the migration without touching disk until the next write). The schema version (and section vocabulary) is locked at module load by `ctadGrammarInvariants`. | per-binding interpretive state only; no derivation, no scoring, no recommendation, no flow back into ADC, signals, exposure, or the grammar engine |
+| CTAD CNCF Applied Cards (`/ctad/:adsId/:adsVersion`) | `ctad.applied-cards.v1` (`localStorage`) | `ctad/ctadAppliedCardsStore.ts`; **only** writer is `ctad/cncfApplyService.ts` | Per-binding audit log: `{ schemaVersion: "ctad-applied-cards-1.0", bindings: { [bindingKey]: { entries: AppliedCardEntry[] } } }`. Each `AppliedCardEntry = { cardId, appliedAt, effects: (AppliedSetEffect \| AppliedConstrainEffect \| AppliedJustifyEffect)[] }`. Bindings with zero entries are deleted from the document. | applied-card audit only; never read by the grammar engine, the wizard, or the portfolio |
+| CTAD Constraint Annotations (`/ctad/:adsId/:adsVersion`) | `ctad.constraints.v1` (`localStorage`) | `ctad/ctadConstraintsStore.ts`; **only** writer is `ctad/cncfApplyService.ts` | Per-binding constraint contributions: `{ schemaVersion: "ctad-constraints-1.0", bindings: { [bindingKey]: { contributions: ConstraintContribution[] } } }`. Each `ConstraintContribution = { paramId, allowedOptions, sourceCardId, contributedAt }`. The store does **not** mutate CTAD param values — it stores annotation alongside them; the active allowed-option set for a param is the intersection across contributions plus the registry options. | annotation only; never narrows the persisted CTAD param value, only the UI surface around it |
 | ACW Track 3 Derived View (`/acw/derived/*`) | `acw.track3.viewprefs.v1` (`localStorage`) | `acw/track3/track3ViewPrefs.ts` (schema-locked at `acw-track3-viewprefs-1.0`) | Document is `{ schemaVersion: "acw-track3-viewprefs-1.0", byBinding: { [bindingKey]: { viewMode: "2d"\|"3d", perspective: Track3Perspective, hiddenLayers: string[], cameraX: number, cameraY: number, cameraZoom: number } } }`. Locked top-level allow-list (`schemaVersion`, `byBinding`) and per-binding allow-list (`viewMode`, `perspective`, `hiddenLayers`, `cameraX`, `cameraY`, `cameraZoom`). Validated by `assertValidPrefsDoc` on read; the entire diagram structure itself is **not persisted** — it is recomputed on every render via `deriveACWStructure(getCtadState(binding), projectBounds(entry))`. | view preferences only; the diagram is purely derived |
 | ACW Workspace (`/workspace/*`) — v1 grammar diagram | `acw.workspace.v1` (`localStorage`) | `acw/acwStore.ts` (write goes through `acwValidator.ts`; allow-list `assertAllowedFields` and read-validate `isValidWorkspace`); registry in `acw/acwGrammar.ts`; React subscription via `acw/acwGrammarHooks.ts#useAcwWorkspace`; surfaces `pages/acw/WorkspaceShell.tsx` + 5 lens views, `components/acw/AuthoringPanel.tsx`, `components/acw/LiveStructurePanel.tsx`, `components/acw/Canvas2D.tsx`, `Canvas3D.tsx` | Document is `{ schemaVersion: "acw-1.0", structureGraph: { nodes, edges } }`; node fields = `{ id, type, parentId, label, x, y }`; edge fields = `{ id, kind, fromId, toId }`. Locked allow-list at every nested level, validated by `__acwStoreInternals.isValidWorkspace` on read and `assertAllowedFields` on write. Containment is also materialised via `parentId` at node-creation time; the explicit edge kinds the user can author are CONTAINS, CONNECTS, INTERFACES_WITH, DATA_FLOW. CONTAINS is therefore representable both as the child's `parentId` and as a redundant-but-permitted edge record between the two existing nodes. | structure-only persistence; no semantics, no scoring, no ranking, no derivation |
 
@@ -830,7 +848,7 @@ fails the bundle. There is no runtime fallback, retry, or override.
 | `governance/portfolioStore.ts` (`assertAllowedFields` at write, `isValidEntry` at read) | called from the freeze flow and on every portfolio read | The 17-field allow-list is the only shape that ever reaches storage; corrupted entries are silently dropped at read time. |
 | `governance/signalsStore.ts` (`assertAllowedTopLevel`, `assertAllowedEvidenceInput`, `endsWithQuestionMark` validator, `isValidSignal`) | called from the signals create / advance flow and on every read | The 11-field top-level allow-list, the nested `evidenceSummary` / `relatedEntries` allow-lists, and the question-mark constraint on `interpretationGuidance` are enforced both at write and at read. |
 | `ctad/ctadIsolationInvariants.test-shape.ts` (denylist + allowlist scan over raw CTAD sources via two Vite globs — `/src/ctad/**/*.{ts,tsx}` and `/src/pages/ctad/**/*.{ts,tsx}` — loaded with `{ eager: true, query: '?raw', import: 'default' }`; PLUS five hardened portfolioStore import-form scans; PLUS a module-load self-test that proves each forbidden form throws and the approved form passes) | `App.tsx` (side-effect import) | CTAD imports nothing from any decision-mutating module: the denylist forbids any import of `governance/adsBuilder`, `governance/ecpBuilder`, `governance/ecpSections`, `governance/exposureDerive`, `governance/exposureNarratives`, `governance/responsibilityLens`, `governance/scenarioReading`, `governance/decisionReentry`, `governance/signalsStore`, `governance/export`, `governance/hash`, `governance/identity`, `governance/togafContainment`, `governance/misusePlaybooks`, the architecture grammar package, and any module under `acw/`. The portfolio store is reachable only through a NAMED-IMPORT block restricted to the read-only allowlist `{ listEntries, type PortfolioEntry }`; namespace imports (`import * as`), default imports, mixed default+named imports, side-effect-only imports, and dynamic `import("...portfolioStore")` are all rejected outright with explicit error messages. The self-test exercises each forbidden shape against a synthetic source string at module load so a future loosening of the regex patterns is itself caught synchronously. |
-| `ctad/ctadGrammarInvariants.test-shape.ts` (synchronous module-load assertions over the v1 CTAD registry, store schema, and an in-memory probe round-trip) | `App.tsx` (side-effect import) | CTAD v1 grammar shape is locked: schema version is exactly `ctad-1.0`; the registry contains exactly the four canonical sections in canonical order (`infrastructure`, `application`, `integration`, `crossCutting`); every section is non-empty; every parameter id is unique and matches camelCase shape; every parameter declares a non-empty options list; no parameter is marked `required` (CTAD is optional everywhere by construction). A live probe set/clear round-trip then asserts that clearing the only param of an otherwise-empty binding removes the binding from the persisted document — the empty-binding-leak path is closed at module load. |
+| `ctad/ctadGrammarInvariants.test-shape.ts` (synchronous module-load assertions over the v1.1 CTAD registry, store schema, and an in-memory probe round-trip) | `App.tsx` (side-effect import) | CTAD v1.1 grammar shape is locked: schema version is exactly `ctad-1.1`; the registry contains exactly the **five** canonical sections in canonical order (`infrastructure`, `application`, `integration`, `crossCutting`, `ops`); every section is non-empty; every parameter id is unique and matches camelCase shape; every parameter declares a non-empty options list; no parameter is marked `required` (CTAD is optional everywhere by construction). The environment vocabulary (`EnvironmentDef.KIND`, `EnvironmentDef.HOSTING`) is frozen and non-empty. A live probe set/clear round-trip then asserts that clearing the only param **and** removing the only environment of an otherwise-empty binding removes the binding from the persisted document — the empty-binding-leak path is closed at module load. The legacy `synthesizeEnvironments.ts` module is asserted to be absent from `lib/diagramspec/src/` (file-removal regression guard, replacing the prior TODO-marker test). |
 | `governance/staticTextGuard.ts` (`assertAllCtadLanguage` invocations + spec-equality exemption for the brief-mandated empty-state sentence) | `ctad/ctadRegistry.ts` (registry assertion at module load), `pages/ctad/CtadEntry.tsx`, `pages/ctad/CtadShell.tsx` | Every CTAD-authored static label, hint, parameter name, parameter option, section title, button caption, references-panel item, and binding-panel field label is asserted against `CTAD_FORBIDDEN`. Exactly one literal sentence is exempt and is enforced by a frozen-constant equality check. |
 
 These invariants are intentionally redundant with manual review: a
@@ -1984,7 +2002,7 @@ of the portfolio store is rejected at module load.
   binding panel, four collapsible state-driven sections, live
   `CTAD_STATE` JSON preview, references catalogues panel.
 
-### Registry — four canonical sections
+### Registry — five canonical sections
 
 The registry is the single source of truth for what CTAD lets a
 user explore. It is deep-frozen at module load and every label /
@@ -1992,31 +2010,67 @@ option is asserted against `CTAD_FORBIDDEN`.
 
 | Section id | TOGAF-aligned theme | Examples of parameters |
 | --- | --- | --- |
-| `infrastructure` | Compute, storage, network, runtime | compute model, storage class, network components (multi), deployment fabric, runtime platform |
+| `infrastructure` | Compute, storage, network, runtime | hosting model, deployment topology, server scale class, database class, data distribution, network topology, network components (multi), OS class, virtualisation class |
 | `application` | Application platform, framework, data plane | application style, framework family, data store class, processing pattern |
 | `integration` | Integration style, protocols, contracts | integration style, transport protocol, contract style, async pattern |
 | `crossCutting` | Cross-cutting concerns | observability surface, identity model, secrets handling, packaging |
+| `ops` | Operations and continuity | release cadence, change management, monitoring posture, recovery posture |
 
 Each parameter is one of:
 
 - `single` — exactly one option (or unspecified).
-- `multi` — zero or more options (used only for `networkComponents`
-  in v1).
+- `multi` — zero or more options (e.g. `networkComponents`).
 
 No parameter is `required`. The registry is intentionally
 permissive: every parameter defaults to "Not specified" and the
 user may leave the entire shell blank.
+
+#### Environments — first-class, adjacent to sections (Task #77)
+
+In addition to the five categorical sections, CTAD also models
+**environments** as a first-class concept. An environment is a
+named record:
+
+```ts
+type EnvironmentDef = {
+  id: string;            // canonical identifier (lowercase, digits, hyphens)
+  name: string;          // user-visible label
+  kind: EnvironmentKind; // frozen vocabulary on EnvironmentDef.KIND
+  hostingModel: HostingModel | null; // frozen vocabulary on EnvironmentDef.HOSTING
+};
+```
+
+Environments are **deliberately not** a sixth member of
+`CTAD_SECTIONS`. Sections are categorical *parameter groups*
+whose grammar invariant pins exactly five canonical sections in
+canonical order; environments are *named records* with a different
+shape that does not fit the section / parameter / option grammar.
+Modelling them as a section would break both the grammar
+invariant and the CTAD_STATE block-serialisation contract. They
+live as a peer field on `CtadStateExport` (parallel to the five
+section blocks) and are read by downstream consumers (the
+DiagramSpec compiler, the Track 3 renderers) directly, never
+through `findParam` / `CTAD_REGISTRY` traversal. The architectural
+decision is documented inline in `ctad/ctadRegistry.ts`.
+
+CRUD goes through `ctad/ctadStore.ts`:
+`addEnvironment`, `renameEnvironment`, `setEnvironmentKind`,
+`setEnvironmentHostingModel`, `removeEnvironment`. Validators
+reject duplicate ids within a binding, non-canonical identifier
+shape, empty names, and any value not in the frozen `KIND` /
+`HOSTING` vocabularies.
 
 ### Store contract
 
 ```
 localStorage["ctad.state.v1"] =
   {
-    schemaVersion: "ctad-1.0",
+    schemaVersion: "ctad-1.1",
     bindings: {
       "<adsId>@<adsVersion>": {
         adsId, adsVersion,
         params: { [paramId]: string | string[] },
+        environments: EnvironmentDef[],
         updatedAt: ISO8601
       },
       ...
@@ -2026,22 +2080,33 @@ localStorage["ctad.state.v1"] =
 
 Invariants enforced in code:
 
-1. **Schema lock** — `schemaVersion` is exactly `"ctad-1.0"`; any
-   other value causes the store to read as empty.
-2. **Registry validation on write** — `setCtadParam(b, paramId, v)`
+1. **Schema lock** — `schemaVersion` is exactly `"ctad-1.1"`; any
+   other value (with the single exception of `ctad-1.0`, see
+   §Migration below) causes the store to read as empty.
+2. **Migration `ctad-1.0` → `ctad-1.1`** — a persisted v1.0
+   document is read as v1.1 with `environments: []` per binding.
+   The migration is deterministic, performed at read time inside
+   `ctadStore`, and the upgraded shape is written back to disk
+   on the next mutation. No data is lost; no v1.0 binding is
+   discarded.
+3. **Registry validation on write** — `setCtadParam(b, paramId, v)`
    throws if `paramId` is not in the registry, or if `v` is not a
    permitted option (single) / not an array of permitted options
-   (multi).
-3. **No empty-binding leak** — clearing the only param of a binding
-   removes the binding key from the document; clearing a param on
+   (multi). Environment-CRUD writes are validated against the
+   `EnvironmentDef.KIND` and `EnvironmentDef.HOSTING` vocabularies
+   and the canonical-identifier shape.
+4. **No empty-binding leak** — clearing the last param **and**
+   removing the last environment of a binding removes the binding
+   key from the document; clearing a param / removing an env on
    a binding that does not exist is a fast-path no-op. The grammar
    invariant exercises a probe round-trip at module load to prove
    this.
-4. **Deterministic export** — `exportCtadState(b)` (and its alias
+5. **Deterministic export** — `exportCtadState(b)` (and its alias
    `getCtadState(b)`) walks `CTAD_SECTIONS` in registry order and,
    for every parameter in registry order, writes either the stored
-   value or `null`. Output is grouped by section id and is safe to
-   `JSON.stringify` for downstream consumers.
+   value or `null`; environments are emitted as a frozen array
+   in insertion order on the dedicated `environments` field.
+   Output is safe to `JSON.stringify` for downstream consumers.
 5. **Subscription is contract-correct** — views adapt the store
    to React via `useSyncExternalStore(subscribe, getStoreVersion)`.
    `getStoreVersion` is a monotonic counter incremented inside
@@ -2162,6 +2227,99 @@ CTAD is strictly removable to the pre-CTAD bundle. To remove:
 No other surface depends on CTAD. ADC, ACW, the Reflection view,
 the Decision Exposure View, and the Phase 6 Containment surface
 all continue to function unchanged.
+
+---
+
+## 19A. CNCF Apply Layer (CTAD-adjacent)
+
+A read-only reference catalogue of CNCF projects + a write surface
+that records which catalogue cards have been applied to a CTAD
+binding. Strictly CTAD-adjacent: no module here is reachable from
+the decision pipeline (ADC / portfolio / signals / exposure /
+containment / grammar engine).
+
+### Files
+
+- `lib/cncf-catalog/src/types.ts` — type contracts (`CncfCard`,
+  `CncfMaturity`, `CncfCategory`, `BindingHint`).
+- `lib/cncf-catalog/src/catalog.ts` — frozen card data
+  (`CNCF_CARDS`, `findCard`).
+- `lib/cncf-catalog/src/index.ts` — public re-exports. The
+  package is **vendor-neutral by construction**: card labels
+  describe capability roles, not product names.
+- `artifacts/canvas-ui/src/cncf/cncfTypes.ts`,
+  `cncf/cncfCatalog.ts`, `cncf/cncfBindingEngine.ts` — read-only
+  evaluation of catalogue cards against the live binding. The
+  engine produces, for each card, the set of CTAD effects it
+  *would* produce if applied (set, constrain, justify) and a
+  matching score. The engine **never** mutates state.
+- `artifacts/canvas-ui/src/cncf/cncfIsolationInvariants.test-shape.ts`
+  — module-load denylist scan asserting that no `cncf/**` source
+  imports the applied-cards or constraints stores; the only
+  permitted writer is `ctad/cncfApplyService.ts`.
+- `artifacts/canvas-ui/src/ctad/cncfApplyService.ts` — the **only**
+  module that mutates the applied-cards and constraints stores in
+  tandem. Exports `applyCard`, `removeAppliedCard`,
+  `getActiveJustifications`, `contributingCardIds`. Lives under
+  `@/ctad` (not `@/cncf`) so the CNCF module surface stays
+  read-only with respect to CTAD state and the CTAD store retains
+  exclusive ownership of all writes.
+
+### Stores
+
+| Key | Schema | Owner | Contents |
+| --- | --- | --- | --- |
+| `ctad.applied-cards.v1` | `ctad-applied-cards-1.0` | `ctad/ctadAppliedCardsStore.ts` | Per-binding audit log of applied cards with their resolved effects (`AppliedSetEffect`, `AppliedConstrainEffect`, `AppliedJustifyEffect`). |
+| `ctad.constraints.v1` | `ctad-constraints-1.0` | `ctad/ctadConstraintsStore.ts` | Per-binding annotation-only constraint contributions. The active allowed-option set for a parameter is the intersection of (registry options) ∩ (every contribution that names that parameter). The store does NOT mutate the persisted CTAD param value — it only narrows the UI allowed-option surface. |
+
+Both stores follow the same shape conventions as `ctad.state.v1`:
+keyed by `${adsId}@${adsVersion}`, bindings with zero entries
+are removed from the document, schema version locked at module
+load, subscription via `useSyncExternalStore` over a monotonic
+`getStoreVersion`.
+
+### Apply flow
+
+1. UI calls `cncfApplyService.applyCard(binding, cardId)`.
+2. The service resolves the card's effects via the read-only
+   binding engine.
+3. For each `set` effect, it routes through `setCtadParam` on the
+   CTAD store (so the standard registry validation runs).
+4. For each `constrain` effect, it adds a `ConstraintContribution`
+   to the constraints store, tagged with the source `cardId`.
+5. It records the full `AppliedCardEntry` in the applied-cards
+   store as an audit log.
+
+### Removal flow
+
+`removeAppliedCard(binding, cardId)`:
+
+1. Removes every `ConstraintContribution` whose `sourceCardId`
+   matches.
+2. Removes the `AppliedCardEntry` itself.
+3. Does **not** roll back `set` effects — those are CTAD param
+   values, owned by the user. Removing a card removes its
+   constraint annotations and its audit entry, never the
+   user-facing parameter value.
+
+### Strictly removable
+
+The CNCF Apply Layer can be removed in five steps without
+affecting CTAD's own behaviour:
+
+- delete the `lib/cncf-catalog` package and its workspace
+  reference,
+- delete the directory `src/cncf/`,
+- delete `src/ctad/cncfApplyService.ts`,
+  `src/ctad/ctadAppliedCardsStore.ts`,
+  `src/ctad/ctadConstraintsStore.ts`,
+- remove the AppliedCards / Constraints panels from
+  `pages/ctad/CtadShell.tsx`,
+- delete the `ctad.applied-cards.v1` and `ctad.constraints.v1`
+  localStorage keys (optional cleanup).
+
+CTAD continues to function on `ctad.state.v1` only, with no
+catalogue-driven assistance.
 
 ---
 
