@@ -169,7 +169,7 @@ const LABELS = {
   environmentHostingLabel: "Hosting model",
   environmentHostingNone: "Unspecified",
   environmentInvalidId:
-    "Identifier must start with a lowercase letter and use only letters, digits, or hyphens.",
+    "Identifier starts with a lowercase letter and uses only letters, digits, or hyphens.",
   environmentDuplicateId: "Identifier already in use.",
   environmentEmptyName: "Name is required.",
 } as const;
