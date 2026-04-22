@@ -9,7 +9,56 @@
 
 import { assertAllCtadLanguage } from "@/governance/staticTextGuard";
 
-export const CTAD_SCHEMA_VERSION = "ctad-1.0" as const;
+// Bumped to "ctad-1.1" in Task #77 to introduce first-class
+// environments alongside the five categorical sections. Storage
+// migration is deterministic: a persisted "ctad-1.0" doc is read
+// as "ctad-1.1" with an empty environments list per binding.
+export const CTAD_SCHEMA_VERSION = "ctad-1.1" as const;
+export const CTAD_PRIOR_SCHEMA_VERSIONS = ["ctad-1.0"] as const;
+
+// First-class environment definition (Task #77). Vendor-neutral by
+// construction: `kind` and `hostingModel` use the same generic
+// vocabularies that already gate every other CTAD label via the
+// CTAD vocabulary tier. The store enforces option membership at
+// write time; the compiler treats both fields as opaque labels.
+export const ENVIRONMENT_KIND_OPTIONS: readonly string[] = Object.freeze([
+  "Production",
+  "Staging",
+  "Development",
+  "Testing",
+  "Disaster Recovery",
+]);
+
+// Reuses the infrastructure hostingModel options so authored
+// environments speak the same hosting vocabulary as the
+// infrastructure section. Kept as its own constant so the
+// environments concept does not depend on the section registry's
+// internal indexing.
+export const ENVIRONMENT_HOSTING_MODEL_OPTIONS: readonly string[] = Object.freeze([
+  "On-prem",
+  "Private",
+  "Public",
+  "Hybrid",
+]);
+
+export interface CtadEnvironmentDef {
+  readonly id: string;
+  readonly name: string;
+  readonly kind: string;
+  readonly hostingModel: string | null;
+}
+
+// Stable identifier pattern for env ids (matches CTAD param ids).
+const ENV_ID_PATTERN = /^[a-z][a-zA-Z0-9-]*$/;
+export function isValidEnvironmentId(id: string): boolean {
+  return ENV_ID_PATTERN.test(id);
+}
+export function isValidEnvironmentKind(kind: string): boolean {
+  return ENVIRONMENT_KIND_OPTIONS.includes(kind);
+}
+export function isValidEnvironmentHostingModel(hosting: string | null): boolean {
+  return hosting === null || ENVIRONMENT_HOSTING_MODEL_OPTIONS.includes(hosting);
+}
 
 export type CtadSectionId =
   | "infrastructure"
@@ -257,7 +306,11 @@ export const NOT_SPECIFIED_LABEL = "Not specified" as const;
 // Vocabulary guard at module load: every label and option string
 // the registry will render is checked against the CTAD vocabulary
 // tier. A forbidden token throws on import, failing the bundle.
-const ALL_REGISTRY_TEXT: string[] = [NOT_SPECIFIED_LABEL];
+const ALL_REGISTRY_TEXT: string[] = [
+  NOT_SPECIFIED_LABEL,
+  ...ENVIRONMENT_KIND_OPTIONS,
+  ...ENVIRONMENT_HOSTING_MODEL_OPTIONS,
+];
 for (const section of SECTIONS_RAW) {
   ALL_REGISTRY_TEXT.push(section.label);
   for (const param of section.parameters) {

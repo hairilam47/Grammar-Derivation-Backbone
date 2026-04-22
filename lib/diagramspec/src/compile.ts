@@ -6,8 +6,10 @@
 //   - never reads CNCF data;
 //   - never imports the layout engine or any renderer;
 //   - never mutates `ctadState`;
-//   - emits ONLY nodes/edges implied by `ctadState` (plus the
-//     synthesized environments for the deployment view).
+//   - emits ONLY nodes/edges implied by `ctadState`. The
+//     deployment view's environment containers are read directly
+//     from `ctadState.environments` (Task #77 — first-class
+//     environments; no more synthesis from infra params).
 //
 // The compiler does NOT enforce viewType × stratum pairing —
 // that's the validator's job. An invalid pairing still produces
@@ -31,11 +33,24 @@ import {
   CTAD_SECTIONS_FOR_STRATUM,
   type CtadSectionKey,
 } from "./stratumMapping";
-import { synthesizeEnvironments } from "./synthesizeEnvironments";
+
+// First-class environment definition. Vendor-neutral by construction:
+// the compiler treats `kind` and `hostingModel` as opaque labels.
+// Authoring + validation of the value sets lives in the canvas-ui
+// CTAD registry; the compiler only requires `id` (stable) and
+// `name` (human label).
+export interface CtadEnvironmentLike {
+  readonly id: string;
+  readonly name: string;
+  readonly kind?: string | null;
+  readonly hostingModel?: string | null;
+}
 
 // Minimal structural shape of the CTAD state the compiler needs.
 // Declared structurally so this package does not depend on
-// canvas-ui's CTAD types.
+// canvas-ui's CTAD types. `environments` is OPTIONAL on the type
+// for backward-compatible call sites; the compiler treats an
+// absent field as an empty list (Task #77).
 export interface CtadStateLike {
   readonly infrastructure: Readonly<
     Record<string, string | readonly string[] | null>
@@ -50,6 +65,7 @@ export interface CtadStateLike {
     Record<string, string | readonly string[] | null>
   >;
   readonly ops: Readonly<Record<string, string | readonly string[] | null>>;
+  readonly environments?: readonly CtadEnvironmentLike[];
 }
 
 function selectionsFor(
@@ -88,10 +104,21 @@ function optionSlug(option: string): string {
 // ID schemes (stable, documented):
 //   node:section:<section>
 //   node:param:<section>:<paramId>:<optionSlug>
-//   node:env:<envId>            (deployment-view synthesized)
+//   env:<envId>                 (deployment-view env containers,
+//                                authored on CTAD_STATE.environments;
+//                                Task #77 retired the legacy
+//                                `node:env:` prefix and the
+//                                infra-derived synthesis fallback)
 //   edge:<from>::<to>::<relation>
 function nodeIdForSection(section: CtadSectionKey): string {
   return `node:section:${section}`;
+}
+// Env node-id scheme is `env:<id>` (NOT `node:env:<id>`) so that
+// the host fan-out suffix `::env:<id>` continues to match
+// `tailEnv()` for peer-chain bucketing — preserves multi-env
+// connects-to invariants pinned by the foundation tests.
+function nodeIdForEnvironment(envId: string): string {
+  return `env:${envId}`;
 }
 function nodeIdForParamValue(
   section: CtadSectionKey,
@@ -191,54 +218,75 @@ export function compileDiagramSpec(
   const edges: DiagramEdge[] = [];
 
   // ---- Deployment view (technology stratum) ---------------------
-  // Hierarchical: synthesized env containers → host nodes → edges.
+  // Hierarchical: env containers (authored in CTAD_STATE) → host
+  // nodes → edges. Task #77 made environments first-class: they
+  // are read directly from `ctadState.environments`. There is NO
+  // synthesis from infrastructure params and NO default-env
+  // fallback — an empty environment list means a flat deployment
+  // (host nodes parented to nothing).
   if (viewType === "deployment") {
-    const topology = pickSingle(ctadState.infrastructure["deploymentTopology"]);
-    const hosting = pickSingle(ctadState.infrastructure["hostingModel"]);
-    let envs = synthesizeEnvironments(topology, hosting);
+    const envs: readonly CtadEnvironmentLike[] = ctadState.environments ?? [];
 
-    // Emit env nodes (or short-circuit when nothing to show AT ALL).
+    // Short-circuit when there is nothing to show AT ALL.
     const selections = collectSelections(ctadState, stratum);
     if (envs.length === 0 && selections.length === 0) {
       return EMPTY_SPEC(viewType, stratum);
-    }
-    // Fallback: technology selections exist but neither
-    // `deploymentTopology` nor `hostingModel` is set. The contract
-    // requires every CTAD-implied node to surface; we synthesize
-    // a single deterministic "default" env so host nodes still
-    // have a parent. The TODO marker in `synthesizeEnvironments`
-    // tracks the migration that will let envs be authored
-    // explicitly.
-    if (envs.length === 0 && selections.length > 0) {
-      envs = Object.freeze([Object.freeze({ id: "env:default", label: "Default" })]);
     }
 
     for (const env of envs) {
       nodes.push(
         Object.freeze({
-          id: env.id,
+          id: nodeIdForEnvironment(env.id),
           kind: "environment" as DiagramNodeKind,
-          label: env.label,
+          label: env.name,
           parentId: null,
           ctadRef: Object.freeze({
-            section: "synthesized",
+            section: "environments",
             paramId: null,
-            option: null,
+            option: env.id,
           }),
         }),
       );
     }
-    // Each CTAD-derived host node hosts INTO every environment
-    // (deterministic fan-out). When no envs exist we fall back to
-    // a synthetic default (already handled by `synthesizeEnvironments`
-    // unless both inputs were null and we already returned empty).
-    const parentEnvs =
-      envs.length > 0
-        ? envs.map((e) => e.id)
-        : []; // length-0 path is unreachable here, but kept defensive.
+    // Each CTAD-derived host node hosts INTO every authored
+    // environment (deterministic fan-out). When `envs` is empty
+    // the host nodes are emitted flat (parentId = null) and the
+    // peer chain forms a single bucket — see `tailEnv` below.
+    const parentEnvs = envs.map((e) => nodeIdForEnvironment(e.id));
 
     const seenNode = new Set<string>();
     const peerNodeIds: string[] = [];
+    if (parentEnvs.length === 0) {
+      // Flat path: no env containers, no `::env:` suffix on ids,
+      // single peer-chain bucket.
+      for (const sel of selections) {
+        const nodeId = nodeIdForParamValue(sel.section, sel.paramId, sel.option);
+        if (seenNode.has(nodeId)) continue;
+        seenNode.add(nodeId);
+        nodes.push(
+          Object.freeze({
+            id: nodeId,
+            kind: paramNodeKind(viewType),
+            label: humanLabel(sel.option),
+            parentId: null,
+            ctadRef: Object.freeze({
+              section: sel.section,
+              paramId: sel.paramId,
+              option: sel.option,
+            }),
+          }),
+        );
+        peerNodeIds.push(nodeId);
+      }
+      appendPeerChainEdges(edges, peerNodeIds, "connects-to", () => "");
+      return Object.freeze({
+        schemaVersion: DIAGRAMSPEC_SCHEMA_VERSION,
+        viewType,
+        stratum,
+        nodes: Object.freeze(nodes),
+        edges: Object.freeze(edges),
+      });
+    }
     // Iterate ENV-major / SELECTION-minor so peer node ids land in
     // env-grouped runs in `peerNodeIds`. `appendPeerChainEdges`
     // chains adjacent items only when they share the same env

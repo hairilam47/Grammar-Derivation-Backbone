@@ -69,6 +69,24 @@ const FIXTURE_STATE: CtadStateLike = Object.freeze({
   ops: Object.freeze({
     containerOrchestration: "Kubernetes",
   }),
+  // Task #77 — environments are now first-class on CTAD_STATE.
+  // Two declared environments exercise the deployment view's
+  // env-major fan-out branch (one host node per environment per
+  // technology selection) which the connects-to invariant pins.
+  environments: Object.freeze([
+    Object.freeze({
+      id: "production",
+      name: "Production",
+      kind: "Production",
+      hostingModel: "Public",
+    }),
+    Object.freeze({
+      id: "staging",
+      name: "Staging",
+      kind: "Staging",
+      hostingModel: "Private",
+    }),
+  ]),
 });
 
 describe("compileDiagramSpec — pairing matrix", () => {
@@ -176,35 +194,36 @@ describe("compileDiagramSpec — deployment connects-to within multi-env", () =>
   });
 });
 
-describe("compileDiagramSpec — deployment fallback when env synthesis is empty", () => {
-  it("preserves technology selections even when topology+hosting are both null", () => {
-    const stateNoEnvInputs: CtadStateLike = {
+describe("compileDiagramSpec — deployment fallback when no environments are declared", () => {
+  it("emits a flat host listing (no env containers, parentId=null) when CTAD_STATE.environments is empty", () => {
+    // Task #77 deleted `synthesizeEnvironments`. With no
+    // environments declared on CTAD_STATE, the deployment view
+    // falls into a flat branch: host nodes are emitted as
+    // top-level peers (parentId=null) and no `kind: environment`
+    // node is created. Technology selections must still produce
+    // host nodes — that's what this test pins.
+    const stateNoEnvs: CtadStateLike = {
       ...EMPTY_STATE,
       infrastructure: {
         hostingModel: null,
         deploymentTopology: null,
-        // intentionally include another infra param so the
-        // technology-stratum selection set is non-empty.
         networkComponents: ["Firewall"] as readonly string[],
       },
       ops: { containerOrchestration: "Kubernetes" },
       crossCutting: { resiliencePosture: "Multi-region" },
+      environments: [],
     };
-    const spec = compileDiagramSpec(stateNoEnvInputs, {
+    const spec = compileDiagramSpec(stateNoEnvs, {
       viewType: "deployment",
       stratum: "technology",
     });
     const envs = spec.nodes.filter((n) => n.kind === "environment");
-    const hosts = spec.nodes.filter((n) => n.kind === "node");
-    expect(envs.length).toBeGreaterThan(0);
+    const hosts = spec.nodes.filter((n) => n.kind !== "environment");
+    expect(envs.length).toBe(0);
     expect(hosts.length).toBeGreaterThan(0);
-    // Every host node must have an env parent (no orphans).
     for (const h of hosts) {
-      expect(envs.some((e) => e.id === h.parentId)).toBe(true);
+      expect(h.parentId).toBeNull();
     }
-    // The synthesized fallback env id is stable.
-    expect(envs.some((e) => e.id === "env:default")).toBe(true);
-    // Validator passes the resulting spec.
     const result = validateDiagramSpec(spec);
     expect(result.ok).toBe(true);
   });
@@ -468,17 +487,42 @@ describe("App-boot isolation invariant — test-shape side-effect import", () =>
   });
 });
 
-describe("compileDiagramSpec — deployment env synthesis carries the TODO marker", () => {
-  it("synthesis source contains the migration anchor for Task #77", async () => {
-    const src = await fs.readFile(
+describe("compileDiagramSpec — environments are first-class (Task #77 regression)", () => {
+  it("the synthesizeEnvironments source file no longer exists", async () => {
+    // Task #77 deleted `synthesizeEnvironments.ts` entirely. The
+    // compiler now reads `environments` directly from CTAD_STATE.
+    // We assert the file is gone so a regression that resurrects
+    // it (alongside an old TODO marker) is caught immediately.
+    const synthPath = path.resolve(
+      __dirname,
+      "../../../../lib/diagramspec/src/synthesizeEnvironments.ts",
+    );
+    let exists = true;
+    try {
+      await fs.stat(synthPath);
+    } catch {
+      exists = false;
+    }
+    expect(exists).toBe(false);
+  });
+
+  it("compile.ts contains no reference to the deleted synthesis module", async () => {
+    const compileSrc = await fs.readFile(
       path.resolve(
         __dirname,
-        "../../../../lib/diagramspec/src/synthesizeEnvironments.ts",
+        "../../../../lib/diagramspec/src/compile.ts",
       ),
       "utf8",
     );
-    expect(src).toMatch(
-      /TODO:\s*replace once environments are first-class in CTAD/,
+    expect(compileSrc).not.toMatch(/synthesizeEnvironments/);
+    expect(compileSrc).not.toMatch(/env:default/);
+  });
+
+  it("index.ts no longer re-exports the synthesis module", async () => {
+    const indexSrc = await fs.readFile(
+      path.resolve(__dirname, "../../../../lib/diagramspec/src/index.ts"),
+      "utf8",
     );
+    expect(indexSrc).not.toMatch(/synthesizeEnvironments/);
   });
 });

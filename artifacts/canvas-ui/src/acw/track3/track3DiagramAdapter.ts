@@ -116,12 +116,22 @@ function maskStateForPlan(
     if (!inBounds.has(section)) return EMPTY_BLOCK;
     return blockFor(state, section);
   }
+  // Environments are scoped to the technology stratum — the
+  // deployment view is the only branch the compiler that consumes
+  // env containers. Logical/runtime strata pass an empty list so
+  // their masked CTAD_STATE remains environment-free and can never
+  // accidentally fan host nodes out by environment.
+  const envs =
+    plan.stratum === "technology"
+      ? state.environments
+      : ([] as CtadStateLike["environments"]);
   return {
     infrastructure: pass("infrastructure"),
     application: pass("application"),
     integration: pass("integration"),
     crossCutting: pass("crossCutting"),
     ops: pass("ops"),
+    environments: envs,
   };
 }
 

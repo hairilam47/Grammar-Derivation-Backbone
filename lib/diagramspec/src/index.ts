@@ -28,8 +28,6 @@ export {
   type CtadSectionKey,
 } from "./stratumMapping";
 
-export { synthesizeEnvironments } from "./synthesizeEnvironments";
-export type { SynthesizedEnvironment } from "./synthesizeEnvironments";
 
 export { compileDiagramSpec } from "./compile";
 export type { CtadStateLike } from "./compile";

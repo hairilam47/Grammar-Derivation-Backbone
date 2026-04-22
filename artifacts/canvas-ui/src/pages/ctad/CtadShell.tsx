@@ -31,16 +31,24 @@ import {
 } from "@/components/ui/card";
 import {
   CTAD_SECTIONS,
+  ENVIRONMENT_HOSTING_MODEL_OPTIONS,
+  ENVIRONMENT_KIND_OPTIONS,
   NOT_SPECIFIED_LABEL,
+  isValidEnvironmentId,
+  type CtadEnvironmentDef,
   type CtadParameter,
   type CtadSectionId,
 } from "@/ctad/ctadRegistry";
 import {
+  addEnvironment,
   exportCtadState,
   getBindingDoc,
+  getEnvironments,
   getStoreVersion,
+  removeEnvironment,
   setCtadParam,
   subscribe,
+  updateEnvironment,
   type CtadBinding,
 } from "@/ctad/ctadStore";
 import {
@@ -143,6 +151,27 @@ const LABELS = {
   appliedCardsHint:
     "Cards applied to this binding. Removing a card reverses its effects on parameters whose values still match.",
   appliedCardsEmpty: "No reference cards have been applied to this binding.",
+  // Environments panel (Task #77).
+  environmentsHeading: "Environments",
+  environmentsHint:
+    "Environments are first-class. Add at least one environment to render deployment containers; with none declared, the deployment view falls back to a flat host listing.",
+  environmentsEmpty: "No environments declared.",
+  environmentAddButton: "Add environment",
+  environmentRemoveButton: "Remove",
+  environmentSaveButton: "Save",
+  environmentCancelButton: "Cancel",
+  environmentEditButton: "Edit",
+  environmentIdLabel: "Identifier",
+  environmentIdPlaceholder: "e.g. production",
+  environmentNameLabel: "Name",
+  environmentNamePlaceholder: "Display name",
+  environmentKindLabel: "Kind",
+  environmentHostingLabel: "Hosting model",
+  environmentHostingNone: "Unspecified",
+  environmentInvalidId:
+    "Identifier must start with a lowercase letter and use only letters, digits, or hyphens.",
+  environmentDuplicateId: "Identifier already in use.",
+  environmentEmptyName: "Name is required.",
 } as const;
 
 // External catalog references — neutral name + url pairs only.
@@ -271,6 +300,7 @@ function BoundShell({
     <>
       <BindingPanel entry={entry} />
       <AppliedCardsPanel binding={binding} />
+      <EnvironmentsPanel binding={binding} />
       <ParametersPanel
         binding={binding}
         doc={doc}
@@ -337,6 +367,256 @@ function BindingPanel({ entry }: { entry: PortfolioEntry }) {
             </div>
           ))}
         </dl>
+      </CardContent>
+    </Card>
+  );
+}
+
+// EnvironmentsPanel — first-class CTAD concept (Task #77).
+// Authors a list of `{id, name, kind, hostingModel}` records that
+// the DiagramSpec compiler reads verbatim to build the deployment
+// view's environment containers. The panel deliberately renders no
+// validation hints unless authoring is in progress; values are
+// validated at write-time by the store.
+function EnvironmentsPanel({ binding }: { binding: CtadBinding }) {
+  const envs = getEnvironments(binding);
+  const [draft, setDraft] = useState<{
+    mode: "create" | "edit";
+    env: CtadEnvironmentDef;
+    initialId: string;
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  function startCreate() {
+    setError(null);
+    setDraft({
+      mode: "create",
+      initialId: "",
+      env: {
+        id: "",
+        name: "",
+        kind: ENVIRONMENT_KIND_OPTIONS[0],
+        hostingModel: null,
+      },
+    });
+  }
+  function startEdit(env: CtadEnvironmentDef) {
+    setError(null);
+    setDraft({ mode: "edit", initialId: env.id, env: { ...env } });
+  }
+  function cancel() {
+    setError(null);
+    setDraft(null);
+  }
+  function commit() {
+    if (!draft) return;
+    const e = draft.env;
+    if (!e.name.trim()) {
+      setError(LABELS.environmentEmptyName);
+      return;
+    }
+    if (!isValidEnvironmentId(e.id)) {
+      setError(LABELS.environmentInvalidId);
+      return;
+    }
+    if (
+      draft.mode === "create" &&
+      envs.some((existing) => existing.id === e.id)
+    ) {
+      setError(LABELS.environmentDuplicateId);
+      return;
+    }
+    try {
+      if (draft.mode === "create") addEnvironment(binding, e);
+      else updateEnvironment(binding, e);
+      setDraft(null);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  return (
+    <Card data-testid="ctad-environments-panel">
+      <CardHeader>
+        <CardTitle className="text-sm">{LABELS.environmentsHeading}</CardTitle>
+        <CardDescription className="text-xs">
+          {LABELS.environmentsHint}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {envs.length === 0 ? (
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="ctad-environments-empty"
+          >
+            {LABELS.environmentsEmpty}
+          </p>
+        ) : (
+          <ul className="space-y-1 text-xs">
+            {envs.map((e) => (
+              <li
+                key={e.id}
+                className="flex items-center justify-between gap-2 border border-border/50 rounded-md px-2 py-1"
+                data-testid={`ctad-environment-${e.id}`}
+              >
+                <span className="flex flex-col">
+                  <span className="font-mono">{e.id}</span>
+                  <span className="text-muted-foreground">
+                    {e.name} · {e.kind}
+                    {e.hostingModel ? ` · ${e.hostingModel}` : ""}
+                  </span>
+                </span>
+                <span className="flex gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => startEdit(e)}
+                    data-testid={`ctad-environment-${e.id}-edit`}
+                  >
+                    {LABELS.environmentEditButton}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => removeEnvironment(binding, e.id)}
+                    data-testid={`ctad-environment-${e.id}-remove`}
+                  >
+                    <X className="w-3 h-3" />
+                    {LABELS.environmentRemoveButton}
+                  </Button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {draft === null ? (
+          <div className="mt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={startCreate}
+              data-testid="ctad-environment-add"
+            >
+              {LABELS.environmentAddButton}
+            </Button>
+          </div>
+        ) : (
+          <div
+            className="mt-2 grid grid-cols-2 gap-2 text-xs border border-border/50 rounded-md p-2"
+            data-testid="ctad-environment-form"
+          >
+            <label className="flex flex-col gap-1">
+              <span className="text-muted-foreground">
+                {LABELS.environmentIdLabel}
+              </span>
+              <input
+                className="bg-background border border-border/50 rounded px-1 py-0.5 font-mono"
+                value={draft.env.id}
+                placeholder={LABELS.environmentIdPlaceholder}
+                disabled={draft.mode === "edit"}
+                onChange={(ev) =>
+                  setDraft({
+                    ...draft,
+                    env: { ...draft.env, id: ev.target.value },
+                  })
+                }
+                data-testid="ctad-environment-form-id"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-muted-foreground">
+                {LABELS.environmentNameLabel}
+              </span>
+              <input
+                className="bg-background border border-border/50 rounded px-1 py-0.5"
+                value={draft.env.name}
+                placeholder={LABELS.environmentNamePlaceholder}
+                onChange={(ev) =>
+                  setDraft({
+                    ...draft,
+                    env: { ...draft.env, name: ev.target.value },
+                  })
+                }
+                data-testid="ctad-environment-form-name"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-muted-foreground">
+                {LABELS.environmentKindLabel}
+              </span>
+              <select
+                className="bg-background border border-border/50 rounded px-1 py-0.5"
+                value={draft.env.kind}
+                onChange={(ev) =>
+                  setDraft({
+                    ...draft,
+                    env: { ...draft.env, kind: ev.target.value },
+                  })
+                }
+                data-testid="ctad-environment-form-kind"
+              >
+                {ENVIRONMENT_KIND_OPTIONS.map((k) => (
+                  <option key={k} value={k}>
+                    {k}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-muted-foreground">
+                {LABELS.environmentHostingLabel}
+              </span>
+              <select
+                className="bg-background border border-border/50 rounded px-1 py-0.5"
+                value={draft.env.hostingModel ?? ""}
+                onChange={(ev) =>
+                  setDraft({
+                    ...draft,
+                    env: {
+                      ...draft.env,
+                      hostingModel:
+                        ev.target.value === "" ? null : ev.target.value,
+                    },
+                  })
+                }
+                data-testid="ctad-environment-form-hosting"
+              >
+                <option value="">{LABELS.environmentHostingNone}</option>
+                {ENVIRONMENT_HOSTING_MODEL_OPTIONS.map((h) => (
+                  <option key={h} value={h}>
+                    {h}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {error !== null && (
+              <p
+                className="col-span-2 text-destructive"
+                data-testid="ctad-environment-form-error"
+              >
+                {error}
+              </p>
+            )}
+            <div className="col-span-2 flex gap-2 justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={cancel}
+                data-testid="ctad-environment-form-cancel"
+              >
+                {LABELS.environmentCancelButton}
+              </Button>
+              <Button
+                size="sm"
+                onClick={commit}
+                data-testid="ctad-environment-form-save"
+              >
+                {LABELS.environmentSaveButton}
+              </Button>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

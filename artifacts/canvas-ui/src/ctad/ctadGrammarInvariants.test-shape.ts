@@ -22,6 +22,8 @@ import {
   CTAD_SCHEMA_VERSION,
   CTAD_SECTIONS,
   ALL_PARAM_IDS,
+  ENVIRONMENT_KIND_OPTIONS,
+  ENVIRONMENT_HOSTING_MODEL_OPTIONS,
   type CtadSectionId,
 } from "./ctadRegistry";
 import {
@@ -46,9 +48,15 @@ if (CTAD_REGISTRY.schemaVersion !== CTAD_SCHEMA_VERSION) {
     `${PREFIX}: CTAD_REGISTRY.schemaVersion (${CTAD_REGISTRY.schemaVersion}) and CTAD_SCHEMA_VERSION (${CTAD_SCHEMA_VERSION}) disagree.`,
   );
 }
-if (CTAD_SCHEMA_VERSION !== "ctad-1.0") {
+// Task #77 promoted environments to a first-class CTAD concept and
+// bumped the schema to "ctad-1.1". The store's read path is
+// backwards-compatible with persisted "ctad-1.0" docs via a
+// deterministic empty-environments migration; that contract is
+// exercised by the foundation tests. v1.x must remain on the
+// "ctad-1.x" channel; structural breaks require "ctad-2.0".
+if (CTAD_SCHEMA_VERSION !== "ctad-1.1") {
   throw new Error(
-    `${PREFIX}: schemaVersion drift detected. v1 must remain "ctad-1.0"; future structural changes require an explicit "ctad-2.0".`,
+    `${PREFIX}: schemaVersion drift detected. v1 must remain on the "ctad-1.x" channel ("ctad-1.1" current); structural breaks require an explicit "ctad-2.0".`,
   );
 }
 
@@ -184,8 +192,61 @@ for (const section of CTAD_SECTIONS) {
   }
 }
 
+// (8) Environments first-class shape (Task #77). Environment kind
+// and hosting-model option vocabularies are non-empty, frozen, and
+// internally unique. The compiler reads `environments` verbatim
+// from CTAD_STATE; these checks pin the option sets that the store
+// is allowed to admit so a regression in the registry would fail
+// the bundle rather than silently widen the vocabulary.
+if (!Object.isFrozen(ENVIRONMENT_KIND_OPTIONS)) {
+  throw new Error(`${PREFIX}: ENVIRONMENT_KIND_OPTIONS is not frozen.`);
+}
+if (!Object.isFrozen(ENVIRONMENT_HOSTING_MODEL_OPTIONS)) {
+  throw new Error(`${PREFIX}: ENVIRONMENT_HOSTING_MODEL_OPTIONS is not frozen.`);
+}
+if (ENVIRONMENT_KIND_OPTIONS.length === 0) {
+  throw new Error(`${PREFIX}: ENVIRONMENT_KIND_OPTIONS is empty.`);
+}
+if (ENVIRONMENT_HOSTING_MODEL_OPTIONS.length === 0) {
+  throw new Error(`${PREFIX}: ENVIRONMENT_HOSTING_MODEL_OPTIONS is empty.`);
+}
+{
+  const seen = new Set<string>();
+  for (const k of ENVIRONMENT_KIND_OPTIONS) {
+    if (seen.has(k)) {
+      throw new Error(`${PREFIX}: duplicate environment kind "${k}".`);
+    }
+    seen.add(k);
+  }
+}
+{
+  const seen = new Set<string>();
+  for (const h of ENVIRONMENT_HOSTING_MODEL_OPTIONS) {
+    if (seen.has(h)) {
+      throw new Error(`${PREFIX}: duplicate environment hosting model "${h}".`);
+    }
+    seen.add(h);
+  }
+}
+
+// (9) Empty binding exports an empty environments array (never
+// undefined). The compiler relies on this to take the flat-host
+// branch when no environments are declared.
+{
+  const probeBinding = {
+    adsId: "__ctad_env_invariant_probe__",
+    adsVersion: "0",
+  };
+  const exported = exportCtadState(probeBinding);
+  if (!Array.isArray(exported.environments) || exported.environments.length !== 0) {
+    throw new Error(
+      `${PREFIX}: empty binding exported environments=${JSON.stringify(exported.environments)}, expected [].`,
+    );
+  }
+}
+
 export function assertCtadV1GrammarInvariants(): void {
-  if (CTAD_REGISTRY.schemaVersion !== "ctad-1.0") {
+  if (CTAD_REGISTRY.schemaVersion !== "ctad-1.1") {
     throw new Error(`${PREFIX}: schemaVersion drift detected at runtime.`);
   }
 }
