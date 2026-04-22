@@ -112,10 +112,14 @@ export interface Track3Canvas3DProps {
   // Sections (CTAD section ids) the user has hidden via the
   // layer toggle. Filter is applied per-mesh — no ELK re-run.
   readonly hiddenSections: ReadonlySet<string>;
-  // Highlight target only. Visibility-isolation happens in the
-  // shell; the helper is invoked here as a pure pass-through to
-  // satisfy the structural-identity invariant (both 2D and 3D
-  // surface the same node set).
+  // Visibility-isolation: kept node id set produced by the shell
+  // via `isolateAroundNode(selectedNodeId)`. null means no
+  // isolation is active. Renderers use this as an additional
+  // visibility filter (treated identically to `hiddenSections`)
+  // so a click isolates the node + its neighbours and fades the
+  // rest. Computed in the shell so 2D and 3D agree.
+  readonly isolatedKeptIds?: ReadonlySet<string> | null;
+  // Highlight target. The node id the user clicked.
   readonly selectedNodeId: string | null;
   readonly cameraX?: number;
   readonly cameraY?: number;
@@ -134,10 +138,16 @@ const Z_GAP = 1.4;
 const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 4;
 const BASE_CAM_Z = 8;
-// Lerp rate per second: at 60fps the mesh covers ~98% of its
-// remaining delta in ~0.5s. Value is a constant so motion is
-// reproducible across frames.
-const LERP_RATE = 8;
+// Fixed-duration lerp window (seconds). Each time a mesh's
+// target position OR its target opacity changes, the animator
+// captures the current value as the start, resets a per-mesh
+// elapsed-time counter to 0, and interpolates linearly toward
+// the new target over LERP_DURATION_S. The interpolation is
+// strictly time-normalized — `t / LERP_DURATION_S` — so the
+// motion completes in a deterministic, framerate-independent
+// constant duration on every target change. No exponential
+// smoothing.
+const LERP_DURATION_S = 0.5;
 
 function clampZoom(z: number): number {
   if (!Number.isFinite(z) || z <= 0) return 1;
@@ -214,6 +224,22 @@ interface MeshAnimatorProps {
 // (previous, target, dt).
 function MeshAnimator(props: MeshAnimatorProps) {
   const ref = useRef<THREE_GroupLike | null>(null);
+  // Per-mesh interpolation state. `start*` are the values the
+  // current lerp segment began at; `target*` are what we lerp
+  // toward; `t` is elapsed seconds within the current segment,
+  // capped at LERP_DURATION_S. Whenever the parent passes a new
+  // target (position or opacity), we capture the CURRENT
+  // interpolated value as the new start and reset t = 0 — this is
+  // the "fixed-duration lerp resets on target change" contract.
+  const startPosRef = useRef<[number, number, number]>([
+    props.previous?.[0] ?? props.target[0],
+    props.previous?.[1] ?? props.target[1],
+    props.previous?.[2] ?? props.target[2],
+  ]);
+  const targetPosRef = useRef<readonly [number, number, number]>(props.target);
+  const startOpRef = useRef<number>(props.previous === null ? 0 : 1);
+  const targetOpRef = useRef<number>(props.targetOpacity);
+  const tRef = useRef<number>(0);
   const opacityRef = useRef<number>(props.previous === null ? 0 : 1);
   const fadedOutFiredRef = useRef<boolean>(false);
   // Initialise at previous (or target if no previous known).
@@ -230,11 +256,33 @@ function MeshAnimator(props: MeshAnimatorProps) {
   useFrame((_state, dt) => {
     const g = ref.current;
     if (!g) return;
-    const alpha = 1 - Math.exp(-LERP_RATE * dt);
-    g.position.x += (props.target[0] - g.position.x) * alpha;
-    g.position.y += (props.target[1] - g.position.y) * alpha;
-    g.position.z += (props.target[2] - g.position.z) * alpha;
-    opacityRef.current += (props.targetOpacity - opacityRef.current) * alpha;
+    // Detect target change (either position or opacity) and
+    // restart the segment at t = 0 capturing the current value.
+    const tp = targetPosRef.current;
+    const newTarget = props.target;
+    const posChanged =
+      tp[0] !== newTarget[0] || tp[1] !== newTarget[1] || tp[2] !== newTarget[2];
+    const opChanged = targetOpRef.current !== props.targetOpacity;
+    if (posChanged) {
+      startPosRef.current = [g.position.x, g.position.y, g.position.z];
+      targetPosRef.current = newTarget;
+    }
+    if (opChanged) {
+      startOpRef.current = opacityRef.current;
+      targetOpRef.current = props.targetOpacity;
+    }
+    if (posChanged || opChanged) {
+      tRef.current = 0;
+    }
+    tRef.current = Math.min(LERP_DURATION_S, tRef.current + dt);
+    const alpha = LERP_DURATION_S <= 0 ? 1 : tRef.current / LERP_DURATION_S;
+    const sp = startPosRef.current;
+    const tg = targetPosRef.current;
+    g.position.x = sp[0] + (tg[0] - sp[0]) * alpha;
+    g.position.y = sp[1] + (tg[1] - sp[1]) * alpha;
+    g.position.z = sp[2] + (tg[2] - sp[2]) * alpha;
+    opacityRef.current =
+      startOpRef.current + (targetOpRef.current - startOpRef.current) * alpha;
     setGroupOpacity(g, opacityRef.current);
     // Fire the parent callback once when an exiting node has
     // effectively faded out so the parent can drop it.
@@ -291,6 +339,7 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
   const {
     positionedDiagrams,
     hiddenSections,
+    isolatedKeptIds,
     selectedNodeId,
     onCameraChange,
     onNodeClick,
@@ -328,10 +377,11 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
     for (const n of flat.nodes) {
       if (!visibleIds.has(n.id)) continue;
       if (n.section !== null && hiddenSections.has(n.section)) continue;
+      if (isolatedKeptIds !== null && isolatedKeptIds !== undefined && !isolatedKeptIds.has(n.id)) continue;
       out.add(n.id);
     }
     return out;
-  }, [flat.nodes, visibleIds, hiddenSections]);
+  }, [flat.nodes, visibleIds, hiddenSections, isolatedKeptIds]);
   const visibleEdges = useMemo(
     () =>
       visibility.visibleEdges.filter(

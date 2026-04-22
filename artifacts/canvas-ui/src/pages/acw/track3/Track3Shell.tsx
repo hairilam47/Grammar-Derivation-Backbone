@@ -68,6 +68,8 @@ import {
 } from "@/acw/track3/track3ViewPrefs";
 import { Track3Canvas2D } from "@/components/acw/track3/Track3Canvas2D";
 import { Track3Canvas3D } from "@/components/acw/track3/Track3Canvas3D";
+import { isolateAroundNode } from "@/acw/track3/track3FocusIsolation";
+import type { AcwNode, AcwEdge } from "@/acw/acwLensStructure";
 
 interface Track3Binding {
   readonly adsId: string;
@@ -118,7 +120,7 @@ const LABELS = {
   focusedHeading: "Focused on",
   clearFocus: "Clear focus",
   focusHint:
-    "Click a node in the diagram to highlight it. Click again or press the button to clear.",
+    "Click a node in the diagram to isolate it and its neighbours. Click again or press the button to clear.",
   zoomHint:
     "Drag to rotate, right-drag to pan, scroll to zoom. Camera position persists per binding.",
   layoutPending: "Computing layout…",
@@ -304,6 +306,44 @@ function BoundShell({
     return out;
   }, [prefs.hiddenLayers, prefs.perspective]);
 
+  // Isolate-on-click: when the user clicks a node, restrict
+  // visibility to that node + its neighbours (legacy semantics
+  // from `isolateAroundNode`). Computed in the shell so both
+  // renderers receive the SAME kept-id set and cannot diverge.
+  // null means no isolation active; renderers treat absence as
+  // "show everything visible after the section filter".
+  const isolatedKeptIds = useMemo<ReadonlySet<string> | null>(() => {
+    if (selectedNodeId === null) return null;
+    const acwNodes: AcwNode[] = [];
+    const acwEdges: AcwEdge[] = [];
+    for (const pd of positionedDiagrams) {
+      for (const n of pd.nodes) {
+        acwNodes.push({
+          id: n.id,
+          type: n.parentId === null ? "Zone" : "Component",
+          parentId: n.parentId,
+          label: n.label,
+          x: n.x,
+          y: n.y,
+        });
+      }
+      for (const e of pd.edges) {
+        acwEdges.push({
+          id: e.id,
+          kind: "CONNECTS",
+          fromId: e.from,
+          toId: e.to,
+        });
+      }
+    }
+    const result = isolateAroundNode(acwNodes, acwEdges, selectedNodeId);
+    // No-op (selection unknown / cleared) — `isolateAroundNode`
+    // returns the input unchanged in that case, which we surface
+    // as "no isolation" so the renderers don't fade everything.
+    if (result.nodes === acwNodes) return null;
+    return new Set(result.nodes.map((n) => n.id));
+  }, [selectedNodeId, positionedDiagrams]);
+
   const handleNodeClick = useCallback((nodeId: string) => {
     setSelectedNodeId((prev) => (prev === nodeId ? null : nodeId));
   }, []);
@@ -362,6 +402,7 @@ function BoundShell({
               key={`3d:${binding.adsId}:${binding.adsVersion}`}
               positionedDiagrams={positionedDiagrams}
               hiddenSections={hiddenSections}
+              isolatedKeptIds={isolatedKeptIds}
               selectedNodeId={selectedNodeId}
               cameraX={prefs.cameraX}
               cameraY={prefs.cameraY}
@@ -373,6 +414,7 @@ function BoundShell({
             <Track3Canvas2D
               positionedDiagrams={positionedDiagrams}
               hiddenSections={hiddenSections}
+              isolatedKeptIds={isolatedKeptIds}
               selectedNodeId={selectedNodeId}
               cameraX={prefs.cameraX}
               cameraY={prefs.cameraY}

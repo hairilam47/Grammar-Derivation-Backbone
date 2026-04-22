@@ -34,6 +34,12 @@ assertAllAcwTrack3Language([EMPTY_HINT, LEGEND_LABEL]);
 export interface Track3Canvas2DProps {
   readonly positionedDiagrams: readonly PositionedDiagram[];
   readonly hiddenSections: ReadonlySet<string>;
+  // Visibility-isolation: kept node id set produced by the shell
+  // via `isolateAroundNode(selectedNodeId)`. null means no
+  // isolation is active. Treated as an additional visibility
+  // filter on top of `hiddenSections` so a click isolates the
+  // node + its neighbours.
+  readonly isolatedKeptIds?: ReadonlySet<string> | null;
   readonly selectedNodeId: string | null;
   readonly cameraX?: number;
   readonly cameraY?: number;
@@ -98,6 +104,7 @@ export function Track3Canvas2D(props: Track3Canvas2DProps) {
   const {
     positionedDiagrams,
     hiddenSections,
+    isolatedKeptIds,
     selectedNodeId,
     onCameraChange,
     onNodeClick,
@@ -128,9 +135,15 @@ export function Track3Canvas2D(props: Track3Canvas2DProps) {
       flat.nodes.filter((n) => {
         if (!visibleIds.has(n.id)) return false;
         if (n.section !== null && hiddenSections.has(n.section)) return false;
+        if (
+          isolatedKeptIds !== null &&
+          isolatedKeptIds !== undefined &&
+          !isolatedKeptIds.has(n.id)
+        )
+          return false;
         return true;
       }),
-    [flat.nodes, visibleIds, hiddenSections],
+    [flat.nodes, visibleIds, hiddenSections, isolatedKeptIds],
   );
   const visibleNodeIds = useMemo(
     () => new Set(visibleNodes.map((n) => n.id)),

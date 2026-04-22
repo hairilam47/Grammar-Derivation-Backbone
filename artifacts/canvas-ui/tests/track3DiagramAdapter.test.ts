@@ -253,6 +253,105 @@ const LAYER_ROOTS_SUBSUMED_BY_ENV: ReadonlySet<string> = new Set([
   "node:layer:ops",
 ]);
 
+// Legacy adjacency oracle. Replays the retired
+// `TRACK3_ADJACENCY` table inline so this test does not depend
+// on any deleted module. Each rule is expanded over the bound
+// CTAD state into the cartesian product of (paramA option,
+// paramB option) pairs — the exact same expansion the legacy
+// `deriveACWStructure` performed when materialising edges.
+interface LegacyAdjacencyRule {
+  readonly from: { readonly layer: Track3Layer; readonly paramId: string };
+  readonly to: { readonly layer: Track3Layer; readonly paramId: string };
+}
+const LEGACY_ADJACENCY: readonly LegacyAdjacencyRule[] = Object.freeze([
+  // Application <-> infrastructure
+  { from: { layer: "application", paramId: "runtimeCategory" }, to: { layer: "infrastructure", paramId: "hostingModel" } },
+  { from: { layer: "application", paramId: "runtimeCategory" }, to: { layer: "infrastructure", paramId: "virtualisationClass" } },
+  { from: { layer: "application", paramId: "applicationStyle" }, to: { layer: "infrastructure", paramId: "deploymentTopology" } },
+  { from: { layer: "application", paramId: "backendFrameworkClass" }, to: { layer: "infrastructure", paramId: "osClass" } },
+  { from: { layer: "application", paramId: "applicationStyle" }, to: { layer: "infrastructure", paramId: "databaseClass" } },
+  // Integration <-> application / infrastructure
+  { from: { layer: "integration", paramId: "integrationPattern" }, to: { layer: "application", paramId: "applicationStyle" } },
+  { from: { layer: "integration", paramId: "messageExchange" }, to: { layer: "application", paramId: "applicationStyle" } },
+  { from: { layer: "integration", paramId: "boundaryScope" }, to: { layer: "infrastructure", paramId: "networkTopology" } },
+  // Cross-cutting
+  { from: { layer: "crossCutting", paramId: "configurationManagement" }, to: { layer: "application", paramId: "applicationStyle" } },
+  { from: { layer: "crossCutting", paramId: "secretsHandling" }, to: { layer: "infrastructure", paramId: "identityModel" } },
+  { from: { layer: "crossCutting", paramId: "resiliencePosture" }, to: { layer: "infrastructure", paramId: "deploymentTopology" } },
+  // Ops
+  { from: { layer: "ops", paramId: "containerOrchestration" }, to: { layer: "infrastructure", paramId: "virtualisationClass" } },
+  { from: { layer: "ops", paramId: "observabilityStack" }, to: { layer: "application", paramId: "applicationStyle" } },
+  { from: { layer: "ops", paramId: "serviceMesh" }, to: { layer: "application", paramId: "applicationStyle" } },
+  { from: { layer: "ops", paramId: "cicdModel" }, to: { layer: "application", paramId: "applicationStyle" } },
+  { from: { layer: "ops", paramId: "backupAndRestore" }, to: { layer: "infrastructure", paramId: "databaseClass" } },
+]);
+
+// Expand legacy adjacency rules over the CTAD state into a set
+// of unordered legacy node-id pairs — i.e. the edges
+// `deriveACWStructure` would have emitted.
+function legacyAdjacencyEdgePairs(
+  state: CtadStateExport,
+  bounds: AdcBounds,
+): Set<string> {
+  const out = new Set<string>();
+  const inBounds = new Set<Track3Layer>(bounds.layersPresent);
+  function optsOf(layer: Track3Layer, paramId: string): readonly string[] {
+    if (!inBounds.has(layer)) return [];
+    const block = blockFor(state, layer) as Record<
+      string,
+      string | readonly string[] | null | undefined
+    >;
+    const raw = block[paramId];
+    if (raw === null || raw === undefined) return [];
+    return typeof raw === "string" ? [raw] : raw;
+  }
+  for (const rule of LEGACY_ADJACENCY) {
+    const a = optsOf(rule.from.layer, rule.from.paramId);
+    const b = optsOf(rule.to.layer, rule.to.paramId);
+    for (const oa of a) {
+      for (const ob of b) {
+        const ida = legacyParamNodeId(rule.from.layer, rule.from.paramId, oa);
+        const idb = legacyParamNodeId(rule.to.layer, rule.to.paramId, ob);
+        const [lo, hi] = ida < idb ? [ida, idb] : [idb, ida];
+        out.add(`${lo}::${hi}`);
+      }
+    }
+  }
+  return out;
+}
+
+// Set of legacy node-ids that appear as either endpoint of any
+// legacy adjacency edge.
+function legacyEdgeEndpointSet(
+  state: CtadStateExport,
+  bounds: AdcBounds,
+): Set<string> {
+  const pairs = legacyAdjacencyEdgePairs(state, bounds);
+  const out = new Set<string>();
+  for (const p of pairs) {
+    const [a, b] = p.split("::");
+    out.add(a);
+    out.add(b);
+  }
+  return out;
+}
+
+// Set of remapped node-ids that appear as either endpoint of
+// any compiled new-pipeline edge.
+function newPipelineEdgeEndpointSet(
+  state: CtadStateExport,
+  bounds: AdcBounds,
+): Set<string> {
+  const { edgeEndpointPairs } = newPipelineLegacyIds(state, bounds);
+  const out = new Set<string>();
+  for (const p of edgeEndpointPairs) {
+    const [a, b] = p.split("::");
+    out.add(a);
+    out.add(b);
+  }
+  return out;
+}
+
 describe("track3DiagramAdapter — node-id + edge parity vs retired structure", () => {
   it("emits the same node-id set as the retired derivation (after stratum remap)", () => {
     const legacy = legacyNodeAndEdgeIds(POPULATED_STATE, BOUNDS);
@@ -274,6 +373,36 @@ describe("track3DiagramAdapter — node-id + edge parity vs retired structure", 
       if (id.startsWith("node:layer:") || id.startsWith("node:param:")) {
         expect(legacy.nodeIds.has(id)).toBe(true);
       }
+    }
+  });
+
+  it("preserves the legacy edge endpoint SET (with stratum remap)", () => {
+    // Legacy adjacency materialises a set of (legacy node id,
+    // legacy node id) pairs. The new pipeline reorganises edges
+    // (containment + intra-section peer chains in lieu of the
+    // legacy cross-section adjacency table), so the per-pair
+    // edge identity does NOT survive the migration. What MUST
+    // survive — the contract pinned by this test — is the SET
+    // of node ids that appear as legacy edge endpoints. Every
+    // such legacy endpoint must:
+    //   (a) exist as a compiled node in the new pipeline
+    //       (modulo the documented stratum remap), and
+    //   (b) appear as an endpoint of at least one new compiled
+    //       edge (i.e. it is wired into the diagram, not orphaned
+    //       as a free-floating node).
+    // Layer-root ids subsumed into env containers are excluded
+    // (same documented exception as the node-set parity test).
+    const legacyEndpoints = legacyEdgeEndpointSet(POPULATED_STATE, BOUNDS);
+    expect(legacyEndpoints.size).toBeGreaterThan(0);
+    const next = newPipelineLegacyIds(POPULATED_STATE, BOUNDS);
+    const newEdgeEndpoints = newPipelineEdgeEndpointSet(POPULATED_STATE, BOUNDS);
+    for (const id of legacyEndpoints) {
+      if (LAYER_ROOTS_SUBSUMED_BY_ENV.has(id)) continue;
+      // (a) endpoint exists as a compiled node.
+      expect(next.nodeIds.has(id)).toBe(true);
+      // (b) endpoint is wired — appears as an endpoint of at
+      // least one compiled edge.
+      expect(newEdgeEndpoints.has(id)).toBe(true);
     }
   });
 
