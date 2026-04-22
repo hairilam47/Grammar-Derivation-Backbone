@@ -1,28 +1,30 @@
 // ACW Track 3 — bound derived view shell.
 //
-// Reads CTAD_STATE for the bound ADS via `getCtadState`,
-// computes `AdcBounds` via `projectBounds`, and renders the
-// derived structural diagram in either 2D or 3D depending on
-// the per-binding view-prefs choice. Layer / perspective
-// controls live here; both renderers receive the SAME derived
-// nodes and edges so visibility cannot diverge between them.
+// Reads CTAD_STATE for the bound ADS via `getCtadState`, computes
+// `AdcBounds` via `projectBounds`, and drives the DiagramSpec
+// compiler + ELK layout pipeline (via `track3DiagramAdapter`) to
+// produce a list of positioned diagrams — one per architecture
+// stratum — that the renderers stack along the Z axis. Layer /
+// perspective controls live here; both renderers receive the
+// SAME `positionedDiagrams + hiddenSections` so visibility cannot
+// diverge between them.
 //
-// The shell is strictly read-only: it never mutates CTAD or the
-// portfolio. The only mutable storage Track 3 owns is
+// Layout is async because ELK is async; the shell carries
+// the positioned-diagrams in state and re-runs the pipeline only
+// when (ctadState, bounds) change. Layer-toggle and perspective
+// changes do NOT re-run ELK — they are passed straight through
+// to the renderers as filter sets.
+//
+// The shell remains strictly read-only: it never mutates CTAD or
+// the portfolio. The only mutable storage Track 3 owns is
 // `acw.track3.viewprefs.v1`, written through `track3ViewPrefs`.
-//
-// Constitutional CTAD allowlist: only the closed surface
-// `{ getCtadState, exportCtadState, type CtadStateExport }` is
-// imported from the CTAD store. There is no live subscription —
-// CTAD_STATE is re-read on route mount / binding change (the
-// `binding` dep of the `useMemo` below) and on the explicit
-// "Refresh from CTAD" button (the `refreshTick` dep). View-prefs
-// changes only trigger a re-render of the shell with the
-// previously memoised `ctadState`; they do NOT fan out to a
-// fresh CTAD read. This satisfies the task contract:
-// "navigating back to the derived view reflects the updated
-// structure", and keeps the refresh moment explicit.
-import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useRoute, Link } from "wouter";
 import { Layers, Crosshair, RefreshCcw } from "lucide-react";
 import {
@@ -40,13 +42,16 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { assertAllAcwTrack3Language } from "@/governance/staticTextGuard";
-import { deriveACWStructure } from "@/acw/track3/track3Derive";
 import { projectBounds } from "@/acw/track3/track3AdcBounds";
-import { isolateAroundNode } from "@/acw/track3/track3FocusIsolation";
+import {
+  compileTrack3Specs,
+  layoutTrack3Specs,
+  ctadSectionOfNodeId,
+} from "@/acw/track3/track3DiagramAdapter";
+import type { PositionedDiagram } from "@workspace/diagram-layout";
 import {
   TRACK3_LAYERS,
   TRACK3_PERSPECTIVES,
-  nodeIdForLayer,
   type Track3Layer,
   type Track3Perspective,
 } from "@/acw/track3/track3Types";
@@ -64,9 +69,6 @@ import {
 import { Track3Canvas2D } from "@/components/acw/track3/Track3Canvas2D";
 import { Track3Canvas3D } from "@/components/acw/track3/Track3Canvas3D";
 
-// Local binding identity. Track 3 cannot import the CTAD store's
-// `CtadBinding` type (off the read-only allowlist), so a thin
-// inline shape is used instead. Identity-only — no mutation.
 interface Track3Binding {
   readonly adsId: string;
   readonly adsVersion: string;
@@ -116,9 +118,10 @@ const LABELS = {
   focusedHeading: "Focused on",
   clearFocus: "Clear focus",
   focusHint:
-    "Click a node in the diagram to isolate it and its neighbours. Click again or press the button to clear.",
+    "Click a node in the diagram to highlight it. Click again or press the button to clear.",
   zoomHint:
     "Drag to rotate, right-drag to pan, scroll to zoom. Camera position persists per binding.",
+  layoutPending: "Computing layout…",
 } as const;
 
 assertAllAcwTrack3Language(Object.values(LABELS));
@@ -232,26 +235,8 @@ function BoundShell({
   binding: Track3Binding;
   entry: PortfolioEntry;
 }) {
-  // Re-render on view-prefs change (mode/perspective/hidden
-  // layers/camera). CTAD_STATE itself is re-read only when the
-  // ADC binding changes (route mount / navigation) or when the
-  // user clicks the "Refresh from CTAD" button (which bumps the
-  // local `refreshTick`); see the `useMemo` deps below. This is
-  // intentional: CTAD edits in another tab/route do NOT fan out
-  // automatically — the surface is strictly read-only and the
-  // refresh moment is explicit, so a user is never surprised by
-  // the diagram silently shifting underneath them. Navigating
-  // away and back, or clicking Refresh, picks up changes.
   useViewPrefsDoc();
   const [refreshTick, setRefreshTick] = useState(0);
-  // `selectedNodeId` is the user's click target. Isolation is
-  // computed by `isolateAroundNode` (a pure module assertion-
-  // backed function) BEFORE handing the structure to the
-  // renderer; the renderer then displays everything in the
-  // pre-filtered set. This avoids the foot-gun of passing a
-  // leaf id as `focusedParentId` to `enumerateLensVisibility`,
-  // which would (correctly, by its own contract) yield zero
-  // visible nodes for a node with no children.
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   const ctadState = useMemo(
@@ -259,21 +244,48 @@ function BoundShell({
     [binding, refreshTick],
   );
   const bounds = useMemo(() => projectBounds(entry), [entry]);
-  const structure = useMemo(
-    () => deriveACWStructure(ctadState, bounds),
+
+  // ---- DiagramSpec compile + ELK layout (async) -----------------
+  // Compile is sync and produces the spec list; layout is async.
+  // We re-run BOTH only when (ctadState, bounds) change. Layer-
+  // toggle and perspective changes do NOT trigger this effect —
+  // they read from positioned-diagrams already in state and apply
+  // a visibility-only filter at render time.
+  const specs = useMemo(
+    () => compileTrack3Specs(ctadState, bounds),
     [ctadState, bounds],
   );
+  const [positionedDiagrams, setPositionedDiagrams] = useState<
+    readonly PositionedDiagram[]
+  >([]);
+  const [layoutPending, setLayoutPending] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setLayoutPending(true);
+    layoutTrack3Specs(specs).then(
+      (pd) => {
+        if (cancelled) return;
+        setPositionedDiagrams(pd);
+        setLayoutPending(false);
+      },
+      (err) => {
+        if (cancelled) return;
+        console.error("[track3-shell] layout failed", err);
+        setPositionedDiagrams([]);
+        setLayoutPending(false);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [specs]);
+
   const prefs = getPrefs(entry.adsId, entry.adsVersion);
 
-  // Filter nodes/edges by hidden layers and perspective.
-  const filteredStructure = useMemo(() => {
-    const hidden = new Set(prefs.hiddenLayers);
-    let kept = new Set<string>();
-    for (const n of structure.nodes) {
-      const layer = layerOf(n.id);
-      if (layer !== null && hidden.has(layer)) continue;
-      kept.add(n.id);
-    }
+  // Translate layer-toggle (CTAD layer ids) and perspective into
+  // a single hidden-sections set passed to the renderers.
+  const hiddenSections = useMemo(() => {
+    const out = new Set<string>(prefs.hiddenLayers);
     if (prefs.perspective !== "all") {
       const focusLayer: Track3Layer | null =
         prefs.perspective === "infraCentric"
@@ -284,56 +296,18 @@ function BoundShell({
               ? "integration"
               : null;
       if (focusLayer !== null) {
-        const focusIds = new Set<string>();
-        for (const n of structure.nodes) {
-          const l = layerOf(n.id);
-          if (l === focusLayer && kept.has(n.id)) focusIds.add(n.id);
+        for (const l of TRACK3_LAYERS) {
+          if (l !== focusLayer && l !== "crossCutting") out.add(l);
         }
-        const neighbour = new Set<string>(focusIds);
-        for (const e of structure.edges) {
-          if (focusIds.has(e.fromId) && kept.has(e.toId)) neighbour.add(e.toId);
-          if (focusIds.has(e.toId) && kept.has(e.fromId)) neighbour.add(e.fromId);
-        }
-        for (const n of structure.nodes) {
-          if (neighbour.has(n.id) && n.parentId !== null) {
-            neighbour.add(n.parentId);
-          }
-        }
-        kept = neighbour;
       }
     }
-    const nodes = structure.nodes.filter((n) => kept.has(n.id));
-    const edges = structure.edges.filter(
-      (e) => kept.has(e.fromId) && kept.has(e.toId),
-    );
-    return { nodes, edges };
-  }, [structure, prefs.hiddenLayers, prefs.perspective]);
-
-  // No per-node collapse UI yet; the empty set documents that.
-  const collapsedIds = useMemo(() => new Set<string>(), []);
-
-  // Apply focus isolation in the shell (pure transformation
-  // backed by acwTrack3FocusIsolationInvariants). After this
-  // step the renderer receives only the nodes/edges that should
-  // be visible, and uses focusedParentId={null} so the shared
-  // visibility helper just enumerates everything in the input.
-  const isolatedStructure = useMemo(
-    () =>
-      isolateAroundNode(
-        filteredStructure.nodes,
-        filteredStructure.edges,
-        selectedNodeId,
-      ),
-    [filteredStructure, selectedNodeId],
-  );
+    return out;
+  }, [prefs.hiddenLayers, prefs.perspective]);
 
   const handleNodeClick = useCallback((nodeId: string) => {
-    // Click toggles isolate-focus on the clicked node. Clicking
-    // the currently focused node clears focus.
     setSelectedNodeId((prev) => (prev === nodeId ? null : nodeId));
   }, []);
   const handleClearFocus = useCallback(() => setSelectedNodeId(null), []);
-
   const handleCameraChange = useCallback(
     (cameraX: number, cameraY: number, cameraZoom: number) => {
       setCamera(binding.adsId, binding.adsVersion, cameraX, cameraY, cameraZoom);
@@ -343,13 +317,19 @@ function BoundShell({
 
   const focusedLabel = useMemo(() => {
     if (selectedNodeId === null) return null;
-    const n = structure.nodes.find((x) => x.id === selectedNodeId);
-    return n ? n.label : selectedNodeId;
-  }, [selectedNodeId, structure.nodes]);
+    for (const pd of positionedDiagrams) {
+      const n = pd.nodes.find((x: { id: string }) => x.id === selectedNodeId);
+      if (n) return n.label;
+    }
+    return selectedNodeId;
+  }, [selectedNodeId, positionedDiagrams]);
 
   const handleRefresh = useCallback(() => {
     setRefreshTick((t) => t + 1);
   }, []);
+
+  // Strip the section reference for an unused-import-style guard.
+  void ctadSectionOfNodeId;
 
   return (
     <>
@@ -370,12 +350,18 @@ function BoundShell({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {prefs.viewMode === "3d" ? (
+          {layoutPending ? (
+            <div
+              className="text-[11px] text-muted-foreground italic h-[360px] flex items-center justify-center border border-border/40 rounded-md bg-card/30"
+              data-testid="track3-layout-pending"
+            >
+              {LABELS.layoutPending}
+            </div>
+          ) : prefs.viewMode === "3d" ? (
             <Track3Canvas3D
               key={`3d:${binding.adsId}:${binding.adsVersion}`}
-              nodes={isolatedStructure.nodes}
-              edges={isolatedStructure.edges}
-              collapsedIds={collapsedIds}
+              positionedDiagrams={positionedDiagrams}
+              hiddenSections={hiddenSections}
               selectedNodeId={selectedNodeId}
               cameraX={prefs.cameraX}
               cameraY={prefs.cameraY}
@@ -385,9 +371,8 @@ function BoundShell({
             />
           ) : (
             <Track3Canvas2D
-              nodes={isolatedStructure.nodes}
-              edges={isolatedStructure.edges}
-              collapsedIds={collapsedIds}
+              positionedDiagrams={positionedDiagrams}
+              hiddenSections={hiddenSections}
               selectedNodeId={selectedNodeId}
               cameraX={prefs.cameraX}
               cameraY={prefs.cameraY}
@@ -406,15 +391,6 @@ function BoundShell({
       </Card>
     </>
   );
-}
-
-function layerOf(nodeId: string): Track3Layer | null {
-  for (const l of TRACK3_LAYERS) {
-    if (nodeId === nodeIdForLayer(l) || nodeId.startsWith(`node:param:${l}:`)) {
-      return l;
-    }
-  }
-  return null;
 }
 
 function BindingPanel({
@@ -613,8 +589,4 @@ function ControlsBar({
   );
 }
 
-// Re-assert label set is non-vendor / non-judgement (handled by
-// assertAllAcwTrack3Language at module load above). The
-// TRACK3_LAYER_LABEL import is needed so the label registry's
-// module-load assertions run before this shell mounts.
 void TRACK3_LAYER_LABEL;

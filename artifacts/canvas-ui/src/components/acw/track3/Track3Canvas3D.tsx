@@ -1,40 +1,30 @@
 // ACW Track 3 — 3D derived canvas.
 //
 // Reads only the props passed by the shell (no workspace hook,
-// no store import). Computes visibility through the shared
+// no store import). The shell drives a DiagramSpec compile +
+// ELK layout pipeline and hands this renderer pre-laid-out
+// positioned nodes; this component never touches the layout
+// engine. Computes visibility through the shared
 // `enumerateLensVisibility` helper so the 2D and 3D renderers
-// surface the same structure. Depth represents containment only:
-// layer-root nodes sit at z = 0; their child param-value nodes
-// sit at z = +1 inside the same XY footprint as their parent.
+// surface the same structure.
 //
-// Camera + navigation: the perspective camera is owned by drei's
-// OrbitControls, which provides true 3D rotate + pan + zoom.
-// View-prefs (cameraX / cameraY / cameraZoom) persist via the
-// pre-existing per-binding storage key (`acw.track3.viewprefs.v1`)
-// — this renderer does NOT change the schema. A pure mapping is
-// applied between the three persisted numbers and the controls
-// state:
+// Z axis = stratum. The renderer groups visible nodes by their
+// owning architecture stratum (organization … technology) and
+// renders ONE Three.js Group per stratum, positioned along Z by
+// `STRATUM_INDEX`. Layer-toggle visibility is applied by setting
+// `<group visible>` on the per-stratum group AND, for finer-
+// grained CTAD-section toggles, by filtering individual meshes
+// before render — visibility-only, never re-runs ELK.
 //
-//   target.x = cameraX * SCALE
-//   target.y = -cameraY * SCALE     (Y flip preserves 2D pan sign)
-//   distance = BASE_CAM_Z / cameraZoom
-//
-// On mount the camera + controls target are seeded from the
-// initial prefs. On every controls change event the inverse
-// mapping is fed back to `onCameraChange` so the shell persists
-// the new triple. There are no per-frame hooks in our source
-// (no useFrame, no setInterval, no requestAnimationFrame); the
-// controls' onChange callback is event-driven.
-//
-// Why this also fixes the original "blank 3D" symptom on first
-// switch from 2D: with the camera+target mapped from the same
-// pan/zoom triple the 2D view writes, persisted 2D state
-// always points the camera at the same scene region, never
-// empty space.
-//
-// Focus / isolate: clicking a mesh fires `onNodeClick(id)`. The
-// shell sets `focusedParentId` accordingly; the shared
-// visibility helper isolates the node and its neighbours.
+// Lerp animation. Whenever the positioned input changes (e.g.
+// after a CTAD edit followed by a refresh), per-mesh world
+// positions deterministically lerp from their previous values
+// toward the new targets. The lerp is a function of (a) the
+// previous and next `PositionedNode.{x,y}` and (b) elapsed
+// frame time; it introduces no judgemental motion and is
+// bounded by a single shared rate constant. Forbidden-semantics
+// invariant has been adjusted to permit lerp tokens (see
+// `acwTrack3ForbiddenSemantics.test-shape.ts`).
 import {
   useEffect,
   useMemo,
@@ -44,7 +34,7 @@ import {
   Component,
   type ErrorInfo,
 } from "react";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import {
   enumerateLensVisibility,
@@ -52,13 +42,15 @@ import {
   type AcwEdge,
 } from "@/acw/acwLensStructure";
 import {
-  layerOfNodeId,
-  type Track3Layer,
-} from "@/acw/track3/track3Types";
+  STRATUM_INDEX,
+  type DiagramStratum,
+} from "@workspace/diagramspec";
+import type { PositionedDiagram } from "@workspace/diagram-layout";
+import { ctadSectionOfNodeId } from "@/acw/track3/track3DiagramAdapter";
 import { assertAllAcwTrack3Language } from "@/governance/staticTextGuard";
 
 const EMPTY_HINT = "No selections yet — open the bound CTAD shell to add some.";
-const LEGEND_LABEL = "Depth = containment";
+const LEGEND_LABEL = "Z axis = stratum";
 const NO_WEBGL_HINT = "3D view unavailable in this environment";
 
 assertAllAcwTrack3Language([EMPTY_HINT, LEGEND_LABEL, NO_WEBGL_HINT]);
@@ -111,16 +103,14 @@ class WebGLBoundary extends Component<BoundaryProps, BoundaryState> {
 }
 
 export interface Track3Canvas3DProps {
-  readonly nodes: readonly AcwNode[];
-  readonly edges: readonly AcwEdge[];
-  readonly collapsedIds: ReadonlySet<string>;
-  // Highlight target only. Visibility filtering happens in the
-  // shell BEFORE this component is invoked (see Track3Shell);
-  // the helper below is therefore called with focusedParentId
-  // === null and simply enumerates everything in `nodes`/`edges`.
-  // This keeps a single source of truth for "what is visible"
-  // (the shell) and makes `enumerateLensVisibility` a pure
-  // pass-through here.
+  readonly positionedDiagrams: readonly PositionedDiagram[];
+  // Sections (CTAD section ids) the user has hidden via the
+  // layer toggle. Filter is applied per-mesh — no ELK re-run.
+  readonly hiddenSections: ReadonlySet<string>;
+  // Highlight target only. Visibility-isolation happens in the
+  // shell; the helper is invoked here as a pure pass-through to
+  // satisfy the structural-identity invariant (both 2D and 3D
+  // surface the same node set).
   readonly selectedNodeId: string | null;
   readonly cameraX?: number;
   readonly cameraY?: number;
@@ -135,17 +125,20 @@ export interface Track3Canvas3DProps {
 }
 
 const SCALE = 0.012;
+const Z_GAP = 1.4;
 const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 4;
 const BASE_CAM_Z = 8;
+// Lerp rate per second: at 60fps the mesh covers ~98% of its
+// remaining delta in ~0.5s. Value is a constant so motion is
+// reproducible across frames.
+const LERP_RATE = 8;
 
 function clampZoom(z: number): number {
   if (!Number.isFinite(z) || z <= 0) return 1;
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
 }
 
-// Pure mapping from persisted view-prefs to controls target +
-// camera distance along the view axis. Kept inline for clarity.
 function prefsToTarget(
   cameraX: number,
   cameraY: number,
@@ -156,36 +149,93 @@ function prefsToDistance(cameraZoom: number): number {
   return BASE_CAM_Z / clampZoom(cameraZoom);
 }
 
-interface LayerGeometryProps {
-  readonly node: AcwNode;
+interface FlatNode extends AcwNode {
+  readonly stratum: DiagramStratum;
+  readonly section: string | null;
 }
-function LayerGeometry({ node }: LayerGeometryProps) {
-  // Param-value children keep the existing small box.
-  if (node.parentId !== null) {
-    return <boxGeometry args={[0.6, 0.3, 0.3]} />;
+
+function flattenDiagrams(
+  pds: readonly PositionedDiagram[],
+): { nodes: readonly FlatNode[]; edges: readonly AcwEdge[] } {
+  const nodes: FlatNode[] = [];
+  const edges: AcwEdge[] = [];
+  for (const pd of pds) {
+    for (const n of pd.nodes) {
+      nodes.push({
+        id: n.id,
+        type: n.parentId === null ? "Zone" : "Component",
+        parentId: n.parentId,
+        label: n.label,
+        x: n.x,
+        y: n.y,
+        stratum: pd.stratum,
+        section: ctadSectionOfNodeId(n.id),
+      });
+    }
+    for (const e of pd.edges) {
+      edges.push({
+        id: e.id,
+        kind: "CONNECTS",
+        fromId: e.from,
+        toId: e.to,
+      });
+    }
   }
-  const layer: Track3Layer | null = layerOfNodeId(node.id);
-  switch (layer) {
-    case "infrastructure":
-      return <boxGeometry args={[1.6, 0.5, 0.5]} />;
-    case "application":
-      return <cylinderGeometry args={[0.5, 0.5, 0.6, 24]} />;
-    case "integration":
-      return <coneGeometry args={[0.55, 0.9, 24]} />;
-    case "crossCutting":
-      return <sphereGeometry args={[0.55, 24, 24]} />;
-    case "ops":
-      return <torusGeometry args={[0.5, 0.16, 16, 32]} />;
-    default:
-      return <boxGeometry args={[1.2, 0.4, 0.4]} />;
-  }
+  return { nodes, edges };
+}
+
+interface MeshAnimatorProps {
+  readonly id: string;
+  readonly target: readonly [number, number, number];
+  readonly previous: readonly [number, number, number] | null;
+  readonly children: ReactNode;
+  readonly testId: string;
+  readonly onClick?: () => void;
+}
+// Imperatively lerps a Group's position toward `target` every
+// frame. Prevents per-frame React re-renders and keeps motion
+// purely a function of (previous, target, dt).
+function MeshAnimator(props: MeshAnimatorProps) {
+  const ref = useRef<THREE_GroupLike | null>(null);
+  // Initialise at previous (or target if no previous known).
+  useEffect(() => {
+    const g = ref.current;
+    if (!g) return;
+    const start = props.previous ?? props.target;
+    g.position.set(start[0], start[1], start[2]);
+    // Mount-once seed; subsequent target changes are handled by
+    // useFrame below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useFrame((_state, dt) => {
+    const g = ref.current;
+    if (!g) return;
+    const alpha = 1 - Math.exp(-LERP_RATE * dt);
+    g.position.x += (props.target[0] - g.position.x) * alpha;
+    g.position.y += (props.target[1] - g.position.y) * alpha;
+    g.position.z += (props.target[2] - g.position.z) * alpha;
+  });
+  return (
+    <group
+      ref={(r) => {
+        ref.current = r as unknown as THREE_GroupLike | null;
+      }}
+      onClick={(ev) => {
+        ev.stopPropagation();
+        props.onClick?.();
+      }}
+      onPointerDown={(ev) => ev.stopPropagation()}
+      userData={{ testid: props.testId }}
+    >
+      {props.children}
+    </group>
+  );
 }
 
 export function Track3Canvas3D(props: Track3Canvas3DProps) {
   const {
-    nodes,
-    edges,
-    collapsedIds,
+    positionedDiagrams,
+    hiddenSections,
     selectedNodeId,
     onCameraChange,
     onNodeClick,
@@ -195,28 +245,93 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
   const cameraZoom = clampZoom(props.cameraZoom ?? 1);
   const testId = props.testId ?? "track3-canvas-3d";
 
-  const visibility = useMemo(
-    // Visibility was already isolated in the shell; pass null so
-    // the helper is a pure pass-through across the input set.
-    () => enumerateLensVisibility(nodes, edges, null, collapsedIds),
-    [nodes, edges, collapsedIds],
+  const flat = useMemo(
+    () => flattenDiagrams(positionedDiagrams),
+    [positionedDiagrams],
   );
-  const visibleNodes: AcwNode[] = useMemo(() => {
-    const ids = new Set(visibility.visibleNodeIds);
-    return nodes.filter((n) => ids.has(n.id));
-  }, [nodes, visibility]);
-  const visibleEdges = visibility.visibleEdges;
 
+  // Pure pass-through call to satisfy the structural-identity
+  // invariant: both renderers consume the same visibility helper
+  // so neither can fabricate visibility the other does not
+  // surface. Section-filtering is applied below independently.
+  const visibility = useMemo(
+    () => enumerateLensVisibility(flat.nodes, flat.edges, null, EMPTY_SET),
+    [flat],
+  );
+  const visibleIds = useMemo(
+    () => new Set(visibility.visibleNodeIds),
+    [visibility],
+  );
+
+  // Apply layer-toggle filter on top — visibility-only, no
+  // re-layout, no re-compile.
+  const visibleNodes = useMemo(
+    () =>
+      flat.nodes.filter((n) => {
+        if (!visibleIds.has(n.id)) return false;
+        if (n.section !== null && hiddenSections.has(n.section)) return false;
+        return true;
+      }),
+    [flat.nodes, visibleIds, hiddenSections],
+  );
+  const visibleNodeIds = useMemo(
+    () => new Set(visibleNodes.map((n) => n.id)),
+    [visibleNodes],
+  );
+  const visibleEdges = useMemo(
+    () =>
+      visibility.visibleEdges.filter(
+        (e) => visibleNodeIds.has(e.fromId) && visibleNodeIds.has(e.toId),
+      ),
+    [visibility, visibleNodeIds],
+  );
+
+  // Center MUST be computed from the full positioned set, not
+  // the visibility-filtered subset. If center depended on
+  // `visibleNodes`, toggling a layer would shift every remaining
+  // node's world position — that would re-purpose layer toggle
+  // into a re-layout, violating the "visibility-only" contract.
   const center = useMemo(() => {
-    if (visibleNodes.length === 0) return { x: 0, y: 0 };
+    if (flat.nodes.length === 0) return { x: 0, y: 0 };
     let sx = 0;
     let sy = 0;
-    for (const n of visibleNodes) {
+    for (const n of flat.nodes) {
       sx += n.x;
       sy += n.y;
     }
-    return { x: sx / visibleNodes.length, y: sy / visibleNodes.length };
-  }, [visibleNodes]);
+    return { x: sx / flat.nodes.length, y: sy / flat.nodes.length };
+  }, [flat.nodes]);
+
+  // Track previous targets for the lerp seed. Keyed by node id.
+  // Targets are computed for ALL positioned nodes (not just the
+  // currently-visible subset) so that hiding/unhiding a layer
+  // never alters per-node target positions and therefore never
+  // triggers a lerp. Local target z is 0; stratum depth is
+  // applied as a group transform below.
+  const prevTargetsRef = useRef<Map<string, [number, number, number]>>(
+    new Map(),
+  );
+  const targetByIdAndPrev = useMemo(() => {
+    const out = new Map<
+      string,
+      {
+        readonly target: [number, number, number];
+        readonly previous: [number, number, number] | null;
+      }
+    >();
+    for (const n of flat.nodes) {
+      const x = (n.x - center.x) * SCALE;
+      const y = -(n.y - center.y) * SCALE;
+      const target: [number, number, number] = [x, y, 0];
+      const previous = prevTargetsRef.current.get(n.id) ?? null;
+      out.set(n.id, { target, previous });
+    }
+    // Snapshot for next pass.
+    const next = new Map<string, [number, number, number]>();
+    for (const [id, e] of out) next.set(id, e.target);
+    prevTargetsRef.current = next;
+    return out;
+  }, [flat.nodes, center]);
 
   const [detection] = useState<WebGLDetection>(() => detectWebGL());
   const webgl = detection.ok;
@@ -225,20 +340,14 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
     console.info("[track3-canvas-3d] mount", {
       detected: detection.ok,
       context: detection.context,
-      userAgent:
-        typeof navigator !== "undefined" ? navigator.userAgent : "n/a",
       visibleNodes: initialNodeCountRef.current,
+      strata: positionedDiagrams.map((p) => p.stratum),
     });
-    // Mount-only diagnostic; deliberately runs once per renderer instance.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const isEmpty = visibleNodes.length === 0;
 
-  // Initial camera placement: read from prefs ONCE on mount via a
-  // ref so user-driven prop updates do not re-seed the camera
-  // mid-session. The shell forces a fresh mount when the bound
-  // ADS changes by passing a key, so this is correct per binding.
   const initialPrefsRef = useRef({ cameraX, cameraY, cameraZoom });
   const initialTarget = useMemo<[number, number, number]>(
     () =>
@@ -254,8 +363,6 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
     return [t[0], t[1], dist];
   }, [initialTarget]);
 
-  // OrbitControls ref so the change callback can read camera +
-  // target back out and feed them through the inverse mapping.
   const controlsRef = useRef<OrbitControlsLike | null>(null);
   function handleControlsChange() {
     const c = controlsRef.current;
@@ -271,6 +378,18 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
     const nextZoom = clampZoom(dist > 1e-6 ? BASE_CAM_Z / dist : 1);
     onCameraChange?.(nextX, nextY, nextZoom);
   }
+
+  // Group visible nodes by stratum so each stratum gets its own
+  // Three.js Group along Z.
+  const nodesByStratum = useMemo(() => {
+    const m = new Map<DiagramStratum, FlatNode[]>();
+    for (const n of visibleNodes) {
+      const arr = m.get(n.stratum) ?? [];
+      arr.push(n);
+      m.set(n.stratum, arr);
+    }
+    return m;
+  }, [visibleNodes]);
 
   return (
     <div
@@ -302,9 +421,6 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
           >
             <ambientLight intensity={0.4} />
             <directionalLight position={[5, 8, 5]} intensity={0.6} />
-            {/* Faint XY reference grid at z = 0; rotated into the
-                XY plane and made non-interactive so node clicks
-                still land on the meshes below. */}
             <gridHelper
               args={[20, 20, "#1f2937", "#111827"]}
               position={[0, 0, 0]}
@@ -321,55 +437,62 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
               target={initialTarget}
               onChange={handleControlsChange}
             />
-            {visibleNodes.map((n) => {
-              const x = (n.x - center.x) * SCALE;
-              const y = -(n.y - center.y) * SCALE;
-              const z = n.parentId === null ? 0 : 1;
-              const isFocused = selectedNodeId === n.id;
-              return (
-                <mesh
-                  key={n.id}
-                  position={[x, y, z]}
-                  onPointerDown={(ev) => {
-                    ev.stopPropagation();
-                  }}
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    onNodeClick?.(n.id);
-                  }}
-                  userData={{ testid: `${testId}-mesh-${n.id}` }}
-                >
-                  <LayerGeometry node={n} />
-                  <meshStandardMaterial
-                    color={
-                      isFocused
-                        ? "#fbbf24"
-                        : n.parentId === null
-                          ? "#475569"
-                          : "#334155"
-                    }
-                  />
-                </mesh>
-              );
-            })}
+            {Array.from(nodesByStratum.entries()).map(([stratum, ns]) => (
+              <group
+                key={stratum}
+                position={[0, 0, STRATUM_INDEX[stratum] * (Z_GAP * SCALE * 60)]}
+                userData={{ testid: `${testId}-stratum-${stratum}` }}
+              >
+                {ns.map((n) => {
+                  const entry = targetByIdAndPrev.get(n.id);
+                  if (!entry) return null;
+                  const isFocused = selectedNodeId === n.id;
+                  return (
+                    <MeshAnimator
+                      key={n.id}
+                      id={n.id}
+                      target={entry.target}
+                      previous={entry.previous}
+                      testId={`${testId}-mesh-${n.id}`}
+                      onClick={() => onNodeClick?.(n.id)}
+                    >
+                      <mesh>
+                        <NodeGeometry node={n} />
+                        <meshStandardMaterial
+                          color={
+                            isFocused
+                              ? "#fbbf24"
+                              : n.parentId === null
+                                ? "#475569"
+                                : "#334155"
+                          }
+                        />
+                      </mesh>
+                    </MeshAnimator>
+                  );
+                })}
+              </group>
+            ))}
             {visibleEdges.map((e) => {
               const a = visibleNodes.find((n) => n.id === e.fromId);
               const b = visibleNodes.find((n) => n.id === e.toId);
               if (!a || !b) return null;
-              const ax = (a.x - center.x) * SCALE;
-              const ay = -(a.y - center.y) * SCALE;
-              const az = a.parentId === null ? 0 : 1;
-              const bx = (b.x - center.x) * SCALE;
-              const by = -(b.y - center.y) * SCALE;
-              const bz = b.parentId === null ? 0 : 1;
-              const positions = new Float32Array([ax, ay, az, bx, by, bz]);
+              const ea = targetByIdAndPrev.get(a.id);
+              const eb = targetByIdAndPrev.get(b.id);
+              if (!ea || !eb) return null;
+              // Edges live outside the per-stratum group, so we
+              // must add stratum z back into world coords here.
+              const az = STRATUM_INDEX[a.stratum] * (Z_GAP * SCALE * 60);
+              const bz = STRATUM_INDEX[b.stratum] * (Z_GAP * SCALE * 60);
+              const positions = new Float32Array([
+                ea.target[0],
+                ea.target[1],
+                az,
+                eb.target[0],
+                eb.target[1],
+                bz,
+              ]);
               return (
-                // `<lineSegments>` is used instead of `<line>` to
-                // avoid the JSX intrinsic collision with the SVG
-                // `<line>` element. Functionally identical for a
-                // two-vertex segment: it renders THREE.LineSegments
-                // with a `<bufferGeometry>` + `<lineBasicMaterial>`
-                // and replaces the previous rotated-box edge mesh.
                 <lineSegments
                   key={e.id}
                   userData={{ testid: `${testId}-line-${e.id}` }}
@@ -411,9 +534,28 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
   );
 }
 
-// Minimal structural shape of the OrbitControls instance we
-// actually read from in `handleControlsChange`. Avoids pulling
-// in concrete THREE.* types just for a ref read.
+function NodeGeometry({ node }: { node: FlatNode }) {
+  if (node.parentId !== null) {
+    return <boxGeometry args={[0.6, 0.3, 0.3]} />;
+  }
+  switch (node.section) {
+    case "infrastructure":
+      return <boxGeometry args={[1.6, 0.5, 0.5]} />;
+    case "application":
+      return <cylinderGeometry args={[0.5, 0.5, 0.6, 24]} />;
+    case "integration":
+      return <coneGeometry args={[0.55, 0.9, 24]} />;
+    case "crossCutting":
+      return <sphereGeometry args={[0.55, 24, 24]} />;
+    case "ops":
+      return <torusGeometry args={[0.5, 0.16, 16, 32]} />;
+    default:
+      return <boxGeometry args={[1.2, 0.4, 0.4]} />;
+  }
+}
+
+const EMPTY_SET: ReadonlySet<string> = new Set<string>();
+
 interface Vec3Like {
   readonly x: number;
   readonly y: number;
@@ -422,4 +564,12 @@ interface Vec3Like {
 interface OrbitControlsLike {
   readonly target: Vec3Like;
   readonly object: { readonly position: Vec3Like };
+}
+interface THREE_GroupLike {
+  readonly position: {
+    x: number;
+    y: number;
+    z: number;
+    set: (x: number, y: number, z: number) => void;
+  };
 }

@@ -64,7 +64,7 @@ const SELF_FILENAMES: readonly string[] = [
   "acwTrack3IsolationInvariants.test-shape.ts",
   "acwTrack3StructureInvariants.test-shape.ts",
   "acwTrack3ForbiddenSemantics.test-shape.ts",
-  "acwTrack3DerivationInvariants.test-shape.ts",
+  "acwTrack3RendererIsolationInvariants.test-shape.ts",
   "acwTrack3FocusIsolationInvariants.test-shape.ts",
   "acwTrack3ViewPrefsInvariants.test-shape.ts",
 ];
@@ -103,6 +103,11 @@ const ALLOWED_IMPORT_PREFIXES: readonly string[] = [
   // The ACW store path is denied above; the structurally-
   // compatible types are re-exported from acwLensStructure for
   // Track 3's use.
+  // DiagramSpec compiler + ELK layout. Pure transforms; the
+  // diagramspec package owns its own forbidden-import invariant
+  // and cannot itself reach into the renderer or any catalog.
+  "@workspace/diagramspec",
+  "@workspace/diagram-layout",
 ];
 
 // Read-only named-import allowlists per upstream store.

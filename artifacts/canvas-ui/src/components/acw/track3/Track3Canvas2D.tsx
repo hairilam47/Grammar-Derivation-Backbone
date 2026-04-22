@@ -1,44 +1,39 @@
 // ACW Track 3 — 2D derived canvas.
 //
 // Reads only the props passed by the shell (no workspace hook,
-// no store import). Computes visibility through the shared
+// no store import). The shell drives a DiagramSpec compile +
+// ELK layout pipeline and hands this renderer pre-laid-out
+// positioned nodes; this component never touches the layout
+// engine. Computes visibility through the shared
 // `enumerateLensVisibility` helper so the 2D and 3D renderers
-// surface the same structure. The render is purely structural:
-// SVG primitives, neutral palette, no inline styling that would
-// imply judgement, status, or semantics beyond containment +
-// adjacency.
+// surface the same structure.
 //
-// Zoom + pan: mouse-wheel adjusts zoom; mouse-drag pans the
-// view. Camera state is owned by the shell (persisted in
-// `acw.track3.viewprefs.v1`) and pushed back via
-// `onCameraChange`. No animation, no easing — pure functional
-// camera math.
-//
-// Focus / isolate: clicking a node fires `onNodeClick(id)`. The
-// shell decides what to do with it (typically: set
-// `focusedParentId` so the shared visibility helper isolates it
-// and its neighbours).
+// 2D projects the multi-stratum scene onto a single XY plane.
+// Stratum is encoded by a small Y offset so containment context
+// remains legible; the layer-toggle filter is visibility-only
+// and never re-runs ELK.
 import { useMemo, useRef, useState, type PointerEvent, type WheelEvent } from "react";
 import {
   enumerateLensVisibility,
   type AcwNode,
   type AcwEdge,
 } from "@/acw/acwLensStructure";
+import {
+  STRATUM_INDEX,
+  type DiagramStratum,
+} from "@workspace/diagramspec";
+import type { PositionedDiagram } from "@workspace/diagram-layout";
+import { ctadSectionOfNodeId } from "@/acw/track3/track3DiagramAdapter";
 import { assertAllAcwTrack3Language } from "@/governance/staticTextGuard";
 
 const EMPTY_HINT = "No selections yet — open the bound CTAD shell to add some.";
-const LEGEND_LABEL = "Containment + adjacency view";
+const LEGEND_LABEL = "Containment + stratum view";
 
 assertAllAcwTrack3Language([EMPTY_HINT, LEGEND_LABEL]);
 
 export interface Track3Canvas2DProps {
-  readonly nodes: readonly AcwNode[];
-  readonly edges: readonly AcwEdge[];
-  readonly collapsedIds: ReadonlySet<string>;
-  // Highlight target only. Visibility filtering happens in the
-  // shell BEFORE this component is invoked (see Track3Shell);
-  // the helper below is therefore called with focusedParentId
-  // === null and simply enumerates everything in `nodes`/`edges`.
+  readonly positionedDiagrams: readonly PositionedDiagram[];
+  readonly hiddenSections: ReadonlySet<string>;
   readonly selectedNodeId: string | null;
   readonly cameraX?: number;
   readonly cameraY?: number;
@@ -52,19 +47,57 @@ export interface Track3Canvas2DProps {
   readonly testId?: string;
 }
 
+interface FlatNode extends AcwNode {
+  readonly stratum: DiagramStratum;
+  readonly section: string | null;
+}
+
 const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 4;
+const STRATUM_Y_OFFSET = 240;
 
 function clampZoom(z: number): number {
   if (!Number.isFinite(z) || z <= 0) return 1;
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
 }
 
+function flattenDiagrams(
+  pds: readonly PositionedDiagram[],
+): { nodes: readonly FlatNode[]; edges: readonly AcwEdge[] } {
+  const nodes: FlatNode[] = [];
+  const edges: AcwEdge[] = [];
+  for (const pd of pds) {
+    const yOffset = STRATUM_INDEX[pd.stratum] * STRATUM_Y_OFFSET;
+    for (const n of pd.nodes) {
+      nodes.push({
+        id: n.id,
+        type: n.parentId === null ? "Zone" : "Component",
+        parentId: n.parentId,
+        label: n.label,
+        x: n.x,
+        y: n.y + yOffset,
+        stratum: pd.stratum,
+        section: ctadSectionOfNodeId(n.id),
+      });
+    }
+    for (const e of pd.edges) {
+      edges.push({
+        id: e.id,
+        kind: "CONNECTS",
+        fromId: e.from,
+        toId: e.to,
+      });
+    }
+  }
+  return { nodes, edges };
+}
+
+const EMPTY_SET: ReadonlySet<string> = new Set<string>();
+
 export function Track3Canvas2D(props: Track3Canvas2DProps) {
   const {
-    nodes,
-    edges,
-    collapsedIds,
+    positionedDiagrams,
+    hiddenSections,
     selectedNodeId,
     onCameraChange,
     onNodeClick,
@@ -74,33 +107,61 @@ export function Track3Canvas2D(props: Track3Canvas2DProps) {
   const cameraZoom = clampZoom(props.cameraZoom ?? 1);
   const testId = props.testId ?? "track3-canvas-2d";
 
-  const visibility = useMemo(
-    // Visibility was already isolated in the shell; pass null so
-    // the helper is a pure pass-through across the input set.
-    () => enumerateLensVisibility(nodes, edges, null, collapsedIds),
-    [nodes, edges, collapsedIds],
+  const flat = useMemo(
+    () => flattenDiagrams(positionedDiagrams),
+    [positionedDiagrams],
   );
-  const visibleNodes: AcwNode[] = useMemo(() => {
-    const visible = new Set(visibility.visibleNodeIds);
-    return nodes.filter((n) => visible.has(n.id));
-  }, [nodes, visibility]);
-  const visibleEdges = visibility.visibleEdges;
 
-  // Compute base viewport bounds from visible node positions
-  // (with a padded margin so labels do not clip). Camera is
-  // applied on top of that base box.
+  // Pure pass-through to satisfy the structural-identity
+  // invariant. Section-filter is applied below.
+  const visibility = useMemo(
+    () => enumerateLensVisibility(flat.nodes, flat.edges, null, EMPTY_SET),
+    [flat],
+  );
+  const visibleIds = useMemo(
+    () => new Set(visibility.visibleNodeIds),
+    [visibility],
+  );
+
+  const visibleNodes = useMemo(
+    () =>
+      flat.nodes.filter((n) => {
+        if (!visibleIds.has(n.id)) return false;
+        if (n.section !== null && hiddenSections.has(n.section)) return false;
+        return true;
+      }),
+    [flat.nodes, visibleIds, hiddenSections],
+  );
+  const visibleNodeIds = useMemo(
+    () => new Set(visibleNodes.map((n) => n.id)),
+    [visibleNodes],
+  );
+  const visibleEdges = useMemo(
+    () =>
+      visibility.visibleEdges.filter(
+        (e) => visibleNodeIds.has(e.fromId) && visibleNodeIds.has(e.toId),
+      ),
+    [visibility, visibleNodeIds],
+  );
+
   const padding = 80;
   const labelHeight = 28;
   const labelWidth = 140;
+  // baseBox MUST be computed from the full positioned set, not
+  // the visibility-filtered subset. If baseBox depended on
+  // `visibleNodes`, hiding a layer would re-fit the viewBox and
+  // visually translate every remaining node — re-purposing the
+  // layer toggle into a re-layout, breaking the visibility-only
+  // contract that distinguishes Track 3 from a derivation.
   const baseBox = useMemo(() => {
-    if (visibleNodes.length === 0) {
+    if (flat.nodes.length === 0) {
       return { x: 0, y: 0, w: 600, h: 300 };
     }
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
     let maxY = -Infinity;
-    for (const n of visibleNodes) {
+    for (const n of flat.nodes) {
       if (n.x < minX) minX = n.x;
       if (n.y < minY) minY = n.y;
       if (n.x + labelWidth > maxX) maxX = n.x + labelWidth;
@@ -112,11 +173,8 @@ export function Track3Canvas2D(props: Track3Canvas2DProps) {
       w: maxX - minX + padding * 2,
       h: maxY - minY + padding * 2,
     };
-  }, [visibleNodes]);
+  }, [flat.nodes]);
 
-  // Camera applies pan (cameraX/Y) and zoom (cameraZoom) to the
-  // viewBox. Higher zoom → smaller viewBox → content appears
-  // bigger. The camera centres on baseBox + camera pan offset.
   const viewBox = useMemo(() => {
     const w = baseBox.w / cameraZoom;
     const h = baseBox.h / cameraZoom;
@@ -127,9 +185,6 @@ export function Track3Canvas2D(props: Track3Canvas2DProps) {
 
   const isEmpty = visibleNodes.length === 0;
 
-  // Pan/zoom interaction. We track local drag state in a ref so
-  // we don't fight React's re-render. Camera writes go through
-  // `onCameraChange` which the shell persists.
   const dragRef = useRef<{
     active: boolean;
     startX: number;
@@ -141,10 +196,7 @@ export function Track3Canvas2D(props: Track3Canvas2DProps) {
   const [, setRenderTick] = useState(0);
 
   function handlePointerDown(e: PointerEvent<SVGSVGElement>) {
-    // Only left-button drag for pan.
     if (e.button !== 0) return;
-    // Avoid hijacking node clicks: nodes set their own
-    // pointerdown handler with stopPropagation.
     dragRef.current = {
       active: true,
       startX: e.clientX,
@@ -160,7 +212,6 @@ export function Track3Canvas2D(props: Track3Canvas2DProps) {
     const svg = svgRef.current;
     if (!svg) return;
     const rect = svg.getBoundingClientRect();
-    // Convert pixel delta into viewBox units, scaled by current zoom.
     const dxPx = e.clientX - d.startX;
     const dyPx = e.clientY - d.startY;
     const unitsPerPxX = baseBox.w / cameraZoom / rect.width;
@@ -174,12 +225,10 @@ export function Track3Canvas2D(props: Track3Canvas2DProps) {
     (e.target as Element).releasePointerCapture?.(e.pointerId);
   }
   function handleWheel(e: WheelEvent<SVGSVGElement>) {
-    // Negative deltaY = zoom in (typical mouse-wheel up).
     const factor = Math.exp(-e.deltaY * 0.0015);
     const next = clampZoom(cameraZoom * factor);
     if (next !== cameraZoom) {
       onCameraChange?.(cameraX, cameraY, next);
-      // Force a render in case parent isn't re-rendering us.
       setRenderTick((t) => t + 1);
     }
   }
@@ -236,7 +285,6 @@ export function Track3Canvas2D(props: Track3Canvas2DProps) {
                 data-testid={`${testId}-node-${n.id}`}
                 style={{ cursor: "pointer" }}
                 onPointerDown={(ev) => {
-                  // Stop the pan-drag from starting on a node.
                   ev.stopPropagation();
                 }}
                 onClick={(ev) => {

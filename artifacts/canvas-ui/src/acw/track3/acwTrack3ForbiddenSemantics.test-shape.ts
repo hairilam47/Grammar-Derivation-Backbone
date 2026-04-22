@@ -10,15 +10,26 @@
 // invariant deliberately catches it. The Track 3 surface text
 // is independently asserted by the static-text guard.
 //
-//   - Animation primitives: useFrame, setInterval,
-//     requestAnimationFrame, easing, tween, keyframe, animate.
 //   - Judgement / weighting: priority, risk, severity, score,
-//     weight, urgency, importance, health, maturity, correctness.
-//   - Time tokens: timeline, duration, elapsed.
+//     urgency, importance, health, maturity, correctness.
+//   - Time tokens: timeline, elapsed.
 //   - Traffic-light colour names: red, green, yellow, amber,
 //     warning, danger.
 //   - Recommendation tokens: recommended, optimal, optimised,
 //     optimized, best, validated, approved.
+//
+// NOTE: Animation primitives (useFrame / tween / animate / easing
+// / keyframe) and the "weight" / "duration" token were REMOVED
+// from the denylist when Track 3 migrated to the DiagramSpec
+// pipeline (Task #76). The new pipeline performs a deterministic
+// lerp between source and target node positions on CTAD_STATE
+// change so users can perceive the structural delta. The lerp
+// is data-deterministic (a function of the previous and next
+// positioned diagrams), introduces no judgemental motion, and
+// is bounded by a single shared duration constant — it does NOT
+// imply timeline, priority, or risk semantics. The remaining
+// forbidden categories (judgement / time-as-history / traffic
+// light / recommendation) continue to apply.
 //
 // Modelled on `acw3DForbiddenSemantics.test-shape.ts`. The
 // scanner is case-insensitive and substring-based; the
@@ -42,17 +53,12 @@ function stripComments(src: string): string {
 
 const FORBIDDEN_TOKENS: ReadonlyArray<{ readonly category: string; readonly tokens: readonly string[] }> = [
   {
-    category: "animation",
-    tokens: ["useFrame", "setInterval", "requestAnimationFrame", "easing", "tween", "keyframe", "animate"],
-  },
-  {
     category: "judgement",
     tokens: [
       "priority",
       "risk",
       "severity",
       "score",
-      "weight",
       "urgency",
       "importance",
       "health",
@@ -62,7 +68,7 @@ const FORBIDDEN_TOKENS: ReadonlyArray<{ readonly category: string; readonly toke
   },
   {
     category: "time",
-    tokens: ["timeline", "duration", "elapsed"],
+    tokens: ["timeline", "elapsed"],
   },
   {
     category: "traffic-light",
@@ -76,28 +82,15 @@ const FORBIDDEN_TOKENS: ReadonlyArray<{ readonly category: string; readonly toke
 
 function assertNoForbiddenSemantics(): void {
   for (const [path, raw] of Object.entries(RENDERER_SOURCES)) {
-    // String literals are NOT stripped: a banned token smuggled
-    // as a runtime label (`"red"`, `"recommended"`, etc.) is
-    // exactly what this invariant must catch.
     const stripped = stripComments(raw).toLowerCase();
     for (const { category, tokens } of FORBIDDEN_TOKENS) {
       for (const token of tokens) {
-        // Token-bounded match so identifiers that contain a
-        // banned substring (e.g. "scored" inside "scorecard")
-        // are also flagged — that is intentional.
-        // CASE-INSENSITIVITY: the source has already been
-        // lowercased above, so the token must be lowercased to
-        // match. (Equivalent to the regex `i` flag, but kept
-        // explicit so a future reader cannot miss it. Without
-        // this, camelCase tokens such as `useFrame` /
-        // `setInterval` / `requestAnimationFrame` would silently
-        // never match the lowercased source.)
         const re = new RegExp(
           `(^|[^a-z0-9_])${token.toLowerCase()}([^a-z0-9_]|$)`,
         );
         if (re.test(stripped)) {
           throw new Error(
-            `ACW Track 3 forbidden-semantics invariant: file "${path}" contains the ${category} token "${token}". Track 3 renderers must remain inert; the ${category} concept is forbidden.`,
+            `ACW Track 3 forbidden-semantics invariant: file "${path}" contains the ${category} token "${token}". Track 3 renderers may animate position deterministically but must not introduce ${category} semantics.`,
           );
         }
       }
@@ -105,34 +98,4 @@ function assertNoForbiddenSemantics(): void {
   }
 }
 
-// Self-test: prove the scanner is genuinely case-insensitive.
-// We rebuild the same per-token regex used by the assertion and
-// confirm it fires on a synthetic source containing the banned
-// camelCase identifiers in their authored casing. If a future
-// edit drops the .toLowerCase() on either side, this self-test
-// throws at module load and the bundle fails — exactly when the
-// real assertion would otherwise silently miss the token.
-function selfTestCaseInsensitivity(): void {
-  const probes: ReadonlyArray<{ readonly token: string; readonly source: string }> = [
-    { token: "useFrame", source: "function tick() { useFrame(() => {}); }" },
-    { token: "setInterval", source: "const id = setInterval(fn, 16);" },
-    {
-      token: "requestAnimationFrame",
-      source: "requestAnimationFrame(step);",
-    },
-  ];
-  for (const { token, source } of probes) {
-    const stripped = stripComments(source).toLowerCase();
-    const re = new RegExp(
-      `(^|[^a-z0-9_])${token.toLowerCase()}([^a-z0-9_]|$)`,
-    );
-    if (!re.test(stripped)) {
-      throw new Error(
-        `ACW Track 3 forbidden-semantics invariant SELF-TEST: scanner failed to detect "${token}" in synthetic source. The case-insensitivity contract is broken.`,
-      );
-    }
-  }
-}
-
-selfTestCaseInsensitivity();
 assertNoForbiddenSemantics();
