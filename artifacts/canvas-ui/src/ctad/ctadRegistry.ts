@@ -13,6 +13,21 @@ import { assertAllCtadLanguage } from "@/governance/staticTextGuard";
 // environments alongside the five categorical sections. Storage
 // migration is deterministic: a persisted "ctad-1.0" doc is read
 // as "ctad-1.1" with an empty environments list per binding.
+//
+// Architectural note — environments are an ADJACENT first-class
+// concept, NOT a sixth member of CTAD_SECTIONS. This is deliberate:
+//   * Sections are categorical PARAMETER groups (each with single /
+//     multi-select options drawn from a fixed vocabulary). An
+//     environment is a NAMED RECORD `{ id, name, kind, hostingModel }`
+//     authored by the user — its shape does not fit the section /
+//     parameter / option grammar that section invariants pin.
+//   * Keeping environments out of CTAD_SECTIONS avoids breaking the
+//     "exactly five canonical sections" grammar invariant and keeps
+//     CTAD_STATE serialisation stable for the existing five blocks.
+//   * Downstream consumers read environments via the dedicated
+//     `environments` field on CtadStateExport (parallel to the five
+//     section blocks) and via dedicated store CRUD functions, never
+//     through findParam / CTAD_REGISTRY traversal.
 export const CTAD_SCHEMA_VERSION = "ctad-1.1" as const;
 export const CTAD_PRIOR_SCHEMA_VERSIONS = ["ctad-1.0"] as const;
 

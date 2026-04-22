@@ -20,12 +20,13 @@
 //   application / container  ← application + integration
 //   technology  / deployment ← infrastructure + ops
 //
-// The deployment branch additionally synthesises environments
-// from `infrastructure.deploymentTopology + hostingModel`; those
-// two infrastructure params therefore pass through to the
-// technology call regardless of the partitioning above (they
-// belong to infrastructure, which is already mapped to
-// technology).
+// The deployment branch reads environments DIRECTLY from
+// CTAD_STATE.environments (Task #77 promoted environments to a
+// first-class CTAD concept). The legacy synthesis from
+// `infrastructure.deploymentTopology + hostingModel` is gone;
+// infrastructure params pass through to the technology call
+// because infrastructure is the section mapped to that stratum,
+// not because the compiler still needs them for env derivation.
 //
 // `bounds.layersPresent` constrains derivation: a section that
 // the bound ADC entry does not declare in scope is zeroed before
@@ -61,9 +62,8 @@ export interface Track3StratumPlan {
 }
 
 // Frozen partition: every CTAD section appears in EXACTLY one
-// plan entry (besides the implicit infrastructure passthrough
-// for env synthesis). Order is the Z stacking order: lowest
-// stratum index first.
+// plan entry. Order is the Z stacking order: lowest stratum
+// index first.
 export const TRACK3_STRATUM_PLAN: readonly Track3StratumPlan[] = Object.freeze([
   Object.freeze({
     stratum: "strategy" as DiagramStratum,
@@ -103,7 +103,8 @@ function blockFor(state: CtadStateExport, section: Track3Layer) {
 // Build the masked CTAD-state passed to a single compiler call.
 // Sections not on the plan (or out of bounds) are zeroed. The
 // `infrastructure` block is always passed through to the
-// technology / deployment branch so env synthesis works.
+// technology / deployment branch as part of that plan's section
+// allocation; environments themselves are scoped just below.
 function maskStateForPlan(
   state: CtadStateExport,
   bounds: AdcBounds,
