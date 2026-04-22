@@ -37,4 +37,6 @@ export type { CtadStateLike } from "./compile";
 export { validateDiagramSpec } from "./validator";
 export type { ValidationResult } from "./validator";
 
+export { DIAGRAMSPEC_JSON_SCHEMA, evaluateAgainstSchema } from "./schema";
+
 export { assertNoForbiddenDiagramspecImports } from "./diagramspecIsolation";

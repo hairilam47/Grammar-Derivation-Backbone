@@ -195,12 +195,22 @@ export function compileDiagramSpec(
   if (viewType === "deployment") {
     const topology = pickSingle(ctadState.infrastructure["deploymentTopology"]);
     const hosting = pickSingle(ctadState.infrastructure["hostingModel"]);
-    const envs = synthesizeEnvironments(topology, hosting);
+    let envs = synthesizeEnvironments(topology, hosting);
 
     // Emit env nodes (or short-circuit when nothing to show AT ALL).
     const selections = collectSelections(ctadState, stratum);
     if (envs.length === 0 && selections.length === 0) {
       return EMPTY_SPEC(viewType, stratum);
+    }
+    // Fallback: technology selections exist but neither
+    // `deploymentTopology` nor `hostingModel` is set. The contract
+    // requires every CTAD-implied node to surface; we synthesize
+    // a single deterministic "default" env so host nodes still
+    // have a parent. The TODO marker in `synthesizeEnvironments`
+    // tracks the migration that will let envs be authored
+    // explicitly.
+    if (envs.length === 0 && selections.length > 0) {
+      envs = Object.freeze([Object.freeze({ id: "env:default", label: "Default" })]);
     }
 
     for (const env of envs) {

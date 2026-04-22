@@ -138,6 +138,94 @@ describe("compileDiagramSpec — empty in / empty out", () => {
   });
 });
 
+describe("compileDiagramSpec — deployment fallback when env synthesis is empty", () => {
+  it("preserves technology selections even when topology+hosting are both null", () => {
+    const stateNoEnvInputs: CtadStateLike = {
+      ...EMPTY_STATE,
+      infrastructure: {
+        hostingModel: null,
+        deploymentTopology: null,
+        // intentionally include another infra param so the
+        // technology-stratum selection set is non-empty.
+        networkComponents: ["Firewall"] as readonly string[],
+      },
+      ops: { containerOrchestration: "Kubernetes" },
+      crossCutting: { resiliencePosture: "Multi-region" },
+    };
+    const spec = compileDiagramSpec(stateNoEnvInputs, {
+      viewType: "deployment",
+      stratum: "technology",
+    });
+    const envs = spec.nodes.filter((n) => n.kind === "environment");
+    const hosts = spec.nodes.filter((n) => n.kind === "node");
+    expect(envs.length).toBeGreaterThan(0);
+    expect(hosts.length).toBeGreaterThan(0);
+    // Every host node must have an env parent (no orphans).
+    for (const h of hosts) {
+      expect(envs.some((e) => e.id === h.parentId)).toBe(true);
+    }
+    // The synthesized fallback env id is stable.
+    expect(envs.some((e) => e.id === "env:default")).toBe(true);
+    // Validator passes the resulting spec.
+    const result = validateDiagramSpec(spec);
+    expect(result.ok).toBe(true);
+  });
+});
+
+describe("validateDiagramSpec — schema-driven phase", () => {
+  it("publishes a JSON Schema artifact", async () => {
+    const { DIAGRAMSPEC_JSON_SCHEMA } = await import("@workspace/diagramspec");
+    expect(DIAGRAMSPEC_JSON_SCHEMA.$schema).toBe(
+      "https://json-schema.org/draft/2020-12/schema",
+    );
+    expect(DIAGRAMSPEC_JSON_SCHEMA.title).toBe("DiagramSpec");
+    expect(DIAGRAMSPEC_JSON_SCHEMA.required).toEqual([
+      "schemaVersion",
+      "viewType",
+      "stratum",
+      "nodes",
+      "edges",
+    ]);
+  });
+
+  it("rejects an additional property at the spec root", () => {
+    const r = validateDiagramSpec({
+      schemaVersion: DIAGRAMSPEC_SCHEMA_VERSION,
+      viewType: "context",
+      stratum: "organization",
+      nodes: [],
+      edges: [],
+      sneaky: true,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.errors.some((e) => e.includes("additional property"))).toBe(true);
+    }
+  });
+
+  it("rejects an empty-string node id via minLength", () => {
+    const r = validateDiagramSpec({
+      schemaVersion: DIAGRAMSPEC_SCHEMA_VERSION,
+      viewType: "context",
+      stratum: "organization",
+      nodes: [
+        {
+          id: "",
+          kind: "system",
+          label: "X",
+          parentId: null,
+          ctadRef: { section: "application", paramId: null, option: null },
+        },
+      ],
+      edges: [],
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.errors.some((e) => e.includes("minLength"))).toBe(true);
+    }
+  });
+});
+
 describe("validateDiagramSpec — rejection cases", () => {
   function baseSpec(
     viewType: DiagramViewType,
@@ -167,7 +255,7 @@ describe("validateDiagramSpec — rejection cases", () => {
     });
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.errors.some((e) => e.startsWith("viewType:"))).toBe(true);
+      expect(r.errors.some((e) => e.includes("/viewType:"))).toBe(true);
     }
   });
 
@@ -178,7 +266,7 @@ describe("validateDiagramSpec — rejection cases", () => {
     });
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.errors.some((e) => e.startsWith("stratum:"))).toBe(true);
+      expect(r.errors.some((e) => e.includes("/stratum:"))).toBe(true);
     }
   });
 
