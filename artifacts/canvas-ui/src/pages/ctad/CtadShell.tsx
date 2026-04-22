@@ -647,7 +647,7 @@ function ConstraintBadge({
                       <>
                         {" \u2014 "}
                         <QuotedSource
-                          source="CNCF"
+                          source="CNCF Cloud Native Landscape"
                           testId={`ctad-param-${paramId}-contrib-${c.cardId}-name`}
                           inline
                         >
@@ -723,7 +723,7 @@ function RelevantCardsPanel({
             >
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground/80 border-b border-border/30 pb-0.5">
                 <QuotedSource
-                  source="CNCF"
+                  source="CNCF Cloud Native Landscape"
                   testId={`ctad-relevant-cards-${sectionId}-group-${sub.replace(/\s+/g, "-").toLowerCase()}-label`}
                   inline
                 >
@@ -767,7 +767,7 @@ function CardRow({
         <div className="flex items-center gap-2">
           <span className="text-xs font-bold">
             <QuotedSource
-              source="CNCF"
+              source="CNCF Cloud Native Landscape"
               testId={`ctad-card-${card.id}-name`}
               inline
             >
@@ -777,7 +777,7 @@ function CardRow({
           <span className="text-[10px] text-muted-foreground">
             {LABELS.cardCategoryLabel}:{" "}
             <QuotedSource
-              source="CNCF"
+              source="CNCF Cloud Native Landscape"
               testId={`ctad-card-${card.id}-category`}
               inline
             >
@@ -790,7 +790,7 @@ function CardRow({
             {LABELS.cardMaturityLabel}:
           </span>{" "}
           <QuotedSource
-            source="CNCF"
+            source="CNCF Cloud Native Landscape"
             testId={`ctad-card-${card.id}-maturity`}
           >
             {card.maturity}
@@ -798,7 +798,7 @@ function CardRow({
         </div>
         <div className="text-[11px]">
           <QuotedSource
-            source="CNCF"
+            source="CNCF Cloud Native Landscape"
             testId={`ctad-card-${card.id}-description`}
           >
             {card.description}
@@ -873,7 +873,7 @@ function PreviewModal({
             <span>{LABELS.previewHeading}</span>
             <span className="text-xs font-normal text-muted-foreground">
               <QuotedSource
-                source="CNCF"
+                source="CNCF Cloud Native Landscape"
                 testId={`ctad-preview-${card.id}-name`}
                 inline
               >
@@ -943,7 +943,7 @@ function PreviewModal({
                 {preview.justifyEffects.map((e, i) => (
                   <li key={`${e.paramId}-${i}`}>
                     <span className="font-mono">{e.paramId}</span>:{" "}
-                    <QuotedSource source="CNCF">{e.rationale}</QuotedSource>
+                    <QuotedSource source="CNCF Cloud Native Landscape">{e.rationale}</QuotedSource>
                   </li>
                 ))}
               </ul>

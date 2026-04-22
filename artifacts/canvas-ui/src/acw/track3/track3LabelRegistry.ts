@@ -23,6 +23,7 @@ export const TRACK3_LAYER_LABEL: Readonly<Record<Track3Layer, string>> =
     application: "Application",
     integration: "Integration",
     crossCutting: "Cross-Cutting",
+    ops: "Ops & Lifecycle",
   });
 
 // Per-(layer, paramId) parameter labels. These render as the
@@ -60,6 +61,13 @@ export const TRACK3_PARAM_LABEL: Readonly<
   configurationManagement: "Configuration management",
   secretsHandling: "Secrets handling",
   resiliencePosture: "Resilience posture",
+  // Ops & Lifecycle
+  containerOrchestration: "Container orchestration",
+  observabilityStack: "Observability stack",
+  serviceMesh: "Service mesh",
+  cicdModel: "CI/CD model",
+  policyControls: "Policy controls",
+  backupAndRestore: "Backup and restore",
 });
 
 // Per-(paramId, optionValue) overrides for option strings that
@@ -161,6 +169,21 @@ const PARAM_OPTION_LABEL_OVERRIDES: Readonly<
     Switch: "Network switch",
     Firewall: "Firewall",
     "Load Balancer": "Load balancer",
+  }),
+  // Ops & Lifecycle option overrides. The CTAD option strings for
+  // `containerOrchestration` include vendor / product names
+  // (Kubernetes, Nomad, Docker Swarm) so Track 3 must rewrite
+  // them to generic class labels before they reach the DOM. The
+  // remaining ops-section parameters (observabilityStack,
+  // serviceMesh, cicdModel, policyControls, backupAndRestore)
+  // already use vendor-free class strings in the registry and
+  // pass through verbatim via the `assertNoVendorNames` fallback.
+  containerOrchestration: Object.freeze({
+    Kubernetes: "Container orchestrator",
+    Nomad: "Container scheduler",
+    "Docker Swarm": "Container cluster",
+    "Managed runtime": "Managed orchestration",
+    "Self-managed": "Self-managed orchestration",
   }),
 });
 

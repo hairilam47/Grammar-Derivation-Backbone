@@ -74,4 +74,29 @@ export const TRACK3_ADJACENCY = Object.freeze([
     from: { layer: "crossCutting", paramId: "resiliencePosture" },
     to: { layer: "infrastructure", paramId: "deploymentTopology" },
   }),
+  // Ops & Lifecycle ↔ infrastructure / application. The Ops layer
+  // (added with the CTAD-CNCF integration in task #74) wires
+  // operational concerns to the runtime substrate and to the
+  // application style; adjacencies stay categorical, never
+  // direction-of-flow or recommendation.
+  Object.freeze({
+    from: { layer: "ops", paramId: "containerOrchestration" },
+    to: { layer: "infrastructure", paramId: "virtualisationClass" },
+  }),
+  Object.freeze({
+    from: { layer: "ops", paramId: "observabilityStack" },
+    to: { layer: "application", paramId: "applicationStyle" },
+  }),
+  Object.freeze({
+    from: { layer: "ops", paramId: "serviceMesh" },
+    to: { layer: "application", paramId: "applicationStyle" },
+  }),
+  Object.freeze({
+    from: { layer: "ops", paramId: "cicdModel" },
+    to: { layer: "application", paramId: "applicationStyle" },
+  }),
+  Object.freeze({
+    from: { layer: "ops", paramId: "backupAndRestore" },
+    to: { layer: "infrastructure", paramId: "databaseClass" },
+  }),
 ]) as readonly AdjacencyRule[];

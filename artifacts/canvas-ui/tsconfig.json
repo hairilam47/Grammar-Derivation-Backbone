@@ -20,6 +20,9 @@
     },
     {
       "path": "../../lib/architecture-grammar"
+    },
+    {
+      "path": "../../lib/cncf-catalog"
     }
   ]
 }

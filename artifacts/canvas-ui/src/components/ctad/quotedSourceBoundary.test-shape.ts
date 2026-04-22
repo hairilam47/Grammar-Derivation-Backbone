@@ -144,7 +144,7 @@ export function assertQuotedSourceBoundary(
       const match = pattern.exec(contents);
       if (match) {
         throw new Error(
-          `QuotedSource boundary violation: file "${path}" line ${lineNumber(contents, match.index)} ${reason} ("${match[0].trim()}"). The boundary scanner only verifies field-access JSX expressions, so destructuring or aliasing CNCF prose fields would silently bypass the rule. Render the field directly inside <QuotedSource source="CNCF">{card.field}</QuotedSource> instead.`,
+          `QuotedSource boundary violation: file "${path}" line ${lineNumber(contents, match.index)} ${reason} ("${match[0].trim()}"). The boundary scanner only verifies field-access JSX expressions, so destructuring or aliasing CNCF prose fields would silently bypass the rule. Render the field directly inside <QuotedSource source="CNCF Cloud Native Landscape">{card.field}</QuotedSource> instead.`,
         );
       }
     }
@@ -156,7 +156,7 @@ export function assertQuotedSourceBoundary(
         if (typeof m.index !== "number") continue;
         if (!withinQuotedSource(contents, m.index, m[0].length)) {
           throw new Error(
-            `QuotedSource boundary violation: file "${path}" line ${lineNumber(contents, m.index)} renders the protected CNCF expression "${m[0].trim()}" outside any <QuotedSource> element. Wrap the expression in <QuotedSource source="CNCF">…</QuotedSource> so the third-party text boundary is explicit and the CTAD vocabulary guard exemption stays visible.`,
+            `QuotedSource boundary violation: file "${path}" line ${lineNumber(contents, m.index)} renders the protected CNCF expression "${m[0].trim()}" outside any <QuotedSource> element. Wrap the expression in <QuotedSource source="CNCF Cloud Native Landscape">…</QuotedSource> so the third-party text boundary is explicit and the CTAD vocabulary guard exemption stays visible.`,
           );
         }
       }

@@ -174,6 +174,8 @@ function LayerGeometry({ node }: LayerGeometryProps) {
       return <coneGeometry args={[0.55, 0.9, 24]} />;
     case "crossCutting":
       return <sphereGeometry args={[0.55, 24, 24]} />;
+    case "ops":
+      return <torusGeometry args={[0.5, 0.16, 16, 32]} />;
     default:
       return <boxGeometry args={[1.2, 0.4, 0.4]} />;
   }

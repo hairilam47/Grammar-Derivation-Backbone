@@ -30,6 +30,7 @@ const FIXTURE_BOUNDS_FULL: AdcBounds = Object.freeze({
     "application",
     "integration",
     "crossCutting",
+    "ops",
   ]),
 });
 
@@ -47,6 +48,7 @@ function makeEmptyState(): CtadStateExport {
     application: {},
     integration: {},
     crossCutting: {},
+    ops: {},
   };
 }
 
@@ -69,6 +71,10 @@ function makePopulatedState(): CtadStateExport {
     crossCutting: {
       configurationManagement: "Centralised",
     },
+    ops: {
+      containerOrchestration: "Kubernetes",
+      observabilityStack: "Metrics + Logs",
+    },
   };
 }
 
@@ -83,6 +89,7 @@ function makeMutatedState(): CtadStateExport {
     application: {},
     integration: {},
     crossCutting: {},
+    ops: {},
   };
 }
 

@@ -45,6 +45,8 @@ function selectionsFor(
       return state.integration;
     case "crossCutting":
       return state.crossCutting;
+    case "ops":
+      return state.ops;
   }
 }
 

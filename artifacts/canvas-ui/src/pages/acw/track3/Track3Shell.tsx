@@ -101,6 +101,7 @@ const LABELS = {
   layerApplication: "Application",
   layerIntegration: "Integration",
   layerCrossCutting: "Cross-Cutting",
+  layerOps: "Ops & Lifecycle",
   diagramHeading: "Derived diagram",
   diagramHint:
     "The diagram is derived from CTAD_STATE at the moment this view was opened or last refreshed. It is not persisted; use \"Refresh from CTAD\" to pick up CTAD edits made elsewhere.",
@@ -139,6 +140,8 @@ function formatLayerLabel(l: Track3Layer): string {
       return LABELS.layerIntegration;
     case "crossCutting":
       return LABELS.layerCrossCutting;
+    case "ops":
+      return LABELS.layerOps;
   }
 }
 

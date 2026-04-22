@@ -21,13 +21,15 @@ export type Track3Layer =
   | "infrastructure"
   | "application"
   | "integration"
-  | "crossCutting";
+  | "crossCutting"
+  | "ops";
 
 export const TRACK3_LAYERS: readonly Track3Layer[] = Object.freeze([
   "infrastructure",
   "application",
   "integration",
   "crossCutting",
+  "ops",
 ]);
 
 // Perspectives are pure visual focus: which layer's nodes (and
