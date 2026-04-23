@@ -1,0 +1,218 @@
+Task: Decouple ADC from CTAD, ACW Track 3, and Diagrams – Full Revision
+
+### Context
+The current system (repository `Grammar-Derivation-Backbone`) wires ADC (Architecture Decision Canvas) as a **mandatory upstream gate** for CTAD and ACW Track 3. This forces a sequential, rule‑policed flow that does not reflect real EA/SA practice. The goal is to:
+
+- **Decouple authority from flow** – ADC becomes a detachable contractual artefact, not a prerequisite.
+- **Make architecture independent** – CTAD and diagrams can be created and used without any ADC.
+- **Enable reuse** – One architecture can be linked to many ADC decisions (many‑to‑many).
+- **Let diagrams show reality, not compliance** – Track 3 derives purely from CTAD_STATE, never from ADC bounds.
+- **Make the canvas full‑page** – The current diagram view is too small; it must fill the entire browser window with floating overlays.
+- **Lay groundwork for technology‑aware nodes** – Eventually the canvas will support semantic binding and “swap framework” capabilities.
+
+### Constraints (DO NOT VIOLATE)
+- `lib/architecture-grammar` – no changes (7 capabilities, 18 components, Rules A‑D, risk detection).
+- `lib/cncf-catalog` – frozen, read‑only.
+- Build‑time invariants remain active; only update schema versions and allowed import lists.
+- Vocabulary tiers static; no new forbidden tokens needed.
+
+---
+
+## Implementation Plan
+
+### Phase 1 – Architecture Identity in CTAD
+
+**Goal:** Allow CTAD workspaces to be created with an `architectureId` (hybrid `<user slug>-<system uuid>`), independent of any ADC. Preserve backward compatibility with existing ADC‑bound workspaces.
+
+#### 1.1 Extend CTAD Types & Schema
+- Update `ctad/ctadTypes.ts`:
+  - New constant `CTAD_SCHEMA_VERSION = "ctad-1.2"`.
+  - New type `ArchitectureWorkspaceEntry` with fields: `architectureId`, `architectureName`, `createdAt`, `updatedAt`, `params`, `environments`.
+  - `CtadDocument` now has optional `bindings?: Record<string, CtadBindingEntry>` and optional `architectures?: Record<string, ArchitectureWorkspaceEntry>`.
+
+#### 1.2 Implement `architectureIdentity.ts`
+- Create `ctad/architectureIdentity.ts` with:
+  - `generateArchitectureId(userSlug: string): string` – produces `<slug>-<crypto.randomUUID slice>`.
+  - `validateArchitectureId(id: string): boolean` – checks pattern `/^[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{8}$/`.
+  - `extractUserSlug(id: string): string` – returns the slug part for display.
+
+#### 1.3 Modify `ctadStore.ts`
+- Add migration from v1.1 to v1.2 (preserve `bindings`, add empty `architectures: {}`).
+- Add new functions:
+  - `createArchitecture(name: string): string` – generates ID, initialises entry, writes to store.
+  - `getArchitecture(architectureId: string): ArchitectureWorkspaceEntry | undefined`
+  - `setArchitectureParam(architectureId: string, paramId: string, value: string | string[]): void`
+  - `removeArchitecture(architectureId: string): void`
+  - `listArchitectures(): ArchitectureWorkspaceEntry[]`
+  - Environment CRUD for architectures (reuse existing logic but keyed by `architectureId`).
+  - `exportArchitectureState(architectureId: string): CtadStateExport`
+- Ensure existing ADC‑bound functions still work unchanged (they access `bindings`).
+
+#### 1.4 Update CTAD Entry Page (`CtadEntry.tsx`)
+- Add a **tab bar** (or segmented control) to switch between:
+  - “ADC‑Bound Workspaces” (existing list from `listEntries`)
+  - “Architecture Workspaces” (new list from `listArchitectures`)
+- In the “Architecture Workspaces” tab:
+  - “New Architecture” button → prompts for a name → calls `createArchitecture` → navigates to `/ctad/arch/:architectureId`.
+  - List existing architectures with name, date, and optionally attached ADC count (later).
+
+#### 1.5 Add Route and Adapt Shell (`CtadShell.tsx`)
+- Add route `/ctad/arch/:architectureId` in `App.tsx`.
+- In `CtadShell.tsx`:
+  - Detect mode from route params (is `architectureId` present?).
+  - If architecture mode, load/store data via `getArchitecture` / `setArchitectureParam` etc.; the ADC read‑only panel is hidden (or later replaced by “Attached ADCs”).
+  - If legacy mode (`:adsId/:adsVersion`), keep existing behaviour.
+  - The shell title shows architecture name (editable) or ADC project name accordingly.
+
+#### 1.6 Update Build‑Time Invariants
+- `ctadGrammarInvariants.test-shape.ts`: accept `ctad-1.2`, validate `architectures` entries have required fields, no `adsId` leakage.
+- `ctadIsolationInvariants.test-shape.ts`: keep denylist, expand portfolio import allowlist to include `getEntry` (for future attachment Phase), but no other writes.
+
+#### 1.7 Vocabulary Tier Assertions
+- Add new UI labels (e.g., “New Architecture”, “Architecture Workspaces”) to `assertAllCtadLanguage` calls.
+
+---
+
+### Phase 2 – Many‑to‑Many ADC Attachment (After Phase 1 is stable)
+
+**Goal:** Allow linking multiple ADCs to an architecture and vice versa.
+
+#### 2.1 Create `architectureAttachmentStore.ts`
+- New store key `adc.architecture-attachments.v1`:
+  - Document shape: `{ schemaVersion: "att-1.0", links: { [linkId]: { architectureId, adsId, adsVersion, attachedAt } } }`.
+- Functions: `attachADC(architectureId, adsId, adsVersion)`, `detachADC(linkId)`, `getAttachedADCs(architectureId)`, `getArchitecturesForADC(adsId, adsVersion)`.
+
+#### 2.2 UI Integration
+- In `CtadShell.tsx` (architecture mode), add an “Attached ADCs” panel:
+  - List attached decisions (project name, date).
+  - “Attach ADC” button opens a modal/selector showing portfolio entries, creates a link.
+  - Each attachment can be removed (detach).
+- Later in Portfolio view, show “Attached Architectures” for a decision.
+
+#### 2.3 Update Isolation Invariants
+- Allow CTAD to import `getEntry` from portfolio store (read‑only) for the attachment modal.
+
+---
+
+### Phase 3 – Decouple ACW Track 3 from ADC
+
+**Goal:** Track 3 derived diagram should be based only on `CTAD_STATE`, never on ADC bounds.
+
+#### 3.1 Remove `track3AdcBounds.ts`
+- Delete `acw/track3/track3AdcBounds.ts` entirely.
+
+#### 3.2 Modify `track3Derive.ts`
+- Change `deriveACWStructure(ctadState: CtadStateExport): AcwTrack3Structure` – remove `bounds: AdcBounds` parameter.
+- All layers, nodes, and edges are now derived solely from CTAD parameters and environments.
+- Ensure empty input → empty diagram (no synthesised defaults except what CTAD registry implies).
+
+#### 3.3 Update Track 3 Entry Page
+- `Track3Entry.tsx` should now list architectures (from CTAD store’s `listArchitectures` and optionally legacy bindings) instead of portfolio entries.
+- Clicking an architecture navigates to `/acw/derived/arch/:architectureId`.
+
+#### 3.4 Update Track 3 Shell
+- `Track3Shell.tsx` loads architecture data via `getArchitecture` / `exportArchitectureState`.
+- No portfolio imports.
+- Implement the **full‑page canvas** (see Phase 4 below) here as well.
+
+#### 3.5 Update Invariants
+- `acwTrack3IsolationInvariants.test-shape.ts`: forbid any import from `governance/portfolioStore`.
+- `acwTrack3StructureInvariants.test-shape.ts`: verify `deriveACWStructure` accepts only `CtadStateExport`.
+- Update related invariant tests to new signatures.
+
+---
+
+### Phase 4 – Full‑Page Architecture Canvas (Parallel to Phase 3)
+
+**Goal:** The diagram canvas (both Track 3 derived and optionally ACW authored) should fill the entire browser viewport, with controls as floating overlays.
+
+#### 4.1 Modify `Track3Shell.tsx` Layout
+- Introduce state `isFullscreen` (default `true`).
+- Canvas container: `className={isFullscreen ? 'fixed inset-0 z-10' : 'flex-1'}`.
+- Move all non‑canvas UI (ADC binding info, view controls, refresh button, stratum indicator) into a new `Track3FloatingOverlay` component.
+
+#### 4.2 Create `Track3FloatingOverlay.tsx`
+- Top‑left: architecture name + “Refresh from CTAD” button.
+- Bottom‑right: view mode toggle (2D/3D), perspective selector, layer toggles (collapsed into gear icon).
+- Bottom‑center: stratum indicator (“Z AXIS = STRATUM …%”) as a small pill.
+- Use `absolute` positioning, `pointer-events-none` on wrappers, `pointer-events-auto` on interactive elements to avoid interfering with camera controls.
+
+#### 4.3 Adjust Canvas Components
+- `Track3Canvas2D.tsx` and `Track3Canvas3D.tsx` must be `width:100%` and `height:100%`.
+- Three.js camera interactions must work even with overlays present (fine because overlays pass through events).
+
+#### 4.4 Persist View Preference
+- In `track3ViewPrefs.ts`, add optional `isFullscreen: boolean` field. Save/load it.
+
+#### 4.5 Keyboard Shortcut
+- Press `Escape` toggles fullscreen off (or back on).
+
+#### 4.6 (Optional) Apply Same to ACW Authored Canvases
+- In `WorkspaceShell.tsx`, for lenses that embed a canvas (System Landscape, Deployment), apply the same full‑screen pattern. Move `AuthoringPanel` and `LiveStructurePanel` into floating overlays.
+
+---
+
+### Phase 5 – Technology‑Aware Semantic Node Binding (Future, After Above)
+
+**Goal:** Enable nodes in ACW authored diagrams to be bound to CTAD parameters, so changing parameters updates labels/icons. Also enable “swap framework” exploration.
+
+#### 5.1 Extend Node Type
+- In `acwGrammar.ts`, add optional fields to `AcwNode`: `boundParam?: { sectionId, paramId, optionValue }` and `boundTechnologyCategory?: string`.
+
+#### 5.2 Create `techNodeBinding.ts`
+- Functions to resolve a display label and icon from a bound param + registry.
+
+#### 5.3 Implement `ctadToAcwSeed.ts`
+- Service that generates an initial ACW workspace (with bound nodes) from a given `CTAD_STATE`. The user can then continue editing manually.
+
+#### 5.4 UI for Swap
+- In ACW `AuthoringPanel` (or a new property panel), when a node is selected and it has `boundParam`, show a dropdown to change the parameter value. On change, update node label/icon and optionally trigger structural changes (edges, containment).
+
+---
+
+## Revised Monorepo Tree (Key Changes)
+```
+
+artifacts/canvas-ui/src/
+├── acw/
+│   ├── semantic/             (new)
+│   │   ├── techNodeBinding.ts
+│   │   └── ctadToAcwSeed.ts
+│   ├── icons/                (new)
+│   │   ├── iconRegistry.ts
+│   │   └── icons/
+│   └── track3/
+│       ├── track3Derive.ts   (updated signature)
+│       └── (deleted track3AdcBounds.ts)
+├── ctad/
+│   ├── architectureIdentity.ts   (new)
+│   ├── ctadStore.ts              (updated to ctad-1.2)
+│   └── ...
+├── governance/
+│   ├── architectureAttachmentStore.ts   (new)
+│   └── ...
+└── pages/
+├── ctad/CtadEntry.tsx   (updated, dual tabs)
+├── ctad/CtadShell.tsx   (updated, architecture mode)
+└── acw/track3/
+├── Track3Entry.tsx  (lists architectures)
+└── Track3Shell.tsx  (full‑page canvas)
+
+```
+
+---
+
+## Acceptance Criteria
+- A user can create a new architecture workspace in CTAD without selecting any ADC.
+- Existing ADC‑bound workspaces continue to work exactly as before.
+- In CTAD architecture mode, ADCs can be attached and detached; multiple ADCs per architecture are possible.
+- Track 3 derived diagram opens from an architecture (not ADC), fills the entire browser window, with floating overlays for controls.
+- No ADC bounds are used in Track 3 derivation; diagram reflects pure structural choices.
+- All build‑time invariants pass, and core grammar/CNCF catalog untouched.
+
+## Important Notes
+- Do **not** start all phases at once; implement incrementally, starting with Phase 1.
+- After each phase, run the build to ensure no invariants are broken.
+- Keep the decoupling principle: ADC never gates CTAD or ACW flows.
+- Use the existing code style and type patterns, and respect the vocabulary tiers.
+```
