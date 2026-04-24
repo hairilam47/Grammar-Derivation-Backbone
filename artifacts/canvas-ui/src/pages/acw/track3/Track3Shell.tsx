@@ -110,6 +110,10 @@ const LABELS = {
     "Drag to rotate, right-drag to pan, scroll to zoom. Camera position persists per architecture.",
   layoutPending: "Computing layout…",
   enterFullscreen: "Enter full-page canvas",
+  exitFullscreen: "Exit full-screen",
+  fullscreenPlaceholderHeading: "Full-page canvas active",
+  fullscreenPlaceholderBody:
+    "The architecture canvas is showing in full-page mode. Press Esc or use the floating exit control to return here.",
 } as const;
 
 assertAllAcwTrack3Language(Object.values(LABELS));
@@ -445,12 +449,14 @@ function BoundShell({
   if (prefs.isFullscreen) {
     return (
       <>
-        {/* The fullscreen canvas (`fixed inset-0`) covers the
-            whole viewport, so we deliberately do NOT render the
-            inline placeholder card behind it — that would be
-            dead, unreachable UI. The floating overlay's
-            "Exit full-screen" button and the Escape key are the
-            authoritative routes back to inline mode. */}
+        {/* In-page placeholder is intentional: it keeps Track 3's
+            route-level chrome (header, breadcrumbs, surrounding
+            layout) intact and reachable while the architecture
+            canvas overlays the viewport. The placeholder is also
+            the canonical re-entry to inline mode for users who
+            don't discover the floating overlay's exit button or
+            the Escape key. */}
+        <BindingPanelPlaceholder onExitFullscreen={handleExitFullscreen} />
         <div
           className="fixed inset-0 z-10 bg-background"
           data-testid="track3-fullscreen-canvas"
@@ -529,6 +535,35 @@ function BoundShell({
         </CardContent>
       </Card>
     </>
+  );
+}
+
+function BindingPanelPlaceholder({
+  onExitFullscreen,
+}: {
+  onExitFullscreen: () => void;
+}) {
+  return (
+    <Card data-testid="track3-fullscreen-placeholder">
+      <CardHeader>
+        <CardTitle className="text-sm">
+          {LABELS.fullscreenPlaceholderHeading}
+        </CardTitle>
+        <CardDescription className="text-xs">
+          {LABELS.fullscreenPlaceholderBody}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onExitFullscreen}
+          data-testid="track3-fullscreen-placeholder-exit"
+        >
+          {LABELS.exitFullscreen}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 
