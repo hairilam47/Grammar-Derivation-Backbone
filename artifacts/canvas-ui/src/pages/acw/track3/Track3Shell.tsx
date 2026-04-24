@@ -77,7 +77,10 @@ import {
 } from "@/acw/track3/track3ViewPrefs";
 import { Track3Canvas2D } from "@/components/acw/track3/Track3Canvas2D";
 import { Track3Canvas3D } from "@/components/acw/track3/Track3Canvas3D";
-import { Track3FloatingOverlay } from "@/components/acw/track3/Track3FloatingOverlay";
+import {
+  Track3FloatingOverlay,
+  type Track3StratumIndicatorEntry,
+} from "@/components/acw/track3/Track3FloatingOverlay";
 import { isolateAroundNode } from "@/acw/track3/track3FocusIsolation";
 import type { AcwNode, AcwEdge } from "@/acw/acwLensStructure";
 
@@ -382,6 +385,27 @@ function BoundShell({
     return () => window.removeEventListener("keydown", onKey);
   }, [architectureId, prefs.isFullscreen]);
 
+  // Stratum indicator: derived from the same positioned-diagrams
+  // the renderers consume. Filtered through `hiddenSections` so
+  // the indicator always reflects what is actually on-screen.
+  // Order is preserved (DiagramSpec compile already orders by
+  // `STRATUM_INDEX`).
+  const stratumIndicator = useMemo<readonly Track3StratumIndicatorEntry[]>(() => {
+    const out: Track3StratumIndicatorEntry[] = [];
+    for (const pd of positionedDiagrams) {
+      if (hiddenSections.has(pd.stratum)) continue;
+      const visibleNodeCount =
+        isolatedKeptIds === null
+          ? pd.nodes.length
+          : pd.nodes.filter((n: { id: string }) =>
+              isolatedKeptIds.has(n.id),
+            ).length;
+      if (visibleNodeCount === 0) continue;
+      out.push({ stratum: pd.stratum, nodeCount: visibleNodeCount });
+    }
+    return out;
+  }, [positionedDiagrams, hiddenSections, isolatedKeptIds]);
+
   const focusedLabel = useMemo(() => {
     if (selectedNodeId === null) return null;
     for (const pd of positionedDiagrams) {
@@ -438,6 +462,7 @@ function BoundShell({
             perspective={prefs.perspective}
             hiddenLayers={prefs.hiddenLayers}
             focusedLabel={focusedLabel}
+            stratumIndicator={stratumIndicator}
             onSetViewMode={handleSetViewMode}
             onSetPerspective={handleSetPerspective}
             onToggleLayer={handleToggleLayer}

@@ -700,13 +700,13 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
         </div>
       )}
       <div
-        className="absolute bottom-2 left-2 text-[10px] uppercase tracking-widest text-muted-foreground"
+        className="pointer-events-none absolute bottom-2 left-2 text-[10px] uppercase tracking-widest text-muted-foreground"
         data-testid={`${testId}-legend`}
       >
         {LEGEND_LABEL}
       </div>
       <div
-        className="absolute bottom-2 right-2 text-[10px] uppercase tracking-widest text-muted-foreground"
+        className="pointer-events-none absolute bottom-2 right-2 text-[10px] uppercase tracking-widest text-muted-foreground"
         data-testid={`${testId}-zoom`}
       >
         {Math.round(cameraZoom * 100)}%

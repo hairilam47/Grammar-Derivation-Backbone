@@ -38,6 +38,10 @@ const OVERLAY_LABELS = {
   mode3D: "3D",
   perspectiveLabel: "Perspective",
   layersLabel: "Layers",
+  stratumIndicatorEmpty: "Z axis = stratum (empty)",
+  stratumIndicatorLayer: "layer",
+  stratumIndicatorLayers: "layers",
+  stratumIndicatorNodeCount: "nodes",
   perspectiveAll: "All layers",
   perspectiveInfra: "Infrastructure-centric",
   perspectiveApp: "Application-centric",
@@ -78,6 +82,11 @@ function formatLayerLabel(l: Track3Layer): string {
   }
 }
 
+export interface Track3StratumIndicatorEntry {
+  readonly stratum: string;
+  readonly nodeCount: number;
+}
+
 export interface Track3FloatingOverlayProps {
   readonly architectureId: string;
   readonly architectureName: string;
@@ -85,6 +94,7 @@ export interface Track3FloatingOverlayProps {
   readonly perspective: Track3Perspective;
   readonly hiddenLayers: readonly string[];
   readonly focusedLabel: string | null;
+  readonly stratumIndicator: readonly Track3StratumIndicatorEntry[];
   readonly onSetViewMode: (mode: Track3ViewMode) => void;
   readonly onSetPerspective: (p: Track3Perspective) => void;
   readonly onToggleLayer: (layerId: string) => void;
@@ -103,7 +113,7 @@ export function Track3FloatingOverlay(props: Track3FloatingOverlayProps) {
         className="pointer-events-none absolute top-3 left-3 flex flex-col gap-2 max-w-[60vw]"
         data-testid="track3-overlay-topleft"
       >
-        <div className="pointer-events-auto inline-flex items-center gap-2 rounded-md border border-border/50 bg-card/80 backdrop-blur px-3 py-1.5 text-xs">
+        <div className="pointer-events-none inline-flex items-center gap-2 rounded-md border border-border/50 bg-card/80 backdrop-blur px-3 py-1.5 text-xs">
           <Layers className="w-3.5 h-3.5 text-primary" />
           <span
             className="font-mono truncate max-w-[40vw]"
@@ -173,16 +183,45 @@ export function Track3FloatingOverlay(props: Track3FloatingOverlayProps) {
         )}
       </div>
 
-      {/* Bottom-centre: stratum legend pill. */}
+      {/* Bottom-centre: stratum indicator pill. Renders the stratum
+          breakdown derived from the positioned diagrams so the
+          user can see which strata exist along the Z axis without
+          probing the canvas. Pointer-transparent so the underlying
+          renderer continues to receive drag/zoom events here. */}
       <div
-        className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2"
+        className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 max-w-[60vw]"
         data-testid="track3-overlay-bottomcenter"
       >
         <div
-          className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-border/50 bg-card/80 backdrop-blur px-3 py-1 text-[10px] uppercase tracking-widest text-muted-foreground"
+          className="pointer-events-none inline-flex items-center gap-2 rounded-full border border-border/50 bg-card/80 backdrop-blur px-3 py-1 text-[10px] uppercase tracking-widest text-muted-foreground"
           data-testid="track3-overlay-stratum-legend"
         >
-          {OVERLAY_LABELS.stratumLegend}
+          {props.stratumIndicator.length === 0 ? (
+            <span>{OVERLAY_LABELS.stratumIndicatorEmpty}</span>
+          ) : (
+            <>
+              <span>{OVERLAY_LABELS.stratumLegend}</span>
+              <span aria-hidden>·</span>
+              <span data-testid="track3-overlay-stratum-count">
+                {props.stratumIndicator.length}{" "}
+                {props.stratumIndicator.length === 1
+                  ? OVERLAY_LABELS.stratumIndicatorLayer
+                  : OVERLAY_LABELS.stratumIndicatorLayers}
+              </span>
+              <span aria-hidden>·</span>
+              <span
+                data-testid="track3-overlay-stratum-list"
+                className="font-mono normal-case tracking-normal text-muted-foreground/80 truncate max-w-[40vw]"
+                title={props.stratumIndicator
+                  .map((s) => `${s.stratum} (${s.nodeCount})`)
+                  .join(" / ")}
+              >
+                {props.stratumIndicator
+                  .map((s) => `${s.stratum} (${s.nodeCount})`)
+                  .join(" / ")}
+              </span>
+            </>
+          )}
         </div>
       </div>
 
