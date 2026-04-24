@@ -201,7 +201,20 @@ export function Track3FloatingOverlay(props: Track3FloatingOverlayProps) {
           breakdown derived from the positioned diagrams so the
           user can see which strata exist along the Z axis without
           probing the canvas. Pointer-transparent so the underlying
-          renderer continues to receive drag/zoom events here. */}
+          renderer continues to receive drag/zoom events here.
+       *
+       * ACCEPTED DEVIATION FROM TASK #81 EXAMPLE COPY (locked):
+       * The task description includes an illustrative pill copy
+       * using a "%" share style ("infra 40% / app 35% / …").
+       * That format is misleading when layers are hidden or
+       * when isolation is active (the percentages would not sum
+       * to 100% of the visible graph) and would also drift away
+       * from the rest of the Track 3 lexicon, which speaks in
+       * counts, not shares. We deliberately render absolute node
+       * counts per stratum ("infra (12) / app (7) / …") instead.
+       * Do NOT switch back to "%" without first re-validating
+       * the hidden-layers/isolation interaction.
+       */}
       <div
         className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 max-w-[60vw]"
         data-testid="track3-overlay-bottomcenter"
