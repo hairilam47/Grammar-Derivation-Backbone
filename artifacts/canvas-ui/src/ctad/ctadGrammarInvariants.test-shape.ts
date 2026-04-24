@@ -5,8 +5,12 @@
 // grammar invariant pattern.
 //
 // What this module guards:
-//   1. Schema version is locked to "ctad-1.0".
-//   2. The registry exposes exactly the four canonical sections.
+//   1. Schema version is locked to "ctad-1.2" (the current
+//      CTAD_SCHEMA_VERSION; "ctad-1.0" and "ctad-1.1" remain
+//      readable via deterministic migrations).
+//   2. The registry exposes exactly the five canonical sections
+//      ("infrastructure", "application", "integration",
+//      "crossCutting", "ops"), in canonical order.
 //   3. Every parameter has a non-empty option list.
 //   4. No parameter is required (CTAD selections are reversible
 //      and may always be left unspecified). This is asserted
@@ -97,7 +101,7 @@ if (CTAD_SCHEMA_VERSION !== "ctad-1.2") {
 // Section #5 ("ops") was added in Task #74 alongside the CNCF
 // reference catalog. The ordering is fixed: ops is appended last
 // so existing CTAD_STATE consumers iterating registry order remain
-// stable for the original four sections.
+// stable for the four pre-Task-#74 sections.
 const EXPECTED_SECTION_IDS: readonly CtadSectionId[] = [
   "infrastructure",
   "application",
