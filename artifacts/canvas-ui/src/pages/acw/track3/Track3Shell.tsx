@@ -380,6 +380,11 @@ function BoundShell({
     function onKey(ev: KeyboardEvent) {
       if (ev.key !== "Escape") return;
       if (isEditableTarget(ev.target)) return;
+      // If another component (a dialog, popover, dropdown, etc.)
+      // already handled this Escape and called preventDefault,
+      // do NOT also toggle fullscreen — the user's intent was to
+      // dismiss that other UI, not to flip the canvas.
+      if (ev.defaultPrevented) return;
       // Intentionally NOT calling ev.preventDefault(): Escape has
       // no meaningful browser default we need to suppress, and
       // preventing default would block other Escape-driven
@@ -773,4 +778,3 @@ function InlineControlsBar(props: {
   );
 }
 
-void TRACK3_LAYER_LABEL;
