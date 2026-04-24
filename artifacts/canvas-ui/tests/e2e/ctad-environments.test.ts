@@ -55,9 +55,10 @@ const TEST_BINDING: CtadBinding = {
 // ---- Registry --------------------------------------------------
 
 describe("CTAD registry — environments first-class shape", () => {
-  it("schema version is ctad-1.1 and lists ctad-1.0 as a prior version", () => {
-    expect(CTAD_SCHEMA_VERSION).toBe("ctad-1.1");
+  it("schema version is ctad-1.2 and lists ctad-1.0/1.1 as prior versions", () => {
+    expect(CTAD_SCHEMA_VERSION).toBe("ctad-1.2");
     expect(CTAD_PRIOR_SCHEMA_VERSIONS).toContain("ctad-1.0");
+    expect(CTAD_PRIOR_SCHEMA_VERSIONS).toContain("ctad-1.1");
   });
 
   it("environment kind options are non-empty, frozen, and unique", () => {
@@ -117,7 +118,7 @@ describe("CTAD store — v1.0 → v1.1 deterministic migration", () => {
       adsId: "legacy-app",
       adsVersion: "7",
     });
-    expect(exported.schemaVersion).toBe("ctad-1.1");
+    expect(exported.schemaVersion).toBe("ctad-1.2");
     expect(exported.environments).toEqual([]);
     // Pre-existing param value survives the migration.
     expect(exported.infrastructure.hostingModel).toBe("Public");

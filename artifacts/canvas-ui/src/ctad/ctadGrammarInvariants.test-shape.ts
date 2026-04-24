@@ -29,8 +29,19 @@ import {
 import {
   __ctadStoreInternals,
   clearCtadParam,
+  createArchitecture,
+  exportArchitectureState,
   exportCtadState,
+  getArchitectureDoc,
+  removeArchitecture,
+  setArchitectureParam,
 } from "./ctadStore";
+import {
+  ARCHITECTURE_ID_REGEX,
+  generateArchitectureId,
+  isValidArchitectureId,
+  slugifyArchitectureName,
+} from "./architectureIdentity";
 
 const PREFIX = "CTAD v1 grammar invariant violation";
 
@@ -48,15 +59,20 @@ if (CTAD_REGISTRY.schemaVersion !== CTAD_SCHEMA_VERSION) {
     `${PREFIX}: CTAD_REGISTRY.schemaVersion (${CTAD_REGISTRY.schemaVersion}) and CTAD_SCHEMA_VERSION (${CTAD_SCHEMA_VERSION}) disagree.`,
   );
 }
-// Task #77 promoted environments to a first-class CTAD concept and
-// bumped the schema to "ctad-1.1". The store's read path is
-// backwards-compatible with persisted "ctad-1.0" docs via a
-// deterministic empty-environments migration; that contract is
-// exercised by the foundation tests. v1.x must remain on the
-// "ctad-1.x" channel; structural breaks require "ctad-2.0".
-if (CTAD_SCHEMA_VERSION !== "ctad-1.1") {
+// Schema lineage:
+//   Task #77 — bumped to "ctad-1.1" (first-class environments).
+//   Task #78 — bumped to "ctad-1.2" (first-class architectures, the
+//              standalone-mode peer of bindings; introduces a
+//              top-level `architectures` map keyed by architectureId
+//              with no `adsId`/`adsVersion` leakage).
+// The store's read path remains backwards-compatible with persisted
+// "ctad-1.0" and "ctad-1.1" docs via deterministic read-time
+// migrations (empty-environments and empty-architectures
+// respectively). v1.x must remain on the "ctad-1.x" channel;
+// structural breaks require "ctad-2.0".
+if (CTAD_SCHEMA_VERSION !== "ctad-1.2") {
   throw new Error(
-    `${PREFIX}: schemaVersion drift detected. v1 must remain on the "ctad-1.x" channel ("ctad-1.1" current); structural breaks require an explicit "ctad-2.0".`,
+    `${PREFIX}: schemaVersion drift detected. v1 must remain on the "ctad-1.x" channel ("ctad-1.2" current); structural breaks require an explicit "ctad-2.0".`,
   );
 }
 
@@ -245,8 +261,119 @@ if (ENVIRONMENT_HOSTING_MODEL_OPTIONS.length === 0) {
   }
 }
 
+// (10) Architecture identity (Phase 1). The id format is
+// `<slug>-<8-hex>`; the regex is the single source of truth and
+// must accept ids produced by the generator and reject everything
+// else relevant. The probe also verifies that an empty architecture
+// round-trips through createArchitecture / exportArchitectureState
+// with all parameters null and an empty environments list, and
+// that removeArchitecture leaves no trace in the persisted doc.
+{
+  const slug = slugifyArchitectureName("Probe Architecture #1");
+  if (slug !== "probe-architecture-1") {
+    throw new Error(
+      `${PREFIX}: slugifyArchitectureName produced unexpected slug "${slug}".`,
+    );
+  }
+  const id = generateArchitectureId("Probe Architecture #1");
+  if (!ARCHITECTURE_ID_REGEX.test(id)) {
+    throw new Error(
+      `${PREFIX}: generateArchitectureId produced id "${id}" which does not match ARCHITECTURE_ID_REGEX.`,
+    );
+  }
+  if (!isValidArchitectureId(id)) {
+    throw new Error(
+      `${PREFIX}: isValidArchitectureId rejected its own generator output "${id}".`,
+    );
+  }
+  // A few negative cases — these must be rejected.
+  for (const bad of ["", "ABC-12345678", "noSuffix", "slug-1234567z"]) {
+    if (isValidArchitectureId(bad)) {
+      throw new Error(
+        `${PREFIX}: isValidArchitectureId accepted invalid id "${bad}".`,
+      );
+    }
+  }
+
+  const created = createArchitecture("Invariant Probe");
+  try {
+    if (!isValidArchitectureId(created.architectureId)) {
+      throw new Error(
+        `${PREFIX}: createArchitecture produced invalid id "${created.architectureId}".`,
+      );
+    }
+    // Defensive: architecture entries must NOT carry adsId/adsVersion.
+    const leaked = created as unknown as Record<string, unknown>;
+    if ("adsId" in leaked || "adsVersion" in leaked) {
+      throw new Error(
+        `${PREFIX}: architecture document leaks adsId/adsVersion fields.`,
+      );
+    }
+    const exported = exportArchitectureState(created.architectureId);
+    if (exported === null) {
+      throw new Error(
+        `${PREFIX}: exportArchitectureState returned null for a freshly created architecture.`,
+      );
+    }
+    if (exported.schemaVersion !== CTAD_SCHEMA_VERSION) {
+      throw new Error(
+        `${PREFIX}: exportArchitectureState returned schemaVersion "${exported.schemaVersion}".`,
+      );
+    }
+    if (
+      (exported as unknown as Record<string, unknown>).binding !== undefined
+    ) {
+      throw new Error(
+        `${PREFIX}: exportArchitectureState leaked a "binding" field.`,
+      );
+    }
+    for (const section of CTAD_SECTIONS) {
+      const groupKey = section.id as CtadSectionId;
+      const group = exported[groupKey];
+      for (const param of section.parameters) {
+        if (group[param.id] !== null) {
+          throw new Error(
+            `${PREFIX}: empty architecture exported "${param.id}" as ${JSON.stringify(group[param.id])}, expected null.`,
+          );
+        }
+      }
+    }
+    if (
+      !Array.isArray(exported.environments) ||
+      exported.environments.length !== 0
+    ) {
+      throw new Error(
+        `${PREFIX}: empty architecture exported environments=${JSON.stringify(exported.environments)}, expected [].`,
+      );
+    }
+    // Architecture entries have an explicit lifecycle: a freshly
+    // created workspace with no params and no envs must persist.
+    // Clearing an already-null param is a no-op and must not delete
+    // the entry; only removeArchitecture removes it.
+    setArchitectureParam(created.architectureId, ALL_PARAM_IDS[0], null);
+    if (getArchitectureDoc(created.architectureId) === null) {
+      throw new Error(
+        `${PREFIX}: setting an already-null param deleted an empty architecture; architectures must persist until removeArchitecture is called.`,
+      );
+    }
+  } finally {
+    removeArchitecture(created.architectureId);
+  }
+  if (getArchitectureDoc(created.architectureId) !== null) {
+    throw new Error(
+      `${PREFIX}: removeArchitecture did not delete the architecture entry.`,
+    );
+  }
+  const finalDoc = __ctadStoreInternals.readDoc();
+  if (finalDoc.architectures[created.architectureId] !== undefined) {
+    throw new Error(
+      `${PREFIX}: invariant probe architecture leaked into persisted store.`,
+    );
+  }
+}
+
 export function assertCtadV1GrammarInvariants(): void {
-  if (CTAD_REGISTRY.schemaVersion !== "ctad-1.1") {
+  if (CTAD_REGISTRY.schemaVersion !== "ctad-1.2") {
     throw new Error(`${PREFIX}: schemaVersion drift detected at runtime.`);
   }
 }

@@ -1,15 +1,25 @@
-// CTAD — bounded, per-binding exploration state store.
+// CTAD — bounded exploration state store.
 //
-// Persists categorical technology selections per ADC binding in
-// localStorage under `ctad.state.v1`. Each binding is keyed by
-// `${adsId}@${adsVersion}`. Selections are reversible at any
-// time; missing values mean "not specified" (null in the
-// serialised CTAD_STATE), never a default.
+// Persists categorical technology selections in localStorage under
+// `ctad.state.v1`. Selections are reversible at any time; missing
+// values mean "not specified" (null in the serialised CTAD_STATE),
+// never a default.
 //
-// The store does NOT mutate or read ADC artefacts. The binding key
-// is opaque from CTAD's point of view — CTAD never validates that
-// the binding refers to a real frozen decision; the entry page is
-// responsible for resolving it via the read-only portfolio listing.
+// The store maintains TWO peer top-level maps:
+//   - `bindings`     keyed by `${adsId}@${adsVersion}`, each
+//                    representing an exploration anchored to a
+//                    frozen ADC decision (legacy default mode);
+//   - `architectures` keyed by `architectureId`, each representing
+//                    a standalone exploration that exists
+//                    independently of any frozen decision (Phase 1
+//                    decoupling). Architecture entries deliberately
+//                    carry NO `adsId` / `adsVersion` — they are
+//                    pure CTAD workspaces.
+//
+// The store does NOT mutate or read ADC artefacts in either mode.
+// Binding keys are opaque from CTAD's point of view; the entry page
+// resolves them against the read-only portfolio listing for
+// rendering only.
 
 import {
   CTAD_PRIOR_SCHEMA_VERSIONS,
@@ -22,6 +32,10 @@ import {
   type CtadEnvironmentDef,
   type CtadSectionId,
 } from "./ctadRegistry";
+import {
+  generateArchitectureId,
+  isValidArchitectureId,
+} from "./architectureIdentity";
 
 const STORAGE_KEY = "ctad.state.v1";
 
@@ -40,22 +54,40 @@ export interface CtadBindingDoc {
   readonly updatedAt: string;
 }
 
+// Architecture workspace document — the standalone-mode peer of
+// `CtadBindingDoc`. Carries the same params + environments shape
+// (so panels can read both modes through a unified surface) plus
+// architecture-specific identity fields. Crucially: NO `adsId` and
+// NO `adsVersion`. The grammar invariant pins this absence at
+// build time.
+export interface CtadArchitectureDoc {
+  readonly architectureId: string;
+  readonly architectureName: string;
+  readonly params: Readonly<Record<string, CtadParamValue>>;
+  readonly environments: readonly CtadEnvironmentDef[];
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
 interface CtadStoreDoc {
   readonly schemaVersion: typeof CTAD_SCHEMA_VERSION;
   readonly bindings: Readonly<Record<string, CtadBindingDoc>>;
+  readonly architectures: Readonly<Record<string, CtadArchitectureDoc>>;
 }
 
 const EMPTY_DOC: CtadStoreDoc = Object.freeze({
   schemaVersion: CTAD_SCHEMA_VERSION,
   bindings: Object.freeze({}),
+  architectures: Object.freeze({}),
 });
 
-// Deterministic v1.0 → v1.1 migration. The only structural change
-// is the addition of a `environments: []` array per binding (the
-// canonical empty value for the new first-class concept). The
-// migration is a pure function of the input doc, runs at read
-// time, and never mutates the persisted blob — the next write
-// will rewrite the doc with the bumped schemaVersion.
+// Deterministic prior-schema migrations. The migrations are pure
+// read-time projections; they never mutate the persisted blob.
+// The next write rewrites the doc with the bumped schemaVersion.
+//
+//   v1.0 → v1.1  : add `environments: []` per binding.
+//   v1.1 → v1.2  : add a top-level `architectures: {}` map; each
+//                  binding's shape is unchanged.
 function isPriorSchemaVersion(v: unknown): v is (typeof CTAD_PRIOR_SCHEMA_VERSIONS)[number] {
   return (
     typeof v === "string" &&
@@ -105,6 +137,51 @@ function bindingKey(b: CtadBinding): string {
   return `${b.adsId}@${b.adsVersion}`;
 }
 
+function migrateArchitectureDoc(raw: unknown): CtadArchitectureDoc | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.architectureId !== "string" || !isValidArchitectureId(r.architectureId)) {
+    return null;
+  }
+  if (typeof r.architectureName !== "string") return null;
+  // Architecture entries must NOT carry `adsId` / `adsVersion` —
+  // strip them defensively if a future write ever leaks them.
+  const params =
+    r.params && typeof r.params === "object"
+      ? (r.params as Record<string, CtadParamValue>)
+      : {};
+  const createdAt = typeof r.createdAt === "string" ? r.createdAt : "";
+  const updatedAt = typeof r.updatedAt === "string" ? r.updatedAt : createdAt;
+  const rawEnvs = Array.isArray(r.environments) ? r.environments : [];
+  const environments: CtadEnvironmentDef[] = [];
+  for (const e of rawEnvs) {
+    if (!e || typeof e !== "object") continue;
+    const er = e as Record<string, unknown>;
+    if (typeof er.id !== "string" || typeof er.name !== "string") continue;
+    if (typeof er.kind !== "string") continue;
+    const hosting =
+      er.hostingModel === null || typeof er.hostingModel === "string"
+        ? (er.hostingModel as string | null)
+        : null;
+    environments.push(
+      Object.freeze({
+        id: er.id,
+        name: er.name,
+        kind: er.kind,
+        hostingModel: hosting,
+      }),
+    );
+  }
+  return Object.freeze({
+    architectureId: r.architectureId,
+    architectureName: r.architectureName,
+    params,
+    environments: Object.freeze(environments),
+    createdAt,
+    updatedAt,
+  });
+}
+
 function readDoc(): CtadStoreDoc {
   if (typeof window === "undefined" || !window.localStorage) return EMPTY_DOC;
   try {
@@ -132,9 +209,29 @@ function readDoc(): CtadStoreDoc {
       const migrated = migrateBindingDoc(v);
       if (migrated !== null) bindings[k] = migrated;
     }
+    // v1.1 → v1.2 migration: `architectures` is absent on v1.1
+    // documents; materialise an empty map. On v1.2 documents we
+    // deserialise the stored architecture entries through the
+    // dedicated migrator (which strips any leaked adsId fields).
+    const architectures: Record<string, CtadArchitectureDoc> = {};
+    if (
+      parsed.architectures &&
+      typeof parsed.architectures === "object" &&
+      parsed.architectures !== null
+    ) {
+      for (const [k, v] of Object.entries(
+        parsed.architectures as Record<string, unknown>,
+      )) {
+        const migrated = migrateArchitectureDoc(v);
+        if (migrated !== null && migrated.architectureId === k) {
+          architectures[k] = migrated;
+        }
+      }
+    }
     return {
       schemaVersion: CTAD_SCHEMA_VERSION,
       bindings,
+      architectures,
     };
   } catch {
     return EMPTY_DOC;
@@ -269,7 +366,7 @@ export function setCtadParam(
       updatedAt: new Date().toISOString(),
     };
   }
-  writeDoc({ schemaVersion: CTAD_SCHEMA_VERSION, bindings: nextBindings });
+  writeDoc({ schemaVersion: CTAD_SCHEMA_VERSION, bindings: nextBindings, architectures: doc.architectures });
 }
 
 export function clearCtadParam(b: CtadBinding, paramId: string): void {
@@ -298,7 +395,7 @@ function writeEnvironments(
       updatedAt: new Date().toISOString(),
     };
   }
-  writeDoc({ schemaVersion: CTAD_SCHEMA_VERSION, bindings: nextBindings });
+  writeDoc({ schemaVersion: CTAD_SCHEMA_VERSION, bindings: nextBindings, architectures: doc.architectures });
 }
 
 function validateEnvironment(env: CtadEnvironmentDef): void {
@@ -366,7 +463,7 @@ export function clearBinding(b: CtadBinding): void {
   if (!(key in doc.bindings)) return;
   const next = { ...doc.bindings };
   delete next[key];
-  writeDoc({ schemaVersion: CTAD_SCHEMA_VERSION, bindings: next });
+  writeDoc({ schemaVersion: CTAD_SCHEMA_VERSION, bindings: next, architectures: doc.architectures });
 }
 
 // Canonical CTAD_STATE export --------------------------------------
@@ -422,6 +519,249 @@ export function exportCtadState(b: CtadBinding): CtadStateExport {
 // null-padded snapshot.
 export function getCtadState(b: CtadBinding): CtadStateExport {
   return exportCtadState(b);
+}
+
+// Architecture workspace API (Phase 1 — standalone explorations) --
+
+function writeArchitectureDoc(next: CtadArchitectureDoc | null, id: string): void {
+  const doc = readDoc();
+  const nextArchs = { ...doc.architectures };
+  if (next === null) {
+    delete nextArchs[id];
+  } else {
+    nextArchs[id] = next;
+  }
+  writeDoc({
+    schemaVersion: CTAD_SCHEMA_VERSION,
+    bindings: doc.bindings,
+    architectures: nextArchs,
+  });
+}
+
+export function listArchitectures(): readonly CtadArchitectureDoc[] {
+  const doc = readDoc();
+  // Deterministic order: createdAt ascending, then id for ties.
+  return Object.values(doc.architectures).slice().sort((a, b) => {
+    if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? -1 : 1;
+    return a.architectureId < b.architectureId ? -1 : 1;
+  });
+}
+
+export function getArchitectureDoc(id: string): CtadArchitectureDoc | null {
+  if (!isValidArchitectureId(id)) return null;
+  const doc = readDoc();
+  return doc.architectures[id] ?? null;
+}
+
+export function createArchitecture(name: string): CtadArchitectureDoc {
+  const trimmed = name.trim();
+  if (trimmed.length === 0) {
+    throw new Error("CTAD store: architecture name must be non-empty.");
+  }
+  const id = generateArchitectureId(trimmed);
+  const now = new Date().toISOString();
+  const next: CtadArchitectureDoc = Object.freeze({
+    architectureId: id,
+    architectureName: trimmed,
+    params: {},
+    environments: [],
+    createdAt: now,
+    updatedAt: now,
+  });
+  writeArchitectureDoc(next, id);
+  return next;
+}
+
+export function removeArchitecture(id: string): void {
+  if (!isValidArchitectureId(id)) return;
+  const doc = readDoc();
+  if (!(id in doc.architectures)) return;
+  writeArchitectureDoc(null, id);
+}
+
+export function setArchitectureParam(
+  id: string,
+  paramId: string,
+  value: CtadParamValue,
+): void {
+  const param = findParam(paramId);
+  if (!param) {
+    throw new Error(
+      `CTAD store: unknown parameter id "${paramId}". Every parameter must be declared in ctadRegistry.`,
+    );
+  }
+  if (value !== null) {
+    if (param.kind === "single") {
+      if (typeof value !== "string" || !param.options.includes(value)) {
+        throw new Error(
+          `CTAD store: value "${String(value)}" is not a permitted option for "${paramId}".`,
+        );
+      }
+    } else if (
+      !Array.isArray(value) ||
+      !value.every((v) => typeof v === "string" && param.options.includes(v))
+    ) {
+      throw new Error(
+        `CTAD store: multi-value "${JSON.stringify(value)}" contains options not permitted for "${paramId}".`,
+      );
+    }
+  }
+  const prev = getArchitectureDoc(id);
+  if (prev === null) {
+    throw new Error(
+      `CTAD store: architecture "${id}" does not exist. Call createArchitecture first.`,
+    );
+  }
+  const params = { ...prev.params };
+  const had = paramId in params;
+  if (value === null) {
+    if (!had) return; // no-op: clearing an already-unset param.
+    delete params[paramId];
+  } else {
+    params[paramId] = value;
+  }
+  // NOTE: unlike bindings, architecture entries have an explicit
+  // lifecycle (createArchitecture / removeArchitecture). We
+  // therefore deliberately do NOT apply an empty-leak GC rule
+  // here — a named architecture with no selections is a legitimate
+  // intermediate state (a freshly-created workspace looks exactly
+  // like that) and must persist until removeArchitecture is
+  // explicitly called.
+  writeArchitectureDoc(
+    Object.freeze({
+      ...prev,
+      params,
+      updatedAt: new Date().toISOString(),
+    }),
+    id,
+  );
+}
+
+export function clearArchitectureParam(id: string, paramId: string): void {
+  setArchitectureParam(id, paramId, null);
+}
+
+export function getArchitectureEnvironments(
+  id: string,
+): readonly CtadEnvironmentDef[] {
+  return getArchitectureDoc(id)?.environments ?? [];
+}
+
+function writeArchitectureEnvironments(
+  id: string,
+  next: readonly CtadEnvironmentDef[],
+): void {
+  const prev = getArchitectureDoc(id);
+  if (prev === null) {
+    throw new Error(
+      `CTAD store: architecture "${id}" does not exist. Call createArchitecture first.`,
+    );
+  }
+  // Same lifecycle rationale as setArchitectureParam: architecture
+  // entries are not GC'd on emptiness; only removeArchitecture
+  // deletes them.
+  writeArchitectureDoc(
+    Object.freeze({
+      ...prev,
+      environments: Object.freeze(next.map((e) => Object.freeze({ ...e }))),
+      updatedAt: new Date().toISOString(),
+    }),
+    id,
+  );
+}
+
+export function addArchitectureEnvironment(
+  id: string,
+  env: CtadEnvironmentDef,
+): void {
+  validateEnvironment(env);
+  const current = getArchitectureEnvironments(id);
+  if (current.some((e) => e.id === env.id)) {
+    throw new Error(
+      `CTAD store: environment id "${env.id}" already exists for this architecture.`,
+    );
+  }
+  writeArchitectureEnvironments(id, [...current, env]);
+}
+
+export function updateArchitectureEnvironment(
+  id: string,
+  env: CtadEnvironmentDef,
+): void {
+  validateEnvironment(env);
+  const current = getArchitectureEnvironments(id);
+  const idx = current.findIndex((e) => e.id === env.id);
+  if (idx === -1) {
+    throw new Error(
+      `CTAD store: cannot update unknown environment id "${env.id}".`,
+    );
+  }
+  const next = current.slice();
+  next[idx] = env;
+  writeArchitectureEnvironments(id, next);
+}
+
+export function removeArchitectureEnvironment(id: string, envId: string): void {
+  const current = getArchitectureEnvironments(id);
+  if (!current.some((e) => e.id === envId)) return;
+  writeArchitectureEnvironments(
+    id,
+    current.filter((e) => e.id !== envId),
+  );
+}
+
+// Architecture-mode CTAD_STATE export. Mirrors `exportCtadState`
+// for bindings but carries an `architecture: { id, name }` block in
+// place of `binding: { adsId, adsVersion }`. The five section
+// dictionaries and the `environments` list have an identical shape
+// so downstream readers can treat both modes through a single set
+// of accessors keyed by section / parameter id.
+export interface CtadArchitectureStateExport {
+  readonly schemaVersion: typeof CTAD_SCHEMA_VERSION;
+  readonly architecture: {
+    readonly architectureId: string;
+    readonly architectureName: string;
+  };
+  readonly infrastructure: Readonly<Record<string, CtadParamValue>>;
+  readonly application: Readonly<Record<string, CtadParamValue>>;
+  readonly integration: Readonly<Record<string, CtadParamValue>>;
+  readonly crossCutting: Readonly<Record<string, CtadParamValue>>;
+  readonly ops: Readonly<Record<string, CtadParamValue>>;
+  readonly environments: readonly CtadEnvironmentDef[];
+}
+
+export function exportArchitectureState(
+  id: string,
+): CtadArchitectureStateExport | null {
+  const doc = getArchitectureDoc(id);
+  if (doc === null) return null;
+  const grouped: Record<CtadSectionId, Record<string, CtadParamValue>> = {
+    infrastructure: {},
+    application: {},
+    integration: {},
+    crossCutting: {},
+    ops: {},
+  };
+  for (const section of CTAD_SECTIONS) {
+    const sectionParams = grouped[section.id];
+    for (const param of section.parameters) {
+      const v = doc.params[param.id];
+      sectionParams[param.id] = v === undefined ? null : v;
+    }
+  }
+  return {
+    schemaVersion: CTAD_SCHEMA_VERSION,
+    architecture: {
+      architectureId: doc.architectureId,
+      architectureName: doc.architectureName,
+    },
+    infrastructure: grouped.infrastructure,
+    application: grouped.application,
+    integration: grouped.integration,
+    crossCutting: grouped.crossCutting,
+    ops: grouped.ops,
+    environments: doc.environments,
+  };
 }
 
 // Internal hook for the build-time grammar invariant ----------------

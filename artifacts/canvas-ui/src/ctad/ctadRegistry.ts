@@ -9,10 +9,16 @@
 
 import { assertAllCtadLanguage } from "@/governance/staticTextGuard";
 
-// Bumped to "ctad-1.1" in Task #77 to introduce first-class
-// environments alongside the five categorical sections. Storage
-// migration is deterministic: a persisted "ctad-1.0" doc is read
-// as "ctad-1.1" with an empty environments list per binding.
+// Bumped to "ctad-1.2" in Phase 1 of the ADC ↔ CTAD decoupling
+// effort. The structural change is the addition of an optional
+// top-level `architectures` map to the persisted document so a
+// CTAD workspace can exist independently of any frozen ADC
+// decision. The ctad-1.1 → ctad-1.2 migration is deterministic and
+// read-time: a v1.1 document is materialised as v1.2 with
+// `architectures: {}` and existing `bindings` untouched. The
+// canonical schema lineage so far:
+//   ctad-1.0 → ctad-1.1 (Task #77, first-class environments)
+//   ctad-1.1 → ctad-1.2 (Task #78, first-class architectures)
 //
 // Architectural note — environments are an ADJACENT first-class
 // concept, NOT a sixth member of CTAD_SECTIONS. This is deliberate:
@@ -28,8 +34,8 @@ import { assertAllCtadLanguage } from "@/governance/staticTextGuard";
 //     `environments` field on CtadStateExport (parallel to the five
 //     section blocks) and via dedicated store CRUD functions, never
 //     through findParam / CTAD_REGISTRY traversal.
-export const CTAD_SCHEMA_VERSION = "ctad-1.1" as const;
-export const CTAD_PRIOR_SCHEMA_VERSIONS = ["ctad-1.0"] as const;
+export const CTAD_SCHEMA_VERSION = "ctad-1.2" as const;
+export const CTAD_PRIOR_SCHEMA_VERSIONS = ["ctad-1.0", "ctad-1.1"] as const;
 
 // First-class environment definition (Task #77). Vendor-neutral by
 // construction: `kind` and `hostingModel` use the same generic

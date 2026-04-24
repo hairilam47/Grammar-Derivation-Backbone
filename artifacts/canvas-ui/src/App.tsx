@@ -17,6 +17,7 @@ import Deployment from "@/pages/acw/views/Deployment";
 import OperationsContinuity from "@/pages/acw/views/OperationsContinuity";
 import CtadEntry from "@/pages/ctad/CtadEntry";
 import CtadShell from "@/pages/ctad/CtadShell";
+import CtadArchitectureShell from "@/pages/ctad/CtadArchitectureShell";
 import Track3Entry from "@/pages/acw/track3/Track3Entry";
 import Track3Shell from "@/pages/acw/track3/Track3Shell";
 // Phase 6 — module-load side effect: importing this module runs the
@@ -92,6 +93,7 @@ function Router() {
       <Route path="/workspace/deployment" component={Deployment} />
       <Route path="/workspace/operations" component={OperationsContinuity} />
       <Route path="/ctad" component={CtadEntry} />
+      <Route path="/ctad/arch/:architectureId" component={CtadArchitectureShell} />
       <Route path="/ctad/:adsId/:adsVersion" component={CtadShell} />
       <Route path="/acw/derived" component={Track3Entry} />
       <Route path="/acw/derived/:adsId/:adsVersion" component={Track3Shell} />
