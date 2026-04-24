@@ -72,9 +72,29 @@ assertAllAcwPlaceholderLanguage([
 
 export interface WorkspaceShellProps {
   children: ReactNode;
+  /**
+   * When `true` the shell suppresses its inline body chrome (the
+   * shell hint paragraph and the always-on `<AuthoringPanel />`)
+   * so a lens that owns its own fullscreen surface can host the
+   * authoring affordance inside its floating overlay instead.
+   *
+   * Header + sub-nav stay rendered unconditionally so the
+   * route-level chrome remains reachable above the fullscreen
+   * canvas (mirrors the Track 3 fullscreen z-index discipline:
+   * the canvas sits at `z-0` and the sticky header at `z-10`).
+   *
+   * Defaults to `false` so the four non-fullscreen lenses (Context
+   * & Domain, Integration, Operations & Continuity, plus either
+   * fullscreen lens when fullscreen has been toggled off) keep
+   * the prior inline behaviour.
+   */
+  hideShellChrome?: boolean;
 }
 
-export function WorkspaceShell({ children }: WorkspaceShellProps) {
+export function WorkspaceShell({
+  children,
+  hideShellChrome = false,
+}: WorkspaceShellProps) {
   const [location] = useLocation();
   return (
     <div className="min-h-[100dvh] bg-background text-foreground flex flex-col font-mono">
@@ -91,7 +111,7 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
       </header>
 
       <div
-        className="border-b border-border/40 bg-muted/10"
+        className="border-b border-border/40 bg-muted/10 sticky top-14 z-10"
         data-testid="acw-lens-nav"
       >
         <div className="container max-w-6xl mx-auto px-4 py-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] uppercase tracking-widest">
@@ -116,13 +136,17 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
       </div>
 
       <main className="flex-1 container max-w-6xl mx-auto px-4 py-6 space-y-4">
-        <p
-          className="text-[11px] text-muted-foreground italic"
-          data-testid="acw-shell-hint"
-        >
-          {SHELL_HINT}
-        </p>
-        <AuthoringPanel />
+        {hideShellChrome ? null : (
+          <>
+            <p
+              className="text-[11px] text-muted-foreground italic"
+              data-testid="acw-shell-hint"
+            >
+              {SHELL_HINT}
+            </p>
+            <AuthoringPanel />
+          </>
+        )}
         {children}
       </main>
     </div>
