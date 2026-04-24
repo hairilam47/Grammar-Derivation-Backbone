@@ -496,15 +496,8 @@ function BoundShell({
             onClearFocus={handleClearFocus}
             onRefresh={onRefresh}
             onExitFullscreen={handleExitFullscreen}
+            layoutPending={layoutPending}
           />
-          {layoutPending && (
-            <div
-              className="absolute top-16 right-3 text-[10px] uppercase tracking-widest text-muted-foreground italic px-2 py-1 rounded-md bg-card/80 border border-border/40 backdrop-blur z-40"
-              data-testid="track3-layout-pending"
-            >
-              {LABELS.layoutPending}
-            </div>
-          )}
         </div>
       </>
     );
@@ -564,7 +557,10 @@ function BindingPanelPlaceholder({
   onExitFullscreen: () => void;
 }) {
   return (
-    <Card data-testid="track3-fullscreen-placeholder">
+    <Card
+      data-testid="track3-fullscreen-placeholder"
+      className="relative z-20"
+    >
       <CardHeader>
         <CardTitle className="text-sm">
           {LABELS.fullscreenPlaceholderHeading}

@@ -56,6 +56,7 @@ const OVERLAY_LABELS = {
   clearFocus: "Clear focus",
   openArchitecture: "Open architecture workspace",
   escHint: "Press Esc to exit full-screen",
+  layoutPending: "Computing layout…",
 } as const;
 
 assertAllAcwTrack3Language(Object.values(OVERLAY_LABELS));
@@ -101,12 +102,25 @@ export interface Track3FloatingOverlayProps {
   readonly onClearFocus: () => void;
   readonly onRefresh: () => void;
   readonly onExitFullscreen: () => void;
+  readonly layoutPending: boolean;
 }
 
 export function Track3FloatingOverlay(props: Track3FloatingOverlayProps) {
   const [controlsOpen, setControlsOpen] = useState(false);
   return (
     <>
+      {/* Top-right quadrant: layout-pending badge. Lives inside
+          the overlay (not in the shell) so every non-canvas
+          element on the fullscreen surface flows through this
+          one component. */}
+      {props.layoutPending && (
+        <div
+          className="pointer-events-none absolute top-16 right-3 text-[10px] uppercase tracking-widest text-muted-foreground italic px-2 py-1 rounded-md bg-card/80 border border-border/40 backdrop-blur z-40"
+          data-testid="track3-layout-pending"
+        >
+          {OVERLAY_LABELS.layoutPending}
+        </div>
+      )}
       {/* Top-left quadrant: architecture identity + refresh +
           exit-fullscreen. */}
       <div
