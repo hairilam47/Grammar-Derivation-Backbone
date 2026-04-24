@@ -670,7 +670,7 @@ function AttachmentBadge({
   // direct CTAD `removeArchitecture` could still orphan one).
   const names = links.map((l) => {
     const doc = getArchitectureDoc(l.architectureId);
-    return doc ? doc.name : l.architectureId;
+    return doc ? doc.architectureName : l.architectureId;
   });
   const tooltip =
     links.length === 0
