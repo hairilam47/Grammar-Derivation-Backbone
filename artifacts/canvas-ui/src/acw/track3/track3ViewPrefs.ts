@@ -176,6 +176,19 @@ function migrateV10ToV11(raw: unknown): Track3ViewPrefsDoc | null {
   if (raw === null || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
   if (r.schemaVersion !== LEGACY_SCHEMA_VERSION_V10) return null;
+  // Enforce the v1.0 top-level allowlist BEFORE migrating, so a
+  // legacy doc carrying unknown top-level keys is rejected
+  // outright rather than silently dropped during the upgrade.
+  // Mirrors the strict-locked posture applied at v1.1.
+  try {
+    assertAllowedKeys(
+      r,
+      ["schemaVersion", "byBinding", "byArchitecture"],
+      "v1.0 doc",
+    );
+  } catch {
+    return null;
+  }
   function upgradeMap(
     src: unknown,
   ): Record<string, Track3BindingPrefs> | null {
