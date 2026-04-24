@@ -156,6 +156,18 @@ export function resolveBoundOptions(node: AcwNode): readonly string[] {
 // when no `boundTechnologyCategory` is set or when the category is
 // not in the registry — the renderer should treat this as "no icon"
 // and fall through to its plain-rectangle node template.
-export function resolveIcon(node: AcwNode): AcwIconEntry | undefined {
+//
+// The optional `ctadState` parameter mirrors `resolveLabel`'s
+// signature for forward compatibility: if a future revision wants
+// to derive the icon from the live CTAD selection (e.g. swap a
+// generic "Container orchestrator" icon for a more specific glyph
+// once the option is known), the call sites already pass the state
+// through. Today the icon depends only on `boundTechnologyCategory`,
+// so the parameter is intentionally unused.
+export function resolveIcon(
+  node: AcwNode,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _ctadState: CtadStateLike | null | undefined = undefined,
+): AcwIconEntry | undefined {
   return lookupIconForCategory(node.boundTechnologyCategory);
 }
