@@ -18,7 +18,11 @@
 // Every function falls back gracefully: a node with no `boundParam`
 // returns its own `label` and no icon; an unknown `paramId` returns
 // the node's own `label` and no options.
-import { findParam, type CtadParameter } from "@/ctad/ctadRegistry";
+import {
+  findParam,
+  findSectionForParam,
+  type CtadParameter,
+} from "@/ctad/ctadRegistry";
 import type { AcwNode } from "../acwStore";
 import { lookupIconForCategory, type AcwIconEntry } from "../icons/iconRegistry";
 
@@ -58,11 +62,15 @@ export function findRegistryParam(
 ): CtadParameter | undefined {
   const param = findParam(paramId);
   if (param === undefined) return undefined;
-  // The CTAD registry stores the section on the section object, not
-  // on the parameter. We loosely cross-check the caller's `sectionId`
-  // against the live CTAD `findSectionForParam` lookup; mismatches
-  // are not refusals (the binding may simply have drifted) but they
-  // do silently produce no resolution.
+  // Strict consistency: the binding's `sectionId` MUST match the
+  // section the registry assigns to `paramId`. Any mismatch (e.g. a
+  // stale binding from a CTAD reorganisation) is treated as a
+  // resolution failure — callers fall back to the node's own
+  // `label` and render no icon. Section-level drift therefore
+  // becomes a no-op rather than a misleading label override.
+  const trueSection = findSectionForParam(paramId);
+  if (trueSection === undefined) return undefined;
+  if (trueSection !== sectionId) return undefined;
   return param;
 }
 
@@ -81,20 +89,40 @@ export function resolveBoundOption(
   ctadState: CtadStateLike | null | undefined,
 ): string | null {
   if (node.boundParam === undefined) return null;
-  // The node's authored optionValue is the source of truth for what
-  // the user currently chose; it is also what `updateNodeBinding`
-  // mutates. Falling through to the live CTAD state is a useful
-  // backstop when the seeder returned a binding without a value.
-  if (node.boundParam.optionValue !== null) return node.boundParam.optionValue;
+  // Registry guard: the binding's (sectionId, paramId) pair MUST
+  // resolve to a real CTAD parameter. Stale or malformed bindings
+  // (e.g. left over from a registry reorganisation) become a
+  // no-op so callers fall back to `node.label`.
+  const param = findRegistryParam(
+    node.boundParam.sectionId,
+    node.boundParam.paramId,
+  );
+  if (param === undefined) return null;
+  // Once the param is known, the resolved value MUST be one of its
+  // declared options. An optionValue not on the registry's option
+  // set is also treated as drift and falls through to no-op.
+  const optionSet = param.options as readonly string[];
+  if (node.boundParam.optionValue !== null) {
+    if (optionSet.includes(node.boundParam.optionValue)) {
+      return node.boundParam.optionValue;
+    }
+    return null;
+  }
+  // optionValue: null — fall back to the live CTAD state if one
+  // was supplied. Any value found there is also validated against
+  // the registry's option set before it is returned.
   if (ctadState === null || ctadState === undefined) return null;
   const sectionKey = node.boundParam.sectionId;
   if (!isSectionKey(sectionKey)) return null;
   const sectionDict = ctadState[sectionKey];
   const raw = sectionDict[node.boundParam.paramId];
   if (raw === null || raw === undefined) return null;
-  if (typeof raw === "string") return raw;
+  if (typeof raw === "string") {
+    return optionSet.includes(raw) ? raw : null;
+  }
   if (Array.isArray(raw) && raw.length > 0 && typeof raw[0] === "string") {
-    return raw[0] as string;
+    const head = raw[0] as string;
+    return optionSet.includes(head) ? head : null;
   }
   return null;
 }

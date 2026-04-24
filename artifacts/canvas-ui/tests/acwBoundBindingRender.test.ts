@@ -110,3 +110,64 @@ describe("ACW Phase 5 — bound option swap updates resolveLabel", () => {
     expect(resolveLabel(n3)).toBe("fallback-label");
   });
 });
+
+describe("ACW Phase 5 — stale / unknown bindings are no-ops", () => {
+  // The renderer must never display a label that is not currently
+  // backed by the CTAD registry. Three drift scenarios all collapse
+  // to `node.label` (no throw, no stale text):
+  //   (a) unknown paramId
+  //   (b) wrong sectionId for a known paramId
+  //   (c) optionValue not on the registry's option set
+  it("falls back to node.label when paramId is unknown", () => {
+    const node = {
+      id: "n-unknown-param",
+      type: "Zone" as const,
+      parentId: null,
+      label: "fallback",
+      x: 0,
+      y: 0,
+      boundParam: {
+        sectionId: "ops",
+        paramId: "definitelyNotAnyRegisteredParamId",
+        optionValue: "Anything",
+      },
+    } as unknown as Parameters<typeof resolveLabel>[0];
+    expect(resolveLabel(node)).toBe("fallback");
+  });
+
+  it("falls back to node.label when sectionId disagrees with the registry", () => {
+    // `containerOrchestration` lives in `ops`. A binding that
+    // claims it lives in `application` is treated as drift.
+    const node = {
+      id: "n-wrong-section",
+      type: "Zone" as const,
+      parentId: null,
+      label: "fallback",
+      x: 0,
+      y: 0,
+      boundParam: {
+        sectionId: "application",
+        paramId: "containerOrchestration",
+        optionValue: "Kubernetes",
+      },
+    } as unknown as Parameters<typeof resolveLabel>[0];
+    expect(resolveLabel(node)).toBe("fallback");
+  });
+
+  it("falls back to node.label when optionValue is not in the registry's option set", () => {
+    const node = {
+      id: "n-bad-option",
+      type: "Zone" as const,
+      parentId: null,
+      label: "fallback",
+      x: 0,
+      y: 0,
+      boundParam: {
+        sectionId: "ops",
+        paramId: "containerOrchestration",
+        optionValue: "NotAnActualOption-9173",
+      },
+    } as unknown as Parameters<typeof resolveLabel>[0];
+    expect(resolveLabel(node)).toBe("fallback");
+  });
+});
