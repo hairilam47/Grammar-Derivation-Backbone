@@ -131,6 +131,11 @@ export interface Track3Canvas3DProps {
   ) => void;
   readonly onNodeClick?: (nodeId: string) => void;
   readonly testId?: string;
+  // Phase 4 (Task #81): when "fill", the canvas grows to 100%
+  // of its container (used by the full-page floating-overlay
+  // mode). Default keeps the historical 360px height so any
+  // legacy / inline embedding renders unchanged.
+  readonly containerHeight?: number | "fill";
 }
 
 const SCALE = 0.012;
@@ -558,7 +563,11 @@ export function Track3Canvas3D(props: Track3Canvas3DProps) {
     <div
       data-testid={testId}
       className="relative rounded-md border border-border/40 bg-black/40 overflow-hidden"
-      style={{ height: 360, touchAction: "none" }}
+      style={
+        props.containerHeight === "fill"
+          ? { width: "100%", height: "100%", touchAction: "none" }
+          : { height: props.containerHeight ?? 360, touchAction: "none" }
+      }
     >
       {!webgl ? (
         <div

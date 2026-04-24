@@ -51,6 +51,11 @@ export interface Track3Canvas2DProps {
   ) => void;
   readonly onNodeClick?: (nodeId: string) => void;
   readonly testId?: string;
+  // Phase 4 (Task #81): when "fill", the canvas grows to 100%
+  // of its container (used by the full-page floating-overlay
+  // mode). Default keeps the historical 360px height so any
+  // legacy / inline embedding renders unchanged.
+  readonly containerHeight?: number | "fill";
 }
 
 interface FlatNode extends AcwNode {
@@ -250,7 +255,11 @@ export function Track3Canvas2D(props: Track3Canvas2DProps) {
     <div
       data-testid={testId}
       className="relative rounded-md border border-border/40 bg-card/30 overflow-hidden"
-      style={{ minHeight: 360 }}
+      style={
+        props.containerHeight === "fill"
+          ? { width: "100%", height: "100%" }
+          : { minHeight: props.containerHeight ?? 360 }
+      }
     >
       {isEmpty ? (
         <div
@@ -264,7 +273,11 @@ export function Track3Canvas2D(props: Track3Canvas2DProps) {
           ref={svgRef}
           width="100%"
           viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
-          style={{ height: 360, cursor: dragRef.current?.active ? "grabbing" : "grab", touchAction: "none" }}
+          style={{
+            height: props.containerHeight === "fill" ? "100%" : (props.containerHeight ?? 360),
+            cursor: dragRef.current?.active ? "grabbing" : "grab",
+            touchAction: "none",
+          }}
           data-testid={`${testId}-svg`}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}

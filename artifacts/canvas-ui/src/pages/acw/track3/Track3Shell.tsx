@@ -1,5 +1,5 @@
 // ACW Track 3 — derived view shell scoped to a standalone
-// architecture (Phase 3, Task #80).
+// architecture (Phase 3, Task #80; Phase 4, Task #81).
 //
 // Loads the architecture's CTAD state via `exportArchitectureState`
 // and drives the DiagramSpec compiler + ELK layout pipeline (via
@@ -8,6 +8,16 @@
 // the Z axis. Layer / perspective controls live here; both
 // renderers receive the SAME `positionedDiagrams + hiddenSections`
 // so visibility cannot diverge between them.
+//
+// Phase 4 (Task #81): the canvas now defaults to a full-page
+// layout (`fixed inset-0 z-30`) with a `Track3FloatingOverlay`
+// rendering all controls as absolutely-positioned quadrants. The
+// `isFullscreen` preference is per-architecture and persisted
+// via the v1.1 view-prefs schema. Pressing `Escape` toggles
+// fullscreen off; an explicit "Exit full-screen" button does the
+// same. The pre-Phase-4 inline layout is preserved as the
+// `isFullscreen === false` branch so users who prefer the embedded
+// view can keep it.
 //
 // Layout is async because ELK is async; the shell carries the
 // positioned-diagrams in state and re-runs the pipeline only when
@@ -28,7 +38,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useRoute, Link } from "wouter";
-import { Layers, Crosshair, RefreshCcw } from "lucide-react";
+import { Layers, Maximize2, RefreshCcw } from "lucide-react";
 import {
   exportArchitectureState,
   type CtadArchitectureStateExport,
@@ -50,7 +60,6 @@ import {
 import type { PositionedDiagram } from "@workspace/diagram-layout";
 import {
   TRACK3_LAYERS,
-  TRACK3_PERSPECTIVES,
   type Track3Layer,
   type Track3Perspective,
 } from "@/acw/track3/track3Types";
@@ -62,11 +71,13 @@ import {
   setArchitecturePerspective,
   toggleArchitectureLayerHidden,
   setArchitectureCamera,
+  setArchitectureFullscreen,
   subscribePrefs,
   type Track3ViewMode,
 } from "@/acw/track3/track3ViewPrefs";
 import { Track3Canvas2D } from "@/components/acw/track3/Track3Canvas2D";
 import { Track3Canvas3D } from "@/components/acw/track3/Track3Canvas3D";
+import { Track3FloatingOverlay } from "@/components/acw/track3/Track3FloatingOverlay";
 import { isolateAroundNode } from "@/acw/track3/track3FocusIsolation";
 import type { AcwNode, AcwEdge } from "@/acw/acwLensStructure";
 
@@ -81,23 +92,6 @@ const LABELS = {
   fieldName: "Architecture",
   fieldArchitectureId: "Architecture id",
   fieldEnvironments: "Environments",
-  controlsHeading: "View controls",
-  controlsHint:
-    "Layer and perspective choices are visual only; they do not change the underlying selections.",
-  layerToggleLabel: "Layers",
-  perspectiveLabel: "Perspective",
-  modeLabel: "Mode",
-  mode2D: "2D",
-  mode3D: "3D",
-  perspectiveAll: "All layers",
-  perspectiveInfra: "Infrastructure-centric",
-  perspectiveApp: "Application-centric",
-  perspectiveIntegration: "Integration-centric",
-  layerInfrastructure: "Infrastructure",
-  layerApplication: "Application",
-  layerIntegration: "Integration",
-  layerCrossCutting: "Cross-Cutting",
-  layerOps: "Ops & Lifecycle",
   diagramHeading: "Derived diagram",
   diagramHint:
     "The diagram is derived from the architecture state at the moment this view was opened or last refreshed. It is not persisted; use \"Refresh from architecture\" to pick up edits made elsewhere.",
@@ -109,36 +103,47 @@ const LABELS = {
   refreshFromArch: "Refresh from architecture",
   inlineNote:
     "This view is exploratory and derived. It does not form or otherwise act on a decision.",
-  focusedHeading: "Focused on",
-  clearFocus: "Clear focus",
-  focusHint:
-    "Click a node in the diagram to isolate it and its neighbours. Click again or press the button to clear.",
   zoomHint:
     "Drag to rotate, right-drag to pan, scroll to zoom. Camera position persists per architecture.",
   layoutPending: "Computing layout…",
+  enterFullscreen: "Enter full-page canvas",
+  exitFullscreen: "Exit full-screen",
+  fullscreenPlaceholderHeading: "Full-page canvas active",
+  fullscreenPlaceholderBody:
+    "The architecture canvas is showing in full-page mode. Press Esc or use the floating exit control to return here.",
 } as const;
 
 assertAllAcwTrack3Language(Object.values(LABELS));
 
-const PERSPECTIVE_LABEL: Readonly<Record<Track3Perspective, string>> = {
-  all: LABELS.perspectiveAll,
-  infraCentric: LABELS.perspectiveInfra,
-  appCentric: LABELS.perspectiveApp,
-  integrationCentric: LABELS.perspectiveIntegration,
-};
+const INLINE_CONTROL_LABELS = [
+  "View controls",
+  "Layer and perspective choices are visual only; they do not change the underlying selections.",
+  "Mode",
+  "Perspective",
+  "Layers",
+  "All layers",
+  "Infrastructure-centric",
+  "Application-centric",
+  "Integration-centric",
+  "Focused on",
+  "Clear focus",
+  "2D",
+  "3D",
+] as const;
+assertAllAcwTrack3Language([...INLINE_CONTROL_LABELS]);
 
 function formatLayerLabel(l: Track3Layer): string {
   switch (l) {
     case "infrastructure":
-      return LABELS.layerInfrastructure;
+      return TRACK3_LAYER_LABEL.infrastructure;
     case "application":
-      return LABELS.layerApplication;
+      return TRACK3_LAYER_LABEL.application;
     case "integration":
-      return LABELS.layerIntegration;
+      return TRACK3_LAYER_LABEL.integration;
     case "crossCutting":
-      return LABELS.layerCrossCutting;
+      return TRACK3_LAYER_LABEL.crossCutting;
     case "ops":
-      return LABELS.layerOps;
+      return TRACK3_LAYER_LABEL.ops;
   }
 }
 
@@ -332,6 +337,43 @@ function BoundShell({
     },
     [architectureId],
   );
+  const handleSetViewMode = useCallback(
+    (mode: Track3ViewMode) => setArchitectureViewMode(architectureId, mode),
+    [architectureId],
+  );
+  const handleSetPerspective = useCallback(
+    (p: Track3Perspective) => setArchitecturePerspective(architectureId, p),
+    [architectureId],
+  );
+  const handleToggleLayer = useCallback(
+    (layerId: string) =>
+      toggleArchitectureLayerHidden(architectureId, layerId),
+    [architectureId],
+  );
+  const handleEnterFullscreen = useCallback(
+    () => setArchitectureFullscreen(architectureId, true),
+    [architectureId],
+  );
+  const handleExitFullscreen = useCallback(
+    () => setArchitectureFullscreen(architectureId, false),
+    [architectureId],
+  );
+
+  // Escape-key shortcut: toggles fullscreen off when active. We
+  // intentionally only bind the "off" direction so a user typing
+  // Escape inside an unrelated focus context (e.g. closing a
+  // browser autofill prompt) doesn't accidentally enter
+  // full-page mode.
+  useEffect(() => {
+    function onKey(ev: KeyboardEvent) {
+      if (ev.key !== "Escape") return;
+      if (!prefs.isFullscreen) return;
+      ev.preventDefault();
+      setArchitectureFullscreen(architectureId, false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [architectureId, prefs.isFullscreen]);
 
   const focusedLabel = useMemo(() => {
     if (selectedNodeId === null) return null;
@@ -342,15 +384,88 @@ function BoundShell({
     return selectedNodeId;
   }, [selectedNodeId, positionedDiagrams]);
 
+  const canvasNode =
+    prefs.viewMode === "3d" ? (
+      <Track3Canvas3D
+        key={`3d:${architectureId}:${prefs.isFullscreen ? "full" : "inline"}`}
+        positionedDiagrams={positionedDiagrams}
+        hiddenSections={hiddenSections}
+        isolatedKeptIds={isolatedKeptIds}
+        selectedNodeId={selectedNodeId}
+        cameraX={prefs.cameraX}
+        cameraY={prefs.cameraY}
+        cameraZoom={prefs.cameraZoom}
+        onCameraChange={handleCameraChange}
+        onNodeClick={handleNodeClick}
+        containerHeight={prefs.isFullscreen ? "fill" : 360}
+      />
+    ) : (
+      <Track3Canvas2D
+        key={`2d:${architectureId}:${prefs.isFullscreen ? "full" : "inline"}`}
+        positionedDiagrams={positionedDiagrams}
+        hiddenSections={hiddenSections}
+        isolatedKeptIds={isolatedKeptIds}
+        selectedNodeId={selectedNodeId}
+        cameraX={prefs.cameraX}
+        cameraY={prefs.cameraY}
+        cameraZoom={prefs.cameraZoom}
+        onCameraChange={handleCameraChange}
+        onNodeClick={handleNodeClick}
+        containerHeight={prefs.isFullscreen ? "fill" : 360}
+      />
+    );
+
+  if (prefs.isFullscreen) {
+    return (
+      <>
+        <BindingPanelPlaceholder onExitFullscreen={handleExitFullscreen} />
+        <div
+          className="fixed inset-0 z-30 bg-background"
+          data-testid="track3-fullscreen-canvas"
+        >
+          {canvasNode}
+          <Track3FloatingOverlay
+            architectureId={architectureId}
+            architectureName={archState.architecture.architectureName}
+            viewMode={prefs.viewMode}
+            perspective={prefs.perspective}
+            hiddenLayers={prefs.hiddenLayers}
+            focusedLabel={focusedLabel}
+            onSetViewMode={handleSetViewMode}
+            onSetPerspective={handleSetPerspective}
+            onToggleLayer={handleToggleLayer}
+            onClearFocus={handleClearFocus}
+            onRefresh={onRefresh}
+            onExitFullscreen={handleExitFullscreen}
+          />
+          {layoutPending && (
+            <div
+              className="absolute top-3 right-3 text-[10px] uppercase tracking-widest text-muted-foreground italic px-2 py-1 rounded-md bg-card/80 border border-border/40 backdrop-blur z-40"
+              data-testid="track3-layout-pending"
+            >
+              {LABELS.layoutPending}
+            </div>
+          )}
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
-      <BindingPanel archState={archState} onRefresh={onRefresh} />
-      <ControlsBar
-        architectureId={architectureId}
+      <BindingPanel
+        archState={archState}
+        onRefresh={onRefresh}
+        onEnterFullscreen={handleEnterFullscreen}
+      />
+      <InlineControlsBar
         viewMode={prefs.viewMode}
         perspective={prefs.perspective}
         hiddenLayers={prefs.hiddenLayers}
         focusedLabel={focusedLabel}
+        onSetViewMode={handleSetViewMode}
+        onSetPerspective={handleSetPerspective}
+        onToggleLayer={handleToggleLayer}
         onClearFocus={handleClearFocus}
       />
       <Card data-testid="track3-diagram-card">
@@ -362,32 +477,7 @@ function BoundShell({
         </CardHeader>
         <CardContent>
           <div className="relative">
-            {prefs.viewMode === "3d" ? (
-              <Track3Canvas3D
-                key={`3d:${architectureId}`}
-                positionedDiagrams={positionedDiagrams}
-                hiddenSections={hiddenSections}
-                isolatedKeptIds={isolatedKeptIds}
-                selectedNodeId={selectedNodeId}
-                cameraX={prefs.cameraX}
-                cameraY={prefs.cameraY}
-                cameraZoom={prefs.cameraZoom}
-                onCameraChange={handleCameraChange}
-                onNodeClick={handleNodeClick}
-              />
-            ) : (
-              <Track3Canvas2D
-                positionedDiagrams={positionedDiagrams}
-                hiddenSections={hiddenSections}
-                isolatedKeptIds={isolatedKeptIds}
-                selectedNodeId={selectedNodeId}
-                cameraX={prefs.cameraX}
-                cameraY={prefs.cameraY}
-                cameraZoom={prefs.cameraZoom}
-                onCameraChange={handleCameraChange}
-                onNodeClick={handleNodeClick}
-              />
-            )}
+            {canvasNode}
             {layoutPending && (
               <div
                 className="absolute top-2 right-2 text-[10px] uppercase tracking-widest text-muted-foreground italic px-2 py-1 rounded-md bg-card/80 border border-border/40 backdrop-blur"
@@ -409,12 +499,43 @@ function BoundShell({
   );
 }
 
+function BindingPanelPlaceholder({
+  onExitFullscreen,
+}: {
+  onExitFullscreen: () => void;
+}) {
+  return (
+    <Card data-testid="track3-fullscreen-placeholder">
+      <CardHeader>
+        <CardTitle className="text-sm">
+          {LABELS.fullscreenPlaceholderHeading}
+        </CardTitle>
+        <CardDescription className="text-xs">
+          {LABELS.fullscreenPlaceholderBody}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onExitFullscreen}
+          data-testid="track3-fullscreen-placeholder-exit"
+        >
+          {LABELS.exitFullscreen}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 function BindingPanel({
   archState,
   onRefresh,
+  onEnterFullscreen,
 }: {
   archState: CtadArchitectureStateExport;
   onRefresh: () => void;
+  onEnterFullscreen: () => void;
 }) {
   return (
     <Card data-testid="track3-binding-panel">
@@ -464,89 +585,97 @@ function BindingPanel({
             <RefreshCcw className="w-3 h-3 mr-1" />
             {LABELS.refreshFromArch}
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="track3-enter-fullscreen"
+            onClick={onEnterFullscreen}
+          >
+            <Maximize2 className="w-3 h-3 mr-1" />
+            {LABELS.enterFullscreen}
+          </Button>
         </div>
       </CardContent>
     </Card>
   );
 }
 
-function ControlsBar({
-  architectureId,
-  viewMode,
-  perspective,
-  hiddenLayers,
-  focusedLabel,
-  onClearFocus,
-}: {
-  architectureId: string;
+function InlineControlsBar(props: {
   viewMode: Track3ViewMode;
   perspective: Track3Perspective;
   hiddenLayers: readonly string[];
   focusedLabel: string | null;
+  onSetViewMode: (m: Track3ViewMode) => void;
+  onSetPerspective: (p: Track3Perspective) => void;
+  onToggleLayer: (layerId: string) => void;
   onClearFocus: () => void;
 }) {
+  const PERSPECTIVE_LABEL: Readonly<Record<Track3Perspective, string>> = {
+    all: "All layers",
+    infraCentric: "Infrastructure-centric",
+    appCentric: "Application-centric",
+    integrationCentric: "Integration-centric",
+  };
   return (
     <Card data-testid="track3-controls">
       <CardHeader>
-        <CardTitle className="text-sm">{LABELS.controlsHeading}</CardTitle>
+        <CardTitle className="text-sm">View controls</CardTitle>
         <CardDescription className="text-xs">
-          {LABELS.controlsHint} {LABELS.focusHint}
+          Layer and perspective choices are visual only; they do not change the underlying selections.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-3">
         <div className="flex items-center gap-2 text-xs">
           <span className="text-muted-foreground uppercase tracking-wider text-[10px]">
-            {LABELS.modeLabel}
+            Mode
           </span>
           <div className="inline-flex rounded-md border border-border overflow-hidden">
             <button
               type="button"
               data-testid="track3-mode-2d"
-              onClick={() => setArchitectureViewMode(architectureId, "2d")}
-              className={`px-2 py-1 text-[11px] ${viewMode === "2d" ? "bg-primary/20 text-primary" : "text-muted-foreground"}`}
+              onClick={() => props.onSetViewMode("2d")}
+              className={`px-2 py-1 text-[11px] ${props.viewMode === "2d" ? "bg-primary/20 text-primary" : "text-muted-foreground"}`}
             >
-              {LABELS.mode2D}
+              2D
             </button>
             <button
               type="button"
               data-testid="track3-mode-3d"
-              onClick={() => setArchitectureViewMode(architectureId, "3d")}
-              className={`px-2 py-1 text-[11px] ${viewMode === "3d" ? "bg-primary/20 text-primary" : "text-muted-foreground"}`}
+              onClick={() => props.onSetViewMode("3d")}
+              className={`px-2 py-1 text-[11px] ${props.viewMode === "3d" ? "bg-primary/20 text-primary" : "text-muted-foreground"}`}
             >
-              {LABELS.mode3D}
+              3D
             </button>
           </div>
         </div>
 
         <div className="flex items-center gap-2 text-xs">
           <span className="text-muted-foreground uppercase tracking-wider text-[10px]">
-            {LABELS.perspectiveLabel}
+            Perspective
           </span>
           <select
             data-testid="track3-perspective"
-            value={perspective}
+            value={props.perspective}
             onChange={(e) =>
-              setArchitecturePerspective(
-                architectureId,
-                e.target.value as Track3Perspective,
-              )
+              props.onSetPerspective(e.target.value as Track3Perspective)
             }
             className="rounded-md border border-border bg-background px-2 py-1 text-xs"
           >
-            {TRACK3_PERSPECTIVES.map((p) => (
-              <option key={p} value={p}>
-                {PERSPECTIVE_LABEL[p]}
-              </option>
-            ))}
+            <option value="all">{PERSPECTIVE_LABEL.all}</option>
+            <option value="infraCentric">{PERSPECTIVE_LABEL.infraCentric}</option>
+            <option value="appCentric">{PERSPECTIVE_LABEL.appCentric}</option>
+            <option value="integrationCentric">
+              {PERSPECTIVE_LABEL.integrationCentric}
+            </option>
           </select>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap text-xs">
           <span className="text-muted-foreground uppercase tracking-wider text-[10px]">
-            {LABELS.layerToggleLabel}
+            Layers
           </span>
           {TRACK3_LAYERS.map((l) => {
-            const active = !hiddenLayers.includes(l);
+            const active = !props.hiddenLayers.includes(l);
             return (
               <label
                 key={l}
@@ -556,9 +685,7 @@ function ControlsBar({
                 <input
                   type="checkbox"
                   checked={active}
-                  onChange={() =>
-                    toggleArchitectureLayerHidden(architectureId, l)
-                  }
+                  onChange={() => props.onToggleLayer(l)}
                 />
                 <span>{formatLayerLabel(l)}</span>
               </label>
@@ -566,24 +693,23 @@ function ControlsBar({
           })}
         </div>
 
-        {focusedLabel !== null && (
+        {props.focusedLabel !== null && (
           <div
             className="flex items-center gap-2 text-xs"
             data-testid="track3-focus-indicator"
           >
-            <Crosshair className="w-3 h-3 text-primary" />
             <span className="text-muted-foreground uppercase tracking-wider text-[10px]">
-              {LABELS.focusedHeading}
+              Focused on
             </span>
-            <span className="text-primary font-mono">{focusedLabel}</span>
+            <span className="text-primary font-mono">{props.focusedLabel}</span>
             <Button
               variant="outline"
               size="sm"
-              onClick={onClearFocus}
+              onClick={props.onClearFocus}
               data-testid="track3-clear-focus"
               className="h-6 text-[10px] px-2"
             >
-              {LABELS.clearFocus}
+              Clear focus
             </Button>
           </div>
         )}

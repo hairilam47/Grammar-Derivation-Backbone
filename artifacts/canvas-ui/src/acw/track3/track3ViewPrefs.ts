@@ -1,5 +1,5 @@
 // ACW Track 3 — view preferences (camera / collapsed layers /
-// perspective / 2D-vs-3D).
+// perspective / 2D-vs-3D / fullscreen).
 //
 // Persisted in localStorage under `acw.track3.viewprefs.v1`.
 // Schema-locked: the read-validator drops any document with a
@@ -14,18 +14,23 @@
 //   - `byArchitecture` — Phase 3 (Task #80) per-architectureId
 //     prefs for the new architecture-mode entry.
 //
-// Phase 3 storage strategy: a parallel `byArchitecture` map next
-// to the existing `byBinding` map. The schema validator accepts
-// either or both maps but the same per-entry allow-list applies.
+// Phase 4 (Task #81) bumps the schema from
+// `acw-track3-viewprefs-1.0` → `acw-track3-viewprefs-1.1`,
+// adding a per-entry `isFullscreen: boolean` field controlling
+// the full-page canvas mode. Read-time deterministic migration:
+// every v1.0 entry is upgraded by injecting `isFullscreen: true`
+// (the new default).
 import { TRACK3_PERSPECTIVES, type Track3Perspective } from "./track3Types";
 
-export const TRACK3_VIEWPREFS_SCHEMA_VERSION = "acw-track3-viewprefs-1.0" as const;
+export const TRACK3_VIEWPREFS_SCHEMA_VERSION = "acw-track3-viewprefs-1.1" as const;
+const LEGACY_SCHEMA_VERSION_V10 = "acw-track3-viewprefs-1.0" as const;
 const STORAGE_KEY = "acw.track3.viewprefs.v1";
 
 export type Track3ViewMode = "2d" | "3d";
 const ALLOWED_VIEW_MODES: readonly Track3ViewMode[] = ["2d", "3d"];
 const DEFAULT_VIEW_MODE: Track3ViewMode = "2d";
 const DEFAULT_PERSPECTIVE: Track3Perspective = "all";
+const DEFAULT_FULLSCREEN = true;
 
 export interface Track3BindingPrefs {
   readonly viewMode: Track3ViewMode;
@@ -34,6 +39,7 @@ export interface Track3BindingPrefs {
   readonly cameraX: number;
   readonly cameraY: number;
   readonly cameraZoom: number;
+  readonly isFullscreen: boolean;
 }
 
 export interface Track3ViewPrefsDoc {
@@ -50,6 +56,7 @@ const ALLOWED_BINDING = [
   "cameraX",
   "cameraY",
   "cameraZoom",
+  "isFullscreen",
 ] as const;
 
 function defaultPrefs(): Track3BindingPrefs {
@@ -60,6 +67,7 @@ function defaultPrefs(): Track3BindingPrefs {
     cameraX: 0,
     cameraY: 0,
     cameraZoom: 1,
+    isFullscreen: DEFAULT_FULLSCREEN,
   });
 }
 
@@ -121,6 +129,9 @@ function assertValidEntryMap(
         throw new Error(`Track 3 view-prefs ${num} must be a finite number.`);
       }
     }
+    if (typeof p.isFullscreen !== "boolean") {
+      throw new Error("Track 3 view-prefs isFullscreen must be a boolean.");
+    }
   }
 }
 
@@ -155,6 +166,60 @@ function isValid(raw: unknown): raw is Track3ViewPrefsDoc {
   }
 }
 
+// Deterministic v1.0 → v1.1 migration. Accepts a parsed v1.0
+// document (which has the same per-entry shape EXCEPT no
+// `isFullscreen` field) and returns a v1.1 document where every
+// entry has `isFullscreen: true` injected. Returns null if the
+// input does not match the v1.0 shape (in which case callers
+// fall back to `emptyDoc()`).
+function migrateV10ToV11(raw: unknown): Track3ViewPrefsDoc | null {
+  if (raw === null || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  if (r.schemaVersion !== LEGACY_SCHEMA_VERSION_V10) return null;
+  function upgradeMap(
+    src: unknown,
+  ): Record<string, Track3BindingPrefs> | null {
+    if (src === undefined) return {};
+    if (src === null || typeof src !== "object") return null;
+    const out: Record<string, Track3BindingPrefs> = {};
+    for (const [k, v] of Object.entries(src as Record<string, unknown>)) {
+      if (v === null || typeof v !== "object") return null;
+      const p = v as Record<string, unknown>;
+      // Validate the v1.0 entry shape minus isFullscreen, then
+      // inject the new field. Any field outside the v1.0 allowlist
+      // (the v1.1 allowlist minus `isFullscreen`) aborts migration.
+      const v10Allowed = ALLOWED_BINDING.filter((f) => f !== "isFullscreen");
+      try {
+        assertAllowedKeys(p, v10Allowed, `v1.0 entry "${k}"`);
+      } catch {
+        return null;
+      }
+      out[k] = {
+        viewMode: p.viewMode as Track3ViewMode,
+        perspective: p.perspective as Track3Perspective,
+        hiddenLayers: Object.freeze([...(p.hiddenLayers as string[])]),
+        cameraX: p.cameraX as number,
+        cameraY: p.cameraY as number,
+        cameraZoom: p.cameraZoom as number,
+        isFullscreen: DEFAULT_FULLSCREEN,
+      };
+    }
+    return out;
+  }
+  const byBinding = upgradeMap(r.byBinding);
+  const byArchitecture = upgradeMap(r.byArchitecture);
+  if (byBinding === null || byArchitecture === null) return null;
+  const upgraded: Track3ViewPrefsDoc = {
+    schemaVersion: TRACK3_VIEWPREFS_SCHEMA_VERSION,
+    byBinding: Object.freeze(byBinding),
+    byArchitecture: Object.freeze(byArchitecture),
+  };
+  // Re-validate before returning so a malformed legacy entry
+  // (e.g. invalid viewMode) cannot leak past the migration.
+  if (!isValid(upgraded)) return null;
+  return Object.freeze(upgraded);
+}
+
 let cache: Track3ViewPrefsDoc | null = null;
 const subscribers = new Set<() => void>();
 
@@ -164,10 +229,14 @@ function readFromStorage(): Track3ViewPrefsDoc {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return emptyDoc();
     const parsed = JSON.parse(raw);
+    // Try v1.0 → v1.1 migration first; if not a v1.0 doc, fall
+    // through to the strict v1.1 validator.
+    const migrated = migrateV10ToV11(parsed);
+    if (migrated !== null) return migrated;
     if (!isValid(parsed)) return emptyDoc();
     // Normalise: ensure byArchitecture is always present in the
-    // in-memory cache, even when reading a legacy document that
-    // pre-dates Phase 3.
+    // in-memory cache, even when reading a doc whose
+    // byArchitecture key was simply omitted at write time.
     return Object.freeze({
       schemaVersion: TRACK3_VIEWPREFS_SCHEMA_VERSION,
       byBinding: Object.freeze({ ...parsed.byBinding }),
@@ -270,6 +339,14 @@ export function setArchitectureCamera(
   setArchPrefs(architectureId, { ...prev, cameraX, cameraY, cameraZoom });
 }
 
+export function setArchitectureFullscreen(
+  architectureId: string,
+  isFullscreen: boolean,
+): void {
+  const prev = getArchitecturePrefs(architectureId);
+  setArchPrefs(architectureId, { ...prev, isFullscreen });
+}
+
 export function clearAllPrefs(): void {
   const next = emptyDoc();
   writeToStorage(next);
@@ -281,6 +358,8 @@ export const __track3ViewPrefsInternals = Object.freeze({
   isValid,
   assertValidPrefsDoc,
   emptyDoc,
+  migrateV10ToV11,
+  LEGACY_SCHEMA_VERSION_V10,
   ALLOWED_VIEW_MODES,
   ALLOWED_TOP,
   ALLOWED_BINDING,
