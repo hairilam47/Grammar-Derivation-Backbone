@@ -29,7 +29,7 @@ import {
 import type { Track3ViewMode } from "@/acw/track3/track3ViewPrefs";
 
 const OVERLAY_LABELS = {
-  refreshFromArch: "Refresh from architecture",
+  refreshFromArch: "Refresh from CTAD",
   exitFullscreen: "Exit full-screen",
   closeControls: "Close controls",
   openControls: "Open controls",

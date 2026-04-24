@@ -97,13 +97,13 @@ const LABELS = {
   fieldEnvironments: "Environments",
   diagramHeading: "Derived diagram",
   diagramHint:
-    "The diagram is derived from the architecture state at the moment this view was opened or last refreshed. It is not persisted; use \"Refresh from architecture\" to pick up edits made elsewhere.",
+    "The diagram is derived from the architecture state at the moment this view was opened or last refreshed. It is not persisted; use \"Refresh from CTAD\" to pick up edits made elsewhere.",
   bindingNotFoundHeading: "Architecture not found",
   bindingNotFoundBody:
     "No architecture matches this id. Return to the entry list to pick a different one.",
   backToEntry: "Back to derived entry",
   openArchitecture: "Open architecture workspace",
-  refreshFromArch: "Refresh from architecture",
+  refreshFromArch: "Refresh from CTAD",
   inlineNote:
     "This view is exploratory and derived. It does not form or otherwise act on a decision.",
   zoomHint:
@@ -169,7 +169,7 @@ export default function Track3Shell() {
     if (!architectureId) return null;
     return exportArchitectureState(architectureId);
     // refreshTick intentionally invalidates the memo so the
-    // "Refresh from architecture" button picks up edits made in
+    // "Refresh from CTAD" button picks up edits made in
     // another tab / route.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [architectureId, refreshTick]);
@@ -451,7 +451,7 @@ function BoundShell({
       <>
         <BindingPanelPlaceholder onExitFullscreen={handleExitFullscreen} />
         <div
-          className="fixed inset-0 z-30 bg-background"
+          className="fixed inset-0 z-10 bg-background"
           data-testid="track3-fullscreen-canvas"
         >
           {canvasNode}
