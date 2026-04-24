@@ -378,7 +378,11 @@ function BoundShell({
     function onKey(ev: KeyboardEvent) {
       if (ev.key !== "Escape") return;
       if (isEditableTarget(ev.target)) return;
-      ev.preventDefault();
+      // Intentionally NOT calling ev.preventDefault(): Escape has
+      // no meaningful browser default we need to suppress, and
+      // preventing default would block other Escape-driven
+      // dismiss patterns (open dialogs, popovers, dropdowns) on
+      // the same route from also reacting to the same event.
       setArchitectureFullscreen(architectureId, !prefs.isFullscreen);
     }
     window.addEventListener("keydown", onKey);
@@ -458,7 +462,7 @@ function BoundShell({
             the Escape key. */}
         <BindingPanelPlaceholder onExitFullscreen={handleExitFullscreen} />
         <div
-          className="fixed inset-0 z-10 bg-background"
+          className="fixed inset-0 z-0 bg-background"
           data-testid="track3-fullscreen-canvas"
         >
           {canvasNode}
