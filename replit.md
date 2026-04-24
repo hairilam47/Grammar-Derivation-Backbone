@@ -68,7 +68,7 @@ The project is a pnpm workspace monorepo. Each top-level package belongs to eith
 
 ## CTAD Subsystem (current state)
 
-CTAD owns four `localStorage` documents, each per-binding and bumpable independently:
+CTAD owns the following `localStorage` documents, each per-binding and bumpable independently:
 
 | Key | Schema | Owned by | Contents |
 | --- | --- | --- | --- |
