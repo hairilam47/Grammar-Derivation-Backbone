@@ -50,6 +50,10 @@ import {
 // (`acw3DStructureInvariants.test-shape.ts`) verifies both
 // renderers consume this helper.
 import { enumerateLensVisibility } from "@/acw/acwLensStructure";
+// Phase 5 — semantic resolution. The renderer reads (never writes)
+// the bound option label and icon through these helpers; the helpers
+// are the only ACW surface permitted to import the CTAD registry.
+import { resolveLabel, resolveIcon } from "@/acw/semantic/techNodeBinding";
 
 const EMPTY_TITLE = "Empty 2D canvas";
 const EMPTY_SUBTITLE = "Add systems to begin";
@@ -764,7 +768,7 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
                       fill="rgba(255,255,255,0.7)"
                       pointerEvents="none"
                     >
-                      {ACW_ELEMENT_TYPE_LABEL[d.node.type]}: {d.node.label}
+                      {ACW_ELEMENT_TYPE_LABEL[d.node.type]}: {resolveLabel(d.node)}
                       {" — "}
                       {total} {CONTAINED_PREFIX}
                     </text>
@@ -912,6 +916,13 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
     const y = overrideY ?? n.y;
     const isDragging = drag?.nodeId === n.id;
     const isSelected = selection.includes(n.id);
+    // Phase 5 — bound-binding visuals. The icon (when the node has
+    // a recognised `boundTechnologyCategory`) is rendered as a
+    // nested <svg> in the top-left corner; the lower line of text
+    // uses the bound-option label when present, falling back to
+    // the node's own `label`.
+    const iconEntry = resolveIcon(n);
+    const displayLabel = resolveLabel(n);
     return (
       <g
         key={n.id}
@@ -937,6 +948,21 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
           }
           strokeWidth={isSelected || selected ? 1.5 : 1}
         />
+        {iconEntry ? (
+          <g
+            transform={`translate(${x - NODE_W / 2 + 3}, ${y - NODE_H / 2 + 3})`}
+            data-testid={`${testId}-node-icon-${n.id}`}
+            pointerEvents="none"
+          >
+            <iconEntry.Icon
+              width={10}
+              height={10}
+              color="rgba(255,255,255,0.85)"
+              strokeWidth={1.5}
+              aria-hidden="true"
+            />
+          </g>
+        ) : null}
         <text
           x={x}
           y={y - 1}
@@ -954,8 +980,9 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
           fontSize="9"
           fontFamily="monospace"
           fill="rgba(255,255,255,0.7)"
+          data-testid={`${testId}-node-label-${n.id}`}
         >
-          {n.label}
+          {displayLabel}
         </text>
       </g>
     );
