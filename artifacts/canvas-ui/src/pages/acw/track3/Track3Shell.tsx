@@ -359,17 +359,24 @@ function BoundShell({
     [architectureId],
   );
 
-  // Escape-key shortcut: toggles fullscreen off when active. We
-  // intentionally only bind the "off" direction so a user typing
-  // Escape inside an unrelated focus context (e.g. closing a
-  // browser autofill prompt) doesn't accidentally enter
-  // full-page mode.
+  // Escape-key shortcut: toggles fullscreen on and off. We
+  // suppress the toggle while focus is inside an editable
+  // element (input / textarea / contentEditable / select) so
+  // pressing Escape to dismiss an open browser autofill or
+  // dropdown does not accidentally flip the canvas mode.
   useEffect(() => {
+    function isEditableTarget(t: EventTarget | null): boolean {
+      if (!(t instanceof HTMLElement)) return false;
+      const tag = t.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+      if (t.isContentEditable) return true;
+      return false;
+    }
     function onKey(ev: KeyboardEvent) {
       if (ev.key !== "Escape") return;
-      if (!prefs.isFullscreen) return;
+      if (isEditableTarget(ev.target)) return;
       ev.preventDefault();
-      setArchitectureFullscreen(architectureId, false);
+      setArchitectureFullscreen(architectureId, !prefs.isFullscreen);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
