@@ -6,8 +6,17 @@
 // field outside the allowlist below, so a future commit cannot
 // silently smuggle structural data into the view-prefs document.
 //
-// Storage is per-binding (keyed by `<adsId>::<adsVersion>`); a
-// fresh binding gets the default preferences.
+// Two parallel maps keyed independently:
+//   - `byBinding` — legacy per-(adsId,adsVersion) prefs (kept so
+//     existing locally-stored documents remain valid; Phase 3
+//     dropped the binding-mode UI itself, but old docs in user
+//     localStorage must continue to validate).
+//   - `byArchitecture` — Phase 3 (Task #80) per-architectureId
+//     prefs for the new architecture-mode entry.
+//
+// Phase 3 storage strategy: a parallel `byArchitecture` map next
+// to the existing `byBinding` map. The schema validator accepts
+// either or both maps but the same per-entry allow-list applies.
 import { TRACK3_PERSPECTIVES, type Track3Perspective } from "./track3Types";
 
 export const TRACK3_VIEWPREFS_SCHEMA_VERSION = "acw-track3-viewprefs-1.0" as const;
@@ -30,9 +39,10 @@ export interface Track3BindingPrefs {
 export interface Track3ViewPrefsDoc {
   readonly schemaVersion: typeof TRACK3_VIEWPREFS_SCHEMA_VERSION;
   readonly byBinding: Readonly<Record<string, Track3BindingPrefs>>;
+  readonly byArchitecture: Readonly<Record<string, Track3BindingPrefs>>;
 }
 
-const ALLOWED_TOP = ["schemaVersion", "byBinding"] as const;
+const ALLOWED_TOP = ["schemaVersion", "byBinding", "byArchitecture"] as const;
 const ALLOWED_BINDING = [
   "viewMode",
   "perspective",
@@ -57,6 +67,7 @@ function emptyDoc(): Track3ViewPrefsDoc {
   return Object.freeze({
     schemaVersion: TRACK3_VIEWPREFS_SCHEMA_VERSION,
     byBinding: Object.freeze({}),
+    byArchitecture: Object.freeze({}),
   });
 }
 
@@ -74,30 +85,23 @@ function assertAllowedKeys(
   }
 }
 
-export function assertValidPrefsDoc(raw: unknown): asserts raw is Track3ViewPrefsDoc {
+function assertValidEntryMap(
+  raw: unknown,
+  context: string,
+): asserts raw is Record<string, Track3BindingPrefs> {
   if (raw === null || typeof raw !== "object") {
-    throw new Error("Track 3 view-prefs document must be an object.");
+    throw new Error(`Track 3 view-prefs ${context} must be an object.`);
   }
-  const r = raw as Record<string, unknown>;
-  assertAllowedKeys(r, ALLOWED_TOP, "document");
-  if (r.schemaVersion !== TRACK3_VIEWPREFS_SCHEMA_VERSION) {
-    throw new Error(
-      `Track 3 view-prefs schemaVersion must be "${TRACK3_VIEWPREFS_SCHEMA_VERSION}".`,
-    );
-  }
-  if (r.byBinding === null || typeof r.byBinding !== "object") {
-    throw new Error("Track 3 view-prefs byBinding must be an object.");
-  }
-  const map = r.byBinding as Record<string, unknown>;
-  for (const [bindingKey, prefs] of Object.entries(map)) {
-    if (typeof bindingKey !== "string" || bindingKey.length === 0) {
-      throw new Error("Track 3 view-prefs binding key must be a non-empty string.");
+  const map = raw as Record<string, unknown>;
+  for (const [key, prefs] of Object.entries(map)) {
+    if (typeof key !== "string" || key.length === 0) {
+      throw new Error(`Track 3 view-prefs ${context} key must be a non-empty string.`);
     }
     if (prefs === null || typeof prefs !== "object") {
-      throw new Error("Track 3 view-prefs binding entry must be an object.");
+      throw new Error(`Track 3 view-prefs ${context} entry must be an object.`);
     }
     const p = prefs as Record<string, unknown>;
-    assertAllowedKeys(p, ALLOWED_BINDING, `binding "${bindingKey}"`);
+    assertAllowedKeys(p, ALLOWED_BINDING, `${context} entry "${key}"`);
     if (typeof p.viewMode !== "string" || !ALLOWED_VIEW_MODES.includes(p.viewMode as Track3ViewMode)) {
       throw new Error(`Track 3 view-prefs viewMode must be "2d" or "3d".`);
     }
@@ -120,6 +124,28 @@ export function assertValidPrefsDoc(raw: unknown): asserts raw is Track3ViewPref
   }
 }
 
+export function assertValidPrefsDoc(raw: unknown): asserts raw is Track3ViewPrefsDoc {
+  if (raw === null || typeof raw !== "object") {
+    throw new Error("Track 3 view-prefs document must be an object.");
+  }
+  const r = raw as Record<string, unknown>;
+  assertAllowedKeys(r, ALLOWED_TOP, "document");
+  if (r.schemaVersion !== TRACK3_VIEWPREFS_SCHEMA_VERSION) {
+    throw new Error(
+      `Track 3 view-prefs schemaVersion must be "${TRACK3_VIEWPREFS_SCHEMA_VERSION}".`,
+    );
+  }
+  // byBinding is required for back-compat with existing storage;
+  // byArchitecture is optional (older docs predate it).
+  if (r.byBinding === undefined) {
+    throw new Error("Track 3 view-prefs document is missing byBinding.");
+  }
+  assertValidEntryMap(r.byBinding, "byBinding");
+  if (r.byArchitecture !== undefined) {
+    assertValidEntryMap(r.byArchitecture, "byArchitecture");
+  }
+}
+
 function isValid(raw: unknown): raw is Track3ViewPrefsDoc {
   try {
     assertValidPrefsDoc(raw);
@@ -139,7 +165,14 @@ function readFromStorage(): Track3ViewPrefsDoc {
     if (!raw) return emptyDoc();
     const parsed = JSON.parse(raw);
     if (!isValid(parsed)) return emptyDoc();
-    return parsed;
+    // Normalise: ensure byArchitecture is always present in the
+    // in-memory cache, even when reading a legacy document that
+    // pre-dates Phase 3.
+    return Object.freeze({
+      schemaVersion: TRACK3_VIEWPREFS_SCHEMA_VERSION,
+      byBinding: Object.freeze({ ...parsed.byBinding }),
+      byArchitecture: Object.freeze({ ...(parsed.byArchitecture ?? {}) }),
+    });
   } catch {
     return emptyDoc();
   }
@@ -161,10 +194,6 @@ function notify(): void {
   }
 }
 
-function bindingKey(adsId: string, adsVersion: string): string {
-  return `${adsId}::${adsVersion}`;
-}
-
 export function getDoc(): Track3ViewPrefsDoc {
   if (cache === null) cache = readFromStorage();
   return cache;
@@ -177,24 +206,22 @@ export function subscribePrefs(fn: () => void): () => void {
   };
 }
 
-export function getPrefs(adsId: string, adsVersion: string): Track3BindingPrefs {
-  const key = bindingKey(adsId, adsVersion);
-  const existing = getDoc().byBinding[key];
+export function getArchitecturePrefs(architectureId: string): Track3BindingPrefs {
+  const existing = getDoc().byArchitecture[architectureId];
   return existing ?? defaultPrefs();
 }
 
-function setPrefs(
-  adsId: string,
-  adsVersion: string,
+function setArchPrefs(
+  architectureId: string,
   next: Track3BindingPrefs,
 ): void {
-  const key = bindingKey(adsId, adsVersion);
   const prev = getDoc();
   const updated: Track3ViewPrefsDoc = Object.freeze({
     schemaVersion: TRACK3_VIEWPREFS_SCHEMA_VERSION,
-    byBinding: Object.freeze({
-      ...prev.byBinding,
-      [key]: Object.freeze(next),
+    byBinding: prev.byBinding,
+    byArchitecture: Object.freeze({
+      ...prev.byArchitecture,
+      [architectureId]: Object.freeze(next),
     }),
   });
   writeToStorage(updated);
@@ -202,49 +229,45 @@ function setPrefs(
   notify();
 }
 
-export function setViewMode(
-  adsId: string,
-  adsVersion: string,
+export function setArchitectureViewMode(
+  architectureId: string,
   mode: Track3ViewMode,
 ): void {
-  const prev = getPrefs(adsId, adsVersion);
-  setPrefs(adsId, adsVersion, { ...prev, viewMode: mode });
+  const prev = getArchitecturePrefs(architectureId);
+  setArchPrefs(architectureId, { ...prev, viewMode: mode });
 }
 
-export function setPerspective(
-  adsId: string,
-  adsVersion: string,
+export function setArchitecturePerspective(
+  architectureId: string,
   p: Track3Perspective,
 ): void {
-  const prev = getPrefs(adsId, adsVersion);
-  setPrefs(adsId, adsVersion, { ...prev, perspective: p });
+  const prev = getArchitecturePrefs(architectureId);
+  setArchPrefs(architectureId, { ...prev, perspective: p });
 }
 
-export function toggleLayerHidden(
-  adsId: string,
-  adsVersion: string,
+export function toggleArchitectureLayerHidden(
+  architectureId: string,
   layerId: string,
 ): void {
-  const prev = getPrefs(adsId, adsVersion);
+  const prev = getArchitecturePrefs(architectureId);
   const has = prev.hiddenLayers.includes(layerId);
   const nextHidden = has
     ? prev.hiddenLayers.filter((l) => l !== layerId)
     : [...prev.hiddenLayers, layerId];
-  setPrefs(adsId, adsVersion, {
+  setArchPrefs(architectureId, {
     ...prev,
     hiddenLayers: Object.freeze(nextHidden),
   });
 }
 
-export function setCamera(
-  adsId: string,
-  adsVersion: string,
+export function setArchitectureCamera(
+  architectureId: string,
   cameraX: number,
   cameraY: number,
   cameraZoom: number,
 ): void {
-  const prev = getPrefs(adsId, adsVersion);
-  setPrefs(adsId, adsVersion, { ...prev, cameraX, cameraY, cameraZoom });
+  const prev = getArchitecturePrefs(architectureId);
+  setArchPrefs(architectureId, { ...prev, cameraX, cameraY, cameraZoom });
 }
 
 export function clearAllPrefs(): void {

@@ -1,9 +1,11 @@
 // ACW Track 3 — derived structural visualisation: type contracts.
 //
 // Track 3 derives a structural diagram mechanically from a CTAD
-// binding's CTAD_STATE plus a small projection of ADC bounds. The
-// derivation is a pure function; this module declares the value
-// shapes that flow through it.
+// state export (from either an ADC binding or a standalone
+// architecture). Phase 3 (Task #80) decoupled Track 3 from ADC
+// bounds: the derivation is a pure function of the CTAD state
+// alone. This module declares the value shapes that flow through
+// it.
 //
 // Track 3 nodes/edges intentionally use the same field shape as
 // the authored ACW workspace's `AcwNode` / `AcwEdge` so the
@@ -46,23 +48,9 @@ export const TRACK3_PERSPECTIVES: readonly Track3Perspective[] = Object.freeze(
   ["all", "infraCentric", "appCentric", "integrationCentric"],
 );
 
-// AdcBounds carries only the read-only architectural-layer
-// information Track 3 cares about. It is computed from a
-// PortfolioEntry by `track3AdcBounds.ts` and otherwise opaque.
-export interface AdcBounds {
-  readonly adsId: string;
-  readonly adsVersion: string;
-  // Which layers the ADC entry declares as present. Bounds are
-  // CONSTRAINING, not informational: `deriveACWStructure` filters
-  // out any layer that is not in this set even if CTAD_STATE has
-  // selections in it. This is what makes Track 3 "the structural
-  // view of THIS ADC entry" rather than a global CTAD echo.
-  // The `assertBoundsMaterial` invariant proves this filtering
-  // produces a different derivation across full vs partial
-  // bounds. The bounds field also surfaces in the binding panel
-  // of the derived shell.
-  readonly layersPresent: readonly Track3Layer[];
-}
+// Phase 3 (Task #80): the AdcBounds projection has been removed.
+// Track 3 derives purely from a CTAD state export — see
+// `track3DiagramAdapter.compileTrack3Specs(state)`.
 
 // Derived nodes/edges are structurally compatible with AcwNode /
 // AcwEdge so the existing enumerator applies. We model them as

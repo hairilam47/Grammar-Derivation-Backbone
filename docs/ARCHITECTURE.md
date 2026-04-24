@@ -604,7 +604,7 @@ resolve consistently).
 | `/ctad` | `CtadEntry` | CTAD entry — lists every frozen ADC decision; bound exploration is opened from a row |
 | `/ctad/:adsId/:adsVersion` | `CtadShell` | CTAD bound exploration — read-only ADC binding panel + four collapsible state-driven sections + live `CTAD_STATE` preview + references catalogues |
 | `/acw/derived` | `Track3Entry` | ACW Track 3 — lists every frozen ADC decision; the derived structural view is opened from a row (see §18D) |
-| `/acw/derived/:adsId/:adsVersion` | `Track3Shell` | ACW Track 3 — derived structural view bound to one ADC. Read-only binding panel + view controls (2D/3D, perspective, layer toggles) + a structural diagram mechanically derived from CTAD_STATE + ADC bounds. Writes nothing back; the only persistent storage owned by Track 3 is `acw.track3.viewprefs.v1`. |
+| `/acw/derived/arch/:architectureId` | `Track3Shell` | ACW Track 3 — derived structural view scoped to a standalone CTAD architecture (Phase 3, Task #80). Read-only architecture panel + view controls (2D/3D, perspective, layer toggles) + a structural diagram mechanically derived from the architecture's CTAD_STATE alone (no ADC bounds projection). Writes nothing back; the only persistent storage owned by Track 3 is `acw.track3.viewprefs.v1`. |
 
 Header navigation (`components/governance/GlobalNav.tsx`) is
 shared across all routes and exposes top-level links to Landing,
@@ -632,7 +632,7 @@ not from the global nav.
 | CTAD Bound Exploration (`/ctad/:adsId/:adsVersion`) and CTAD Standalone Architecture Workspace (`/ctad/arch/:architectureId`) | `ctad.state.v1` (`localStorage`) | `ctad/ctadStore.ts` (write goes through `findParam` registry validation; binding state is keyed by `${adsId}@${adsVersion}`, architecture state is keyed by an opaque `<slug>-<8-hex>` id minted by `ctad/architectureIdentity.ts`) | Document is `{ schemaVersion: "ctad-1.2", bindings: { [bindingKey]: { adsId, adsVersion, params, environments, updatedAt } }, architectures: { [architectureId]: { architectureId, architectureName, params, environments, createdAt, updatedAt } } }`. **Both** maps share the same emptiness rule: clearing the last param **and** removing the last environment of an entry deletes the entry; clearing a param / removing an env on an entry that does not exist is a fast-path no-op. Architectures additionally have an explicit lifecycle (`createArchitecture` / `removeArchitecture`); a freshly created empty architecture persists because the no-op short-circuit fires before the leak rule. Validated against `ctadRegistry`: every persisted `paramId` must exist; every `single` value must be a string from `param.options`; every `multi` value must be an array of strings from `param.options`; every `environment.kind` must be in `EnvironmentDef.KIND`; every non-null `environment.hostingModel` must be in `EnvironmentDef.HOSTING`; environment ids must be unique within an entry and match the canonical identifier shape; `architectureId` must match `^[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{8}$`. **Read-time migration** from `ctad-1.0` and `ctad-1.1` is deterministic: a v1.0 doc is read as v1.1 with `environments: []` per binding; a v1.1 doc is read as v1.2 with `architectures: {}` added; bindings shape is preserved unchanged. The CTAD store performs the migration without touching disk until the next write. The schema version (and section vocabulary) is locked at module load by `ctadGrammarInvariants`. Architecture exports (`exportArchitectureState`) are guaranteed by an invariant probe to omit `adsId`, `adsVersion`, and any `binding` field. | per-entry interpretive state only; no derivation, no scoring, no recommendation, no flow back into ADC, signals, exposure, or the grammar engine; standalone architectures additionally have no coupling to any ADS, ECP, or governance act |
 | CTAD CNCF Applied Cards (`/ctad/:adsId/:adsVersion`) | `ctad.applied-cards.v1` (`localStorage`) | `ctad/ctadAppliedCardsStore.ts`; **only** writer is `ctad/cncfApplyService.ts` | Per-binding audit log: `{ schemaVersion: "ctad-applied-cards-1.0", bindings: { [bindingKey]: { entries: AppliedCardEntry[] } } }`. Each `AppliedCardEntry = { cardId, appliedAt, effects: (AppliedSetEffect \| AppliedConstrainEffect \| AppliedJustifyEffect)[] }`. Bindings with zero entries are deleted from the document. | applied-card audit only; never read by the grammar engine, the wizard, or the portfolio |
 | CTAD Constraint Annotations (`/ctad/:adsId/:adsVersion`) | `ctad.constraints.v1` (`localStorage`) | `ctad/ctadConstraintsStore.ts`; **only** writer is `ctad/cncfApplyService.ts` | Per-binding constraint contributions: `{ schemaVersion: "ctad-constraints-1.0", bindings: { [bindingKey]: { contributions: ConstraintContribution[] } } }`. Each `ConstraintContribution = { paramId, allowedOptions, sourceCardId, contributedAt }`. The store does **not** mutate CTAD param values — it stores annotation alongside them; the active allowed-option set for a param is the intersection across contributions plus the registry options. | annotation only; never narrows the persisted CTAD param value, only the UI surface around it |
-| ACW Track 3 Derived View (`/acw/derived/*`) | `acw.track3.viewprefs.v1` (`localStorage`) | `acw/track3/track3ViewPrefs.ts` (schema-locked at `acw-track3-viewprefs-1.0`) | Document is `{ schemaVersion: "acw-track3-viewprefs-1.0", byBinding: { [bindingKey]: { viewMode: "2d"\|"3d", perspective: Track3Perspective, hiddenLayers: string[], cameraX: number, cameraY: number, cameraZoom: number } } }`. Locked top-level allow-list (`schemaVersion`, `byBinding`) and per-binding allow-list (`viewMode`, `perspective`, `hiddenLayers`, `cameraX`, `cameraY`, `cameraZoom`). Validated by `assertValidPrefsDoc` on read; the entire diagram structure itself is **not persisted** — it is recomputed on every render via `deriveACWStructure(getCtadState(binding), projectBounds(entry))`. | view preferences only; the diagram is purely derived |
+| ACW Track 3 Derived View (`/acw/derived/*`) | `acw.track3.viewprefs.v1` (`localStorage`) | `acw/track3/track3ViewPrefs.ts` (schema-locked at `acw-track3-viewprefs-1.0`) | Document is `{ schemaVersion: "acw-track3-viewprefs-1.0", byBinding: { [bindingKey]: PrefsEntry }, byArchitecture: { [architectureId]: PrefsEntry } }` where `PrefsEntry = { viewMode: "2d"\|"3d", perspective: Track3Perspective, hiddenLayers: string[], cameraX: number, cameraY: number, cameraZoom: number }`. Locked top-level allow-list (`schemaVersion`, `byBinding`, `byArchitecture`) and per-entry allow-list (`viewMode`, `perspective`, `hiddenLayers`, `cameraX`, `cameraY`, `cameraZoom`). Validated by `assertValidPrefsDoc` on read; the entire diagram structure itself is **not persisted** — it is recomputed on every render via `compileTrack3Specs(exportArchitectureState(architectureId))` (Phase 3 — Task #80; the retired `projectBounds(entry)` projection is gone). | view preferences only; the diagram is purely derived |
 | ACW Workspace (`/workspace/*`) — v1 grammar diagram | `acw.workspace.v1` (`localStorage`) | `acw/acwStore.ts` (write goes through `acwValidator.ts`; allow-list `assertAllowedFields` and read-validate `isValidWorkspace`); registry in `acw/acwGrammar.ts`; React subscription via `acw/acwGrammarHooks.ts#useAcwWorkspace`; surfaces `pages/acw/WorkspaceShell.tsx` + 5 lens views, `components/acw/AuthoringPanel.tsx`, `components/acw/LiveStructurePanel.tsx`, `components/acw/Canvas2D.tsx`, `Canvas3D.tsx` | Document is `{ schemaVersion: "acw-1.0", structureGraph: { nodes, edges } }`; node fields = `{ id, type, parentId, label, x, y }`; edge fields = `{ id, kind, fromId, toId }`. Locked allow-list at every nested level, validated by `__acwStoreInternals.isValidWorkspace` on read and `assertAllowedFields` on write. Containment is also materialised via `parentId` at node-creation time; the explicit edge kinds the user can author are CONTAINS, CONNECTS, INTERFACES_WITH, DATA_FLOW. CONTAINS is therefore representable both as the child's `parentId` and as a redundant-but-permitted edge record between the two existing nodes. | structure-only persistence; no semantics, no scoring, no ranking, no derivation |
 
 No store ever feeds back into the grammar engine. The grammar
@@ -2365,7 +2365,7 @@ helper `enumerateLensVisibility(...)` so they cannot diverge.
 
 ```
 src/acw/track3/
-  track3Types.ts             — Track3Layer, Track3Perspective, AdcBounds,
+  track3Types.ts             — Track3Layer, Track3Perspective,
                                AcwTrack3Structure, stable-id helpers
                                (nodeIdForLayer, nodeIdForParamValue, edgeId,
                                optionSlug). Imports AcwNode/AcwEdge types
@@ -2378,9 +2378,9 @@ src/acw/track3/
   track3Adjacency.ts         — Pure adjacency-rule table (param-value pairs
                                that imply a CONNECTS edge in the derived
                                structure). Canonicalises edge id ordering.
-  track3AdcBounds.ts         — projectBounds(entry: PortfolioEntry): AdcBounds.
-                               Reads only the read-only surface of the
-                               portfolio store.
+  (track3AdcBounds.ts retired in Phase 3 / Task #80 — Track 3 no
+   longer projects ADC bounds; the portfolio store is banned by
+   the isolation invariant.)
   track3Derive.ts            — deriveACWStructure(ctadState, bounds):
                                AcwTrack3Structure. Pure, total, deterministic.
                                Empty input → empty output (no synthesised
@@ -2393,15 +2393,17 @@ src/acw/track3/
                              — Build-time isolation: denylist of decision-
                                pipeline modules and ACW write surfaces;
                                positive allowlist of permitted import
-                               specifiers; per-store named-import allowlists
-                               (portfolio = { listEntries, PortfolioEntry };
-                               CTAD = { getCtadState, exportCtadState,
-                               CtadStateExport } — strictly the read-only
-                               trio; subscribe, getStoreVersion, and
-                               CtadBinding are explicitly NOT permitted
-                               (Track 3 re-reads CTAD on render and via a
-                               "Refresh from CTAD" button instead, keeping
-                               the surface inert and side-effect-free);
+                               specifiers; the portfolio store is banned
+                               outright by the denylist (Phase 3 — Task #80);
+                               per-store named-import allowlists
+                               (CTAD = { getCtadState, exportCtadState,
+                               CtadStateExport, exportArchitectureState,
+                               CtadArchitectureStateExport, listArchitectures,
+                               CtadArchitectureDoc, subscribe,
+                               getStoreVersion } — Phase 3 added the
+                               architecture-mode reads so the entry list
+                               can subscribe to new architectures without
+                               opening any write surface;
                                lens-structure helper =
                                { enumerateLensVisibility, LensVisibility,
                                LensDrawable, AcwNode, AcwEdge }). Includes a

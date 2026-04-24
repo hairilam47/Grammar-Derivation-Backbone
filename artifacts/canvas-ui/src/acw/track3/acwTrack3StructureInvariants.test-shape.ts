@@ -9,6 +9,12 @@
 // `subscribe` from `acw/acwStore`), because Track 3 derives its
 // own structure and never reads the authored workspace.
 //
+// Phase 3 (Task #80) added two structural assertions:
+//   - The retired `track3AdcBounds.ts` module must be ABSENT
+//     (Track 3 no longer projects ADC bounds).
+//   - `compileTrack3Specs(state)` must take a single CTAD-state
+//     argument — the `bounds` parameter is gone.
+//
 // Modelled on `acw3DStructureInvariants.test-shape.ts`. The scan
 // is a literal-substring check on the file source after BOTH
 // comments AND string literals are stripped, so a documentation
@@ -81,3 +87,61 @@ function assertRendererStructure(): void {
 }
 
 assertRendererStructure();
+
+// ---- Phase 3 (Task #80) structural assertions ------------------
+// (1) The retired track3AdcBounds module must be ABSENT.
+const TRACK3_DIR_SOURCES = import.meta.glob<string>(
+  ["/src/acw/track3/*.ts", "/src/acw/track3/*.tsx"],
+  { eager: true, query: "?raw", import: "default" },
+);
+function assertAdcBoundsModuleAbsent(): void {
+  for (const path of Object.keys(TRACK3_DIR_SOURCES)) {
+    if (path.endsWith("/track3AdcBounds.ts")) {
+      throw new Error(
+        `ACW Track 3 structural-identity invariant (Phase 3): the file "${path}" must be deleted. Track 3 no longer projects ADC bounds; the entire bounds projection module is retired.`,
+      );
+    }
+  }
+}
+assertAdcBoundsModuleAbsent();
+
+// (2) The DiagramSpec adapter compiler must take exactly ONE
+//     argument (the CTAD state). The retired second `bounds`
+//     argument must be gone.
+function assertCompilerSignatureBoundsFree(): void {
+  const adapterPath = "/src/acw/track3/track3DiagramAdapter.ts";
+  const raw = TRACK3_DIR_SOURCES[adapterPath];
+  if (raw === undefined) {
+    throw new Error(
+      `ACW Track 3 structural-identity invariant: adapter source "${adapterPath}" not found.`,
+    );
+  }
+  const stripped = stripComments(raw);
+  // The compiler MUST be exported. We pin its single-argument
+  // signature by requiring `compileTrack3Specs(state: CtadStateLike)`
+  // and rejecting any occurrence of the retired bounds positional
+  // arg or the AdcBounds type token.
+  if (stripped.indexOf("export function compileTrack3Specs(") === -1) {
+    throw new Error(
+      `ACW Track 3 structural-identity invariant: adapter must export a top-level \`compileTrack3Specs\` function.`,
+    );
+  }
+  // Reject the retired second-argument shapes.
+  const retiredSignatures: readonly RegExp[] = [
+    /compileTrack3Specs\([^)]*bounds\s*:\s*AdcBounds/,
+    /compileTrack3Specs\([^)]*,\s*bounds/,
+  ];
+  for (const re of retiredSignatures) {
+    if (re.test(stripped)) {
+      throw new Error(
+        `ACW Track 3 structural-identity invariant (Phase 3): adapter signature still references a retired \`bounds\` argument (matched ${re}). Phase 3 removed ADC bounds from Track 3.`,
+      );
+    }
+  }
+  if (stripped.indexOf("AdcBounds") !== -1) {
+    throw new Error(
+      `ACW Track 3 structural-identity invariant (Phase 3): adapter source still references the retired \`AdcBounds\` type. Phase 3 removed it from track3Types.`,
+    );
+  }
+}
+assertCompilerSignatureBoundsFree();

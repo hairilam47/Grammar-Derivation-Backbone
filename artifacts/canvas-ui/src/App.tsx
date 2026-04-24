@@ -102,7 +102,7 @@ function Router() {
       <Route path="/ctad/arch/:architectureId" component={CtadArchitectureShell} />
       <Route path="/ctad/:adsId/:adsVersion" component={CtadShell} />
       <Route path="/acw/derived" component={Track3Entry} />
-      <Route path="/acw/derived/:adsId/:adsVersion" component={Track3Shell} />
+      <Route path="/acw/derived/arch/:architectureId" component={Track3Shell} />
       <Route component={NotFound} />
     </Switch>
   );

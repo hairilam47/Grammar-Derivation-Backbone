@@ -1,8 +1,8 @@
 // ACW Track 3 — DiagramSpec adapter.
 //
-// Translates the bound CTAD_STATE + AdcBounds into a sequence of
-// positioned diagrams (one per architecture stratum) by driving
-// the `@workspace/diagramspec` compiler and the
+// Translates a CTAD_STATE export into a sequence of positioned
+// diagrams (one per architecture stratum) by driving the
+// `@workspace/diagramspec` compiler and the
 // `@workspace/diagram-layout` ELK wrapper. This module is the
 // single point at which Track 3 talks to the diagram pipeline;
 // the renderer never imports the compiler or the layout engine
@@ -22,17 +22,14 @@
 //
 // The deployment branch reads environments DIRECTLY from
 // CTAD_STATE.environments (Task #77 promoted environments to a
-// first-class CTAD concept). The legacy synthesis from
-// `infrastructure.deploymentTopology + hostingModel` is gone;
-// infrastructure params pass through to the technology call
-// because infrastructure is the section mapped to that stratum,
-// not because the compiler still needs them for env derivation.
+// first-class CTAD concept).
 //
-// `bounds.layersPresent` constrains derivation: a section that
-// the bound ADC entry does not declare in scope is zeroed before
-// the compiler sees it, so out-of-bounds CTAD selections never
-// surface as nodes. This mirrors the legacy `deriveACWStructure`
-// contract.
+// Phase 3 (Task #80) — ADC bounds decoupled. Track 3 derives
+// purely from `CtadStateLike` (params + environments). There is
+// no longer a `bounds.layersPresent` filter; visibility of each
+// CTAD section is driven solely by which sections have non-empty
+// values in the input. An ADC binding is no longer required to
+// produce a diagram.
 //
 // ELK call counter. The renderer must be able to assert at test
 // time that a layer-toggle (visibility-only) does NOT trigger a
@@ -41,7 +38,6 @@
 // the counter via `getElkLayoutCallCount()`.
 import {
   compileDiagramSpec,
-  CTAD_SECTIONS_FOR_STRATUM,
   type CtadSectionKey,
   type CtadStateLike,
   type DiagramSpec,
@@ -53,7 +49,7 @@ import {
   type PositionedDiagram,
 } from "@workspace/diagram-layout";
 import type { CtadStateExport } from "@/ctad/ctadStore";
-import type { AdcBounds, Track3Layer } from "./track3Types";
+import type { Track3Layer } from "./track3Types";
 
 export interface Track3StratumPlan {
   readonly stratum: DiagramStratum;
@@ -85,7 +81,7 @@ export const TRACK3_STRATUM_PLAN: readonly Track3StratumPlan[] = Object.freeze([
 const EMPTY_BLOCK: Readonly<Record<string, string | readonly string[] | null>> =
   Object.freeze({});
 
-function blockFor(state: CtadStateExport, section: Track3Layer) {
+function blockFor(state: CtadStateLike, section: Track3Layer) {
   switch (section) {
     case "infrastructure":
       return state.infrastructure;
@@ -101,20 +97,18 @@ function blockFor(state: CtadStateExport, section: Track3Layer) {
 }
 
 // Build the masked CTAD-state passed to a single compiler call.
-// Sections not on the plan (or out of bounds) are zeroed. The
-// `infrastructure` block is always passed through to the
-// technology / deployment branch as part of that plan's section
-// allocation; environments themselves are scoped just below.
+// Sections not on the plan are zeroed so each section surfaces in
+// exactly one stratum. Phase 3: no `bounds.layersPresent` filter
+// is applied — the compiler sees every section the plan allocates
+// to its stratum. Sections with no non-null values produce no
+// nodes downstream regardless.
 function maskStateForPlan(
-  state: CtadStateExport,
-  bounds: AdcBounds,
+  state: CtadStateLike,
   plan: Track3StratumPlan,
 ): CtadStateLike {
-  const inBounds = new Set<Track3Layer>(bounds.layersPresent);
   const allowed = new Set<Track3Layer>(plan.sections);
   function pass(section: Track3Layer) {
     if (!allowed.has(section)) return EMPTY_BLOCK;
-    if (!inBounds.has(section)) return EMPTY_BLOCK;
     return blockFor(state, section);
   }
   // Environments are scoped to the technology stratum — the
@@ -136,13 +130,16 @@ function maskStateForPlan(
   };
 }
 
+// Phase 3 signature: ADC bounds removed. The adapter now accepts
+// only a CTAD state (either a CtadStateExport from a binding or a
+// CtadArchitectureStateExport from a standalone architecture, both
+// structurally compatible with CtadStateLike).
 export function compileTrack3Specs(
-  state: CtadStateExport,
-  bounds: AdcBounds,
+  state: CtadStateLike,
 ): readonly DiagramSpec[] {
   const out: DiagramSpec[] = [];
   for (const plan of TRACK3_STRATUM_PLAN) {
-    const masked = maskStateForPlan(state, bounds, plan);
+    const masked = maskStateForPlan(state, plan);
     const spec = compileDiagramSpec(masked, {
       viewType: plan.viewType,
       stratum: plan.stratum,
@@ -151,6 +148,9 @@ export function compileTrack3Specs(
   }
   return Object.freeze(out);
 }
+
+// Re-export for callers that want the structural import alias.
+export type { CtadStateExport };
 
 // ---- ELK call counter ------------------------------------------
 let __elkLayoutCalls = 0;

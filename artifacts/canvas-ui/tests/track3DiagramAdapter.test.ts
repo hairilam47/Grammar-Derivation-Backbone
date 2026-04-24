@@ -3,9 +3,9 @@
 // (1) Parity. The DiagramSpec compiler pipeline must surface the
 //     SAME (section, paramId, optionSlug) tuple set the retired
 //     `deriveACWStructure` would have produced. The retired
-//     algorithm was: for every in-bounds CTAD section, for every
-//     non-null param entry, for every option in the (string |
-//     string[]) value, emit one tuple `(section, paramId,
+//     algorithm was: for every CTAD section, for every non-null
+//     param entry, for every option in the (string | string[])
+//     value, emit one tuple `(section, paramId,
 //     optionSlug(option))`. Because the new compiler iterates the
 //     same sections and uses the same slug function, the two
 //     pipelines should produce identical SETS (set membership,
@@ -14,6 +14,12 @@
 //     express the legacy contract directly here as a pure data
 //     oracle so this test does not depend on the (now-deleted)
 //     legacy implementation files.
+//
+//     Phase 3 (Task #80) removed ADC bounds from Track 3 — the
+//     adapter no longer accepts a `bounds` parameter and the
+//     "honours bounds: out-of-scope layer is dropped" test is
+//     retired. Section visibility is now driven solely by which
+//     CTAD sections have non-empty values in the input state.
 //
 // (2) ELK call counter. The renderer's layer-toggle path must NOT
 //     trigger an ELK layout pass — toggling a section is
@@ -32,7 +38,6 @@ import {
 import {
   TRACK3_LAYERS,
   optionSlug,
-  type AdcBounds,
   type Track3Layer,
 } from "@/acw/track3/track3Types";
 import type { CtadStateExport } from "@/ctad/ctadStore";
@@ -65,10 +70,6 @@ const POPULATED_STATE: CtadStateExport = Object.freeze({
   }),
 }) as unknown as CtadStateExport;
 
-const BOUNDS: AdcBounds = Object.freeze({
-  layersPresent: TRACK3_LAYERS,
-});
-
 function blockFor(state: CtadStateExport, layer: Track3Layer) {
   switch (layer) {
     case "infrastructure":
@@ -86,13 +87,9 @@ function blockFor(state: CtadStateExport, layer: Track3Layer) {
 
 // Pure data oracle re-stating the retired `deriveACWStructure`
 // contract. Set membership only.
-function expectedTuples(
-  state: CtadStateExport,
-  bounds: AdcBounds,
-): Set<string> {
+function expectedTuples(state: CtadStateExport): Set<string> {
   const out = new Set<string>();
   for (const layer of TRACK3_LAYERS) {
-    if (!bounds.layersPresent.includes(layer)) continue;
     const block = blockFor(state, layer);
     for (const [paramId, raw] of Object.entries(block)) {
       const opts: readonly string[] =
@@ -105,12 +102,9 @@ function expectedTuples(
   return out;
 }
 
-function compiledTuples(
-  state: CtadStateExport,
-  bounds: AdcBounds,
-): Set<string> {
+function compiledTuples(state: CtadStateExport): Set<string> {
   const out = new Set<string>();
-  const specs = compileTrack3Specs(state, bounds);
+  const specs = compileTrack3Specs(state);
   for (const spec of specs) {
     for (const n of spec.nodes) {
       const ref = paramRefOfNodeId(n.id);
@@ -123,21 +117,10 @@ function compiledTuples(
 
 describe("track3DiagramAdapter — parity vs retired deriveACWStructure", () => {
   it("produces the same (section, paramId, optionSlug) tuple set", () => {
-    const expected = expectedTuples(POPULATED_STATE, BOUNDS);
-    const actual = compiledTuples(POPULATED_STATE, BOUNDS);
+    const expected = expectedTuples(POPULATED_STATE);
+    const actual = compiledTuples(POPULATED_STATE);
     expect(Array.from(actual).sort()).toEqual(Array.from(expected).sort());
     expect(expected.size).toBeGreaterThan(0);
-  });
-
-  it("honours bounds: out-of-scope layer is dropped", () => {
-    const trimmedBounds: AdcBounds = Object.freeze({
-      layersPresent: ["application", "integration", "crossCutting", "ops"],
-    });
-    const expected = expectedTuples(POPULATED_STATE, trimmedBounds);
-    const actual = compiledTuples(POPULATED_STATE, trimmedBounds);
-    for (const k of expected) expect(k.startsWith("infrastructure")).toBe(false);
-    for (const k of actual) expect(k.startsWith("infrastructure")).toBe(false);
-    expect(Array.from(actual).sort()).toEqual(Array.from(expected).sort());
   });
 
   it("optionSlug helper agrees on edge cases (slug stability pin)", () => {
@@ -162,11 +145,9 @@ function legacyParamNodeId(
 
 function legacyNodeAndEdgeIds(
   state: CtadStateExport,
-  bounds: AdcBounds,
 ): { nodeIds: Set<string>; edgeEndpoints: Set<string> } {
   const nodeIds = new Set<string>();
   for (const layer of TRACK3_LAYERS) {
-    if (!bounds.layersPresent.includes(layer)) continue;
     const block = blockFor(state, layer);
     let layerHasContent = false;
     for (const [paramId, raw] of Object.entries(block)) {
@@ -211,9 +192,8 @@ function remapNewIdToLegacy(id: string): string | null {
 
 function newPipelineLegacyIds(
   state: CtadStateExport,
-  bounds: AdcBounds,
 ): { nodeIds: Set<string>; edgeEndpointPairs: Set<string> } {
-  const specs = compileTrack3Specs(state, bounds);
+  const specs = compileTrack3Specs(state);
   const nodeIds = new Set<string>();
   const seenRaw = new Set<string>();
   for (const spec of specs) {
@@ -286,17 +266,9 @@ const LEGACY_ADJACENCY: readonly LegacyAdjacencyRule[] = Object.freeze([
   { from: { layer: "ops", paramId: "backupAndRestore" }, to: { layer: "infrastructure", paramId: "databaseClass" } },
 ]);
 
-// Expand legacy adjacency rules over the CTAD state into a set
-// of unordered legacy node-id pairs — i.e. the edges
-// `deriveACWStructure` would have emitted.
-function legacyAdjacencyEdgePairs(
-  state: CtadStateExport,
-  bounds: AdcBounds,
-): Set<string> {
+function legacyAdjacencyEdgePairs(state: CtadStateExport): Set<string> {
   const out = new Set<string>();
-  const inBounds = new Set<Track3Layer>(bounds.layersPresent);
   function optsOf(layer: Track3Layer, paramId: string): readonly string[] {
-    if (!inBounds.has(layer)) return [];
     const block = blockFor(state, layer) as Record<
       string,
       string | readonly string[] | null | undefined
@@ -320,13 +292,8 @@ function legacyAdjacencyEdgePairs(
   return out;
 }
 
-// Set of legacy node-ids that appear as either endpoint of any
-// legacy adjacency edge.
-function legacyEdgeEndpointSet(
-  state: CtadStateExport,
-  bounds: AdcBounds,
-): Set<string> {
-  const pairs = legacyAdjacencyEdgePairs(state, bounds);
+function legacyEdgeEndpointSet(state: CtadStateExport): Set<string> {
+  const pairs = legacyAdjacencyEdgePairs(state);
   const out = new Set<string>();
   for (const p of pairs) {
     const [a, b] = p.split("::");
@@ -336,13 +303,8 @@ function legacyEdgeEndpointSet(
   return out;
 }
 
-// Set of remapped node-ids that appear as either endpoint of
-// any compiled new-pipeline edge.
-function newPipelineEdgeEndpointSet(
-  state: CtadStateExport,
-  bounds: AdcBounds,
-): Set<string> {
-  const { edgeEndpointPairs } = newPipelineLegacyIds(state, bounds);
+function newPipelineEdgeEndpointSet(state: CtadStateExport): Set<string> {
+  const { edgeEndpointPairs } = newPipelineLegacyIds(state);
   const out = new Set<string>();
   for (const p of edgeEndpointPairs) {
     const [a, b] = p.split("::");
@@ -354,21 +316,13 @@ function newPipelineEdgeEndpointSet(
 
 describe("track3DiagramAdapter — node-id + edge parity vs retired structure", () => {
   it("emits the same node-id set as the retired derivation (after stratum remap)", () => {
-    const legacy = legacyNodeAndEdgeIds(POPULATED_STATE, BOUNDS);
-    const next = newPipelineLegacyIds(POPULATED_STATE, BOUNDS);
+    const legacy = legacyNodeAndEdgeIds(POPULATED_STATE);
+    const next = newPipelineLegacyIds(POPULATED_STATE);
     expect(legacy.nodeIds.size).toBeGreaterThan(0);
-    // Every legacy node id (layer roots + param leaves) must
-    // appear in the new pipeline output, modulo the stratum
-    // remap. Layer roots for the technology stratum
-    // (infrastructure + ops) are intentionally subsumed by
-    // environment containers and are excluded from the legacy
-    // expectation here.
     for (const id of legacy.nodeIds) {
       if (LAYER_ROOTS_SUBSUMED_BY_ENV.has(id)) continue;
       expect(next.nodeIds.has(id)).toBe(true);
     }
-    // And the new pipeline must not invent param/layer nodes
-    // that don't correspond to a legacy id.
     for (const id of next.nodeIds) {
       if (id.startsWith("node:layer:") || id.startsWith("node:param:")) {
         expect(legacy.nodeIds.has(id)).toBe(true);
@@ -377,39 +331,19 @@ describe("track3DiagramAdapter — node-id + edge parity vs retired structure", 
   });
 
   it("preserves the legacy edge endpoint SET (with stratum remap)", () => {
-    // Legacy adjacency materialises a set of (legacy node id,
-    // legacy node id) pairs. The new pipeline reorganises edges
-    // (containment + intra-section peer chains in lieu of the
-    // legacy cross-section adjacency table), so the per-pair
-    // edge identity does NOT survive the migration. What MUST
-    // survive — the contract pinned by this test — is the SET
-    // of node ids that appear as legacy edge endpoints. Every
-    // such legacy endpoint must:
-    //   (a) exist as a compiled node in the new pipeline
-    //       (modulo the documented stratum remap), and
-    //   (b) appear as an endpoint of at least one new compiled
-    //       edge (i.e. it is wired into the diagram, not orphaned
-    //       as a free-floating node).
-    // Layer-root ids subsumed into env containers are excluded
-    // (same documented exception as the node-set parity test).
-    const legacyEndpoints = legacyEdgeEndpointSet(POPULATED_STATE, BOUNDS);
+    const legacyEndpoints = legacyEdgeEndpointSet(POPULATED_STATE);
     expect(legacyEndpoints.size).toBeGreaterThan(0);
-    const next = newPipelineLegacyIds(POPULATED_STATE, BOUNDS);
-    const newEdgeEndpoints = newPipelineEdgeEndpointSet(POPULATED_STATE, BOUNDS);
+    const next = newPipelineLegacyIds(POPULATED_STATE);
+    const newEdgeEndpoints = newPipelineEdgeEndpointSet(POPULATED_STATE);
     for (const id of legacyEndpoints) {
       if (LAYER_ROOTS_SUBSUMED_BY_ENV.has(id)) continue;
-      // (a) endpoint exists as a compiled node.
       expect(next.nodeIds.has(id)).toBe(true);
-      // (b) endpoint is wired — appears as an endpoint of at
-      // least one compiled edge.
       expect(newEdgeEndpoints.has(id)).toBe(true);
     }
   });
 
   it("every edge endpoint references a real compiled node (no danglers)", () => {
-    // Side-effect of building the new-pipeline view: throws if
-    // any edge endpoint points at an unknown node id.
-    const next = newPipelineLegacyIds(POPULATED_STATE, BOUNDS);
+    const next = newPipelineLegacyIds(POPULATED_STATE);
     for (const pair of next.edgeEndpointPairs) {
       const [a, b] = pair.split("::");
       expect(next.nodeIds.has(a) || a.startsWith("node:env:")).toBe(true);
@@ -422,7 +356,7 @@ describe("track3DiagramAdapter — ELK call counter", () => {
   beforeEach(() => resetElkLayoutCallCount());
 
   it("increments once per non-empty spec on a layout pass", async () => {
-    const specs = compileTrack3Specs(POPULATED_STATE, BOUNDS);
+    const specs = compileTrack3Specs(POPULATED_STATE);
     expect(getElkLayoutCallCount()).toBe(0);
     await layoutTrack3Specs(specs);
     expect(getElkLayoutCallCount()).toBe(specs.length);
@@ -430,20 +364,10 @@ describe("track3DiagramAdapter — ELK call counter", () => {
   });
 
   it("does NOT increment when only the section-filter changes (renderer-side toggle path simulation)", async () => {
-    // Simulate the full shell→renderer path: shell runs layout
-    // ONCE for a given (ctadState, bounds) pair, then emits a
-    // sequence of hidden-section sets representing user toggles.
-    // The renderer must consume the SAME positionedDiagrams
-    // and apply visibility filtering only — never re-invoke the
-    // adapter. We assert by reading the counter across each
-    // simulated toggle.
-    const specs = compileTrack3Specs(POPULATED_STATE, BOUNDS);
+    const specs = compileTrack3Specs(POPULATED_STATE);
     const positioned = await layoutTrack3Specs(specs);
     const baseline = getElkLayoutCallCount();
     expect(positioned.length).toBeGreaterThan(0);
-    // Toggle path: a sequence of hidden-section sets, each of
-    // which the renderer would process by filtering the already-
-    // positioned node lists. None of these may invoke ELK.
     const togglePath: ReadonlyArray<ReadonlySet<string>> = [
       new Set<string>(),
       new Set<string>(["infrastructure"]),
@@ -452,9 +376,6 @@ describe("track3DiagramAdapter — ELK call counter", () => {
       new Set<string>(),
     ];
     for (const hidden of togglePath) {
-      // The "renderer" filter pass: pure visibility computation
-      // over already-positioned nodes. Must not touch the
-      // adapter.
       let kept = 0;
       for (const pd of positioned) {
         for (const n of pd.nodes) {
@@ -464,7 +385,6 @@ describe("track3DiagramAdapter — ELK call counter", () => {
         }
       }
       expect(kept).toBeGreaterThanOrEqual(0);
-      // Counter MUST be stable across the entire toggle path.
       expect(getElkLayoutCallCount()).toBe(baseline);
     }
   });

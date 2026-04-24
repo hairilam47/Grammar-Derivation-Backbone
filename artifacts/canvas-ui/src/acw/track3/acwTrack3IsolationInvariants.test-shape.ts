@@ -1,13 +1,15 @@
 // ACW Track 3 — build-time isolation invariant.
 //
-// Track 3 is a strictly read-only derived view of CTAD_STATE +
-// ADC bounds. It must never import any module that would let it
-// drive a decision (grammar engine, ADS / ECP builders, signals
-// store, exposure / responsibility derivers, scenario reading,
-// reentry, freeze / export pipeline, identity / hash) and must
-// never import a write-form symbol from CTAD's store, the ACW
-// authored workspace store, the ACW validator / grammar hooks /
-// view-state, or any write-form helper of the portfolio store.
+// Track 3 is a strictly read-only derived view of CTAD state.
+// Phase 3 (Task #80) decoupled Track 3 from ADC bounds: the
+// portfolio store is now BANNED outright (no `listEntries`, no
+// `PortfolioEntry`, no anything). Track 3 must also never import
+// any module that would let it drive a decision (grammar engine,
+// ADS / ECP builders, signals store, exposure / responsibility
+// derivers, scenario reading, reentry, freeze / export pipeline,
+// identity / hash) and must never import a write-form symbol
+// from CTAD's store, the ACW authored workspace store, or the
+// ACW validator / grammar hooks / view-state.
 //
 // Mechanism mirrors `ctadIsolationInvariants.test-shape.ts`:
 // Vite's `import.meta.glob` with `?raw` loads every Track 3
@@ -34,6 +36,10 @@ const TRACK3_SOURCES = import.meta.glob<string>(
 // specifier, fail the bundle. Covers every decision-pipeline
 // module Track 3 must remain decoupled from.
 const FORBIDDEN_IMPORT_SPECIFIERS: readonly string[] = [
+  // Phase 3 (Task #80): the portfolio store is banned outright.
+  // Track 3 derives purely from CTAD state and no longer needs
+  // ADC bounds.
+  "governance/portfolioStore",
   "governance/signalsStore",
   "governance/adsBuilder",
   "governance/ecpBuilder",
@@ -94,9 +100,10 @@ const ALLOWED_IMPORT_PREFIXES: readonly string[] = [
   "@/components/governance/GlobalNav",
   // Vocabulary guard — read-only assertion utility.
   "@/governance/staticTextGuard",
-  // Read-only stores. The named-import scans below further
-  // constrain Track 3 to the read-only surface of each.
-  "@/governance/portfolioStore",
+  // Read-only CTAD store. The named-import scan below further
+  // constrains Track 3 to a small allow-list of read symbols.
+  // The portfolio store is intentionally absent: Phase 3
+  // banned it outright (see FORBIDDEN_IMPORT_SPECIFIERS).
   "@/ctad/ctadStore",
   // ACW visibility helper and AcwNode/AcwEdge type-only imports.
   "@/acw/acwLensStructure",
@@ -110,18 +117,24 @@ const ALLOWED_IMPORT_PREFIXES: readonly string[] = [
   "@workspace/diagram-layout",
 ];
 
-// Read-only named-import allowlists per upstream store.
-const PORTFOLIO_STORE_READ_ONLY_NAMED_IMPORTS: readonly string[] = [
-  "listEntries",
-  "PortfolioEntry",
-];
+// Read-only named-import allowlists per upstream store. Phase 3
+// (Task #80) added `exportArchitectureState`, `listArchitectures`,
+// `CtadArchitectureDoc`, `CtadArchitectureStateExport`,
+// `subscribe`, and `getStoreVersion` to the CTAD allow-list so the
+// architecture-mode entry / shell can list and observe
+// architectures while remaining read-only. `getCtadState` /
+// `exportCtadState` / `CtadStateExport` are kept for legacy code
+// paths and for the adapter's exported type.
 const CTAD_STORE_READ_ONLY_NAMED_IMPORTS: readonly string[] = [
-  // Strictly the named-import allowlist mandated by the Track 3
-  // task contract. Anything else (subscribe / getStoreVersion /
-  // CtadBinding / write helpers) is rejected.
   "getCtadState",
   "exportCtadState",
   "CtadStateExport",
+  "exportArchitectureState",
+  "CtadArchitectureStateExport",
+  "listArchitectures",
+  "CtadArchitectureDoc",
+  "subscribe",
+  "getStoreVersion",
 ];
 const ACW_LENS_STRUCTURE_NAMED_IMPORTS: readonly string[] = [
   "enumerateLensVisibility",
@@ -147,11 +160,6 @@ interface ReadOnlyStoreSpec {
 }
 
 const READ_ONLY_STORES: readonly ReadOnlyStoreSpec[] = [
-  {
-    label: "portfolio store",
-    pathRe: /["'][^"']*governance\/portfolioStore["']/,
-    allowedNames: PORTFOLIO_STORE_READ_ONLY_NAMED_IMPORTS,
-  },
   {
     label: "CTAD store",
     pathRe: /["'][^"']*ctad\/ctadStore["']/,
@@ -299,24 +307,24 @@ function selfTest(): void {
       src: `import { clearCtadParam } from "@/ctad/ctadStore";`,
     },
     {
-      label: "ctad subscribe named import (off allowlist)",
-      src: `import { subscribe } from "@/ctad/ctadStore";`,
-    },
-    {
-      label: "ctad getStoreVersion named import (off allowlist)",
-      src: `import { getStoreVersion } from "@/ctad/ctadStore";`,
-    },
-    {
       label: "ctad CtadBinding named type import (off allowlist)",
       src: `import { type CtadBinding } from "@/ctad/ctadStore";`,
     },
     {
-      label: "portfolio write helper",
+      label: "portfolio store read import (Phase 3 banned outright)",
+      src: `import { listEntries, type PortfolioEntry } from "@/governance/portfolioStore";`,
+    },
+    {
+      label: "portfolio write helper (Phase 3 banned outright)",
       src: `import { addOrUpdateEntry } from "@/governance/portfolioStore";`,
     },
     {
-      label: "portfolio namespace",
+      label: "portfolio namespace (Phase 3 banned outright)",
       src: `import * as p from "@/governance/portfolioStore";`,
+    },
+    {
+      label: "portfolio dynamic import (Phase 3 banned outright)",
+      src: `const m = await import("@/governance/portfolioStore");`,
     },
     {
       label: "acwStore import",
@@ -369,9 +377,13 @@ function selfTest(): void {
     }
   }
   // Positive controls — approved import shapes must NOT throw.
+  // Phase 3 (Task #80) added the architecture-mode CTAD reads
+  // (`exportArchitectureState`, `listArchitectures`, `subscribe`,
+  // `getStoreVersion`, and the corresponding doc / export types)
+  // to the CTAD store named-import allow-list.
   const okSources = [
-    `import { listEntries, type PortfolioEntry } from "@/governance/portfolioStore";`,
     `import { getCtadState, exportCtadState, type CtadStateExport } from "@/ctad/ctadStore";`,
+    `import { exportArchitectureState, listArchitectures, subscribe, getStoreVersion, type CtadArchitectureDoc, type CtadArchitectureStateExport } from "@/ctad/ctadStore";`,
     `import { enumerateLensVisibility, type AcwNode, type AcwEdge } from "@/acw/acwLensStructure";`,
   ];
   for (const ok of okSources) {

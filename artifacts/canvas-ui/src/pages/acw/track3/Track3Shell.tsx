@@ -1,23 +1,25 @@
-// ACW Track 3 — bound derived view shell.
+// ACW Track 3 — derived view shell scoped to a standalone
+// architecture (Phase 3, Task #80).
 //
-// Reads CTAD_STATE for the bound ADS via `getCtadState`, computes
-// `AdcBounds` via `projectBounds`, and drives the DiagramSpec
-// compiler + ELK layout pipeline (via `track3DiagramAdapter`) to
-// produce a list of positioned diagrams — one per architecture
-// stratum — that the renderers stack along the Z axis. Layer /
-// perspective controls live here; both renderers receive the
-// SAME `positionedDiagrams + hiddenSections` so visibility cannot
-// diverge between them.
+// Loads the architecture's CTAD state via `exportArchitectureState`
+// and drives the DiagramSpec compiler + ELK layout pipeline (via
+// `track3DiagramAdapter`) to produce a list of positioned diagrams
+// — one per architecture stratum — that the renderers stack along
+// the Z axis. Layer / perspective controls live here; both
+// renderers receive the SAME `positionedDiagrams + hiddenSections`
+// so visibility cannot diverge between them.
 //
-// Layout is async because ELK is async; the shell carries
-// the positioned-diagrams in state and re-runs the pipeline only
-// when (ctadState, bounds) change. Layer-toggle and perspective
-// changes do NOT re-run ELK — they are passed straight through
-// to the renderers as filter sets.
+// Layout is async because ELK is async; the shell carries the
+// positioned-diagrams in state and re-runs the pipeline only when
+// the architecture state changes. Layer-toggle and perspective
+// changes do NOT re-run ELK — they are passed straight through to
+// the renderers as filter sets.
 //
-// The shell remains strictly read-only: it never mutates CTAD or
-// the portfolio. The only mutable storage Track 3 owns is
-// `acw.track3.viewprefs.v1`, written through `track3ViewPrefs`.
+// The shell remains strictly read-only on every store: it never
+// mutates the CTAD architecture nor (and this is the new Phase 3
+// constraint) does it import the portfolio store at all. The only
+// mutable storage Track 3 owns is `acw.track3.viewprefs.v1`,
+// written through `track3ViewPrefs`.
 import {
   useCallback,
   useEffect,
@@ -28,10 +30,9 @@ import {
 import { useRoute, Link } from "wouter";
 import { Layers, Crosshair, RefreshCcw } from "lucide-react";
 import {
-  listEntries,
-  type PortfolioEntry,
-} from "@/governance/portfolioStore";
-import { getCtadState } from "@/ctad/ctadStore";
+  exportArchitectureState,
+  type CtadArchitectureStateExport,
+} from "@/ctad/ctadStore";
 import { GlobalNav } from "@/components/governance/GlobalNav";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,7 +43,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { assertAllAcwTrack3Language } from "@/governance/staticTextGuard";
-import { projectBounds } from "@/acw/track3/track3AdcBounds";
 import {
   compileTrack3Specs,
   layoutTrack3Specs,
@@ -56,12 +56,12 @@ import {
 } from "@/acw/track3/track3Types";
 import { TRACK3_LAYER_LABEL } from "@/acw/track3/track3LabelRegistry";
 import {
-  getPrefs,
+  getArchitecturePrefs,
   getDoc as getViewPrefsDoc,
-  setViewMode,
-  setPerspective,
-  toggleLayerHidden,
-  setCamera,
+  setArchitectureViewMode,
+  setArchitecturePerspective,
+  toggleArchitectureLayerHidden,
+  setArchitectureCamera,
   subscribePrefs,
   type Track3ViewMode,
 } from "@/acw/track3/track3ViewPrefs";
@@ -70,24 +70,17 @@ import { Track3Canvas3D } from "@/components/acw/track3/Track3Canvas3D";
 import { isolateAroundNode } from "@/acw/track3/track3FocusIsolation";
 import type { AcwNode, AcwEdge } from "@/acw/acwLensStructure";
 
-interface Track3Binding {
-  readonly adsId: string;
-  readonly adsVersion: string;
-}
-
 const LABELS = {
   brandLabel: "Architecture Decision Canvas",
   pageTitle: "Derived structural view",
   pageSubtitle:
-    "A structural diagram derived from the bound technology selections. The diagram is exploratory and reflects only what is selected in the CTAD binding.",
-  bindingHeading: "ADC binding (read-only)",
+    "A structural diagram derived from the architecture's technology selections. The diagram is exploratory and reflects only what is selected in the architecture workspace.",
+  bindingHeading: "Architecture (read-only)",
   bindingHint:
-    "These fields belong to the underlying frozen decision. The derived view reads them but never edits them.",
-  fieldProject: "Project",
-  fieldDecisionAuthority: "Decision authority",
-  fieldAdsId: "ADS id",
-  fieldAdsVersion: "ADS version",
-  fieldLayersPresent: "Layers in scope",
+    "These fields belong to the architecture workspace. The derived view reads them but never edits them.",
+  fieldName: "Architecture",
+  fieldArchitectureId: "Architecture id",
+  fieldEnvironments: "Environments",
   controlsHeading: "View controls",
   controlsHint:
     "Layer and perspective choices are visual only; they do not change the underlying selections.",
@@ -107,13 +100,13 @@ const LABELS = {
   layerOps: "Ops & Lifecycle",
   diagramHeading: "Derived diagram",
   diagramHint:
-    "The diagram is derived from CTAD_STATE at the moment this view was opened or last refreshed. It is not persisted; use \"Refresh from CTAD\" to pick up CTAD edits made elsewhere.",
-  bindingNotFoundHeading: "Binding not found",
+    "The diagram is derived from the architecture state at the moment this view was opened or last refreshed. It is not persisted; use \"Refresh from architecture\" to pick up edits made elsewhere.",
+  bindingNotFoundHeading: "Architecture not found",
   bindingNotFoundBody:
-    "No frozen decision matches this binding. Return to the entry list to pick a different one.",
+    "No architecture matches this id. Return to the entry list to pick a different one.",
   backToEntry: "Back to derived entry",
-  openCtad: "Open bound CTAD shell",
-  refreshFromCtad: "Refresh from CTAD",
+  openArchitecture: "Open architecture workspace",
+  refreshFromArch: "Refresh from architecture",
   inlineNote:
     "This view is exploratory and derived. It does not form or otherwise act on a decision.",
   focusedHeading: "Focused on",
@@ -121,7 +114,7 @@ const LABELS = {
   focusHint:
     "Click a node in the diagram to isolate it and its neighbours. Click again or press the button to clear.",
   zoomHint:
-    "Drag to rotate, right-drag to pan, scroll to zoom. Camera position persists per binding.",
+    "Drag to rotate, right-drag to pan, scroll to zoom. Camera position persists per architecture.",
   layoutPending: "Computing layout…",
 } as const;
 
@@ -158,22 +151,21 @@ function useViewPrefsDoc(): unknown {
 }
 
 export default function Track3Shell() {
-  const [match, params] = useRoute<{ adsId: string; adsVersion: string }>(
-    "/acw/derived/:adsId/:adsVersion",
+  const [match, params] = useRoute<{ architectureId: string }>(
+    "/acw/derived/arch/:architectureId",
   );
-  const adsId = match && params ? decodeURIComponent(params.adsId) : "";
-  const adsVersion =
-    match && params ? decodeURIComponent(params.adsVersion) : "";
-  const binding: Track3Binding = useMemo(
-    () => ({ adsId, adsVersion }),
-    [adsId, adsVersion],
-  );
-  const entry = useMemo<PortfolioEntry | undefined>(() => {
-    if (!adsId || !adsVersion) return undefined;
-    return listEntries().find(
-      (e) => e.adsId === adsId && e.adsVersion === adsVersion,
-    );
-  }, [adsId, adsVersion]);
+  const architectureId =
+    match && params ? decodeURIComponent(params.architectureId) : "";
+  const [refreshTick, setRefreshTick] = useState(0);
+  const archState = useMemo<CtadArchitectureStateExport | null>(() => {
+    if (!architectureId) return null;
+    return exportArchitectureState(architectureId);
+    // refreshTick intentionally invalidates the memo so the
+    // "Refresh from architecture" button picks up edits made in
+    // another tab / route.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [architectureId, refreshTick]);
+
   if (!match || !params) return null;
 
   return (
@@ -203,7 +195,7 @@ export default function Track3Shell() {
           </p>
         </div>
 
-        {entry === undefined ? (
+        {archState === null ? (
           <Card data-testid="track3-shell-binding-missing">
             <CardHeader>
               <CardTitle className="text-base">
@@ -222,7 +214,11 @@ export default function Track3Shell() {
             </CardContent>
           </Card>
         ) : (
-          <BoundShell binding={binding} entry={entry} />
+          <BoundShell
+            architectureId={architectureId}
+            archState={archState}
+            onRefresh={() => setRefreshTick((t) => t + 1)}
+          />
         )}
       </main>
     </div>
@@ -230,32 +226,24 @@ export default function Track3Shell() {
 }
 
 function BoundShell({
-  binding,
-  entry,
+  architectureId,
+  archState,
+  onRefresh,
 }: {
-  binding: Track3Binding;
-  entry: PortfolioEntry;
+  architectureId: string;
+  archState: CtadArchitectureStateExport;
+  onRefresh: () => void;
 }) {
   useViewPrefsDoc();
-  const [refreshTick, setRefreshTick] = useState(0);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-
-  const ctadState = useMemo(
-    () => getCtadState(binding),
-    [binding, refreshTick],
-  );
-  const bounds = useMemo(() => projectBounds(entry), [entry]);
 
   // ---- DiagramSpec compile + ELK layout (async) -----------------
   // Compile is sync and produces the spec list; layout is async.
-  // We re-run BOTH only when (ctadState, bounds) change. Layer-
-  // toggle and perspective changes do NOT trigger this effect —
-  // they read from positioned-diagrams already in state and apply
-  // a visibility-only filter at render time.
-  const specs = useMemo(
-    () => compileTrack3Specs(ctadState, bounds),
-    [ctadState, bounds],
-  );
+  // We re-run BOTH only when the architecture state changes.
+  // Layer-toggle and perspective changes do NOT trigger this
+  // effect — they read from positioned-diagrams already in state
+  // and apply a visibility-only filter at render time.
+  const specs = useMemo(() => compileTrack3Specs(archState), [archState]);
   const [positionedDiagrams, setPositionedDiagrams] = useState<
     readonly PositionedDiagram[]
   >([]);
@@ -281,7 +269,7 @@ function BoundShell({
     };
   }, [specs]);
 
-  const prefs = getPrefs(entry.adsId, entry.adsVersion);
+  const prefs = getArchitecturePrefs(architectureId);
 
   // Translate layer-toggle (CTAD layer ids) and perspective into
   // a single hidden-sections set passed to the renderers.
@@ -305,12 +293,6 @@ function BoundShell({
     return out;
   }, [prefs.hiddenLayers, prefs.perspective]);
 
-  // Isolate-on-click: when the user clicks a node, restrict
-  // visibility to that node + its neighbours (legacy semantics
-  // from `isolateAroundNode`). Computed in the shell so both
-  // renderers receive the SAME kept-id set and cannot diverge.
-  // null means no isolation active; renderers treat absence as
-  // "show everything visible after the section filter".
   const isolatedKeptIds = useMemo<ReadonlySet<string> | null>(() => {
     if (selectedNodeId === null) return null;
     const acwNodes: AcwNode[] = [];
@@ -336,9 +318,6 @@ function BoundShell({
       }
     }
     const result = isolateAroundNode(acwNodes, acwEdges, selectedNodeId);
-    // No-op (selection unknown / cleared) — `isolateAroundNode`
-    // returns the input unchanged in that case, which we surface
-    // as "no isolation" so the renderers don't fade everything.
     if (result.nodes === acwNodes) return null;
     return new Set(result.nodes.map((n) => n.id));
   }, [selectedNodeId, positionedDiagrams]);
@@ -349,9 +328,9 @@ function BoundShell({
   const handleClearFocus = useCallback(() => setSelectedNodeId(null), []);
   const handleCameraChange = useCallback(
     (cameraX: number, cameraY: number, cameraZoom: number) => {
-      setCamera(binding.adsId, binding.adsVersion, cameraX, cameraY, cameraZoom);
+      setArchitectureCamera(architectureId, cameraX, cameraY, cameraZoom);
     },
-    [binding.adsId, binding.adsVersion],
+    [architectureId],
   );
 
   const focusedLabel = useMemo(() => {
@@ -363,15 +342,11 @@ function BoundShell({
     return selectedNodeId;
   }, [selectedNodeId, positionedDiagrams]);
 
-  const handleRefresh = useCallback(() => {
-    setRefreshTick((t) => t + 1);
-  }, []);
-
   return (
     <>
-      <BindingPanel entry={entry} onRefresh={handleRefresh} />
+      <BindingPanel archState={archState} onRefresh={onRefresh} />
       <ControlsBar
-        binding={binding}
+        architectureId={architectureId}
         viewMode={prefs.viewMode}
         perspective={prefs.perspective}
         hiddenLayers={prefs.hiddenLayers}
@@ -386,20 +361,10 @@ function BoundShell({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {/* Render the canvas continuously across layout recomputes
-            * — replacing it with a placeholder would unmount the
-            * renderer and wipe the lerp/exit-lifecycle state in
-            * `MeshAnimator` (`prevTargetsRef`, `lastNodeSnapshotRef`,
-            * `exitingRef`), causing a hard cut on every CTAD refresh
-            * instead of the deterministic old→new interpolation the
-            * task contract requires. The pending state is surfaced
-            * as a non-destructive overlay on top of the canvas so
-            * the previous positioned set remains available as the
-            * lerp source. */}
           <div className="relative">
             {prefs.viewMode === "3d" ? (
               <Track3Canvas3D
-                key={`3d:${binding.adsId}:${binding.adsVersion}`}
+                key={`3d:${architectureId}`}
                 positionedDiagrams={positionedDiagrams}
                 hiddenSections={hiddenSections}
                 isolatedKeptIds={isolatedKeptIds}
@@ -445,10 +410,10 @@ function BoundShell({
 }
 
 function BindingPanel({
-  entry,
+  archState,
   onRefresh,
 }: {
-  entry: PortfolioEntry;
+  archState: CtadArchitectureStateExport;
   onRefresh: () => void;
 }) {
   return (
@@ -459,57 +424,45 @@ function BindingPanel({
       </CardHeader>
       <CardContent>
         <dl className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3 text-xs">
-          <div data-testid="track3-binding-project">
+          <div data-testid="track3-binding-name">
             <dt className="text-muted-foreground uppercase tracking-wider text-[10px]">
-              {LABELS.fieldProject}
+              {LABELS.fieldName}
             </dt>
-            <dd className="mt-0.5">{entry.projectName || "\u2014"}</dd>
+            <dd className="mt-0.5">{archState.architecture.architectureName || "\u2014"}</dd>
           </div>
-          <div data-testid="track3-binding-authority">
+          <div data-testid="track3-binding-archid">
             <dt className="text-muted-foreground uppercase tracking-wider text-[10px]">
-              {LABELS.fieldDecisionAuthority}
+              {LABELS.fieldArchitectureId}
             </dt>
-            <dd className="mt-0.5">{entry.approvingAuthority || "\u2014"}</dd>
+            <dd className="mt-0.5 font-mono">{archState.architecture.architectureId}</dd>
           </div>
-          <div data-testid="track3-binding-adsid">
+          <div className="col-span-2" data-testid="track3-binding-environments">
             <dt className="text-muted-foreground uppercase tracking-wider text-[10px]">
-              {LABELS.fieldAdsId}
-            </dt>
-            <dd className="mt-0.5 font-mono">{entry.adsId}</dd>
-          </div>
-          <div data-testid="track3-binding-adsversion">
-            <dt className="text-muted-foreground uppercase tracking-wider text-[10px]">
-              {LABELS.fieldAdsVersion}
-            </dt>
-            <dd className="mt-0.5 font-mono">{entry.adsVersion}</dd>
-          </div>
-          <div className="col-span-2" data-testid="track3-binding-layers">
-            <dt className="text-muted-foreground uppercase tracking-wider text-[10px]">
-              {LABELS.fieldLayersPresent}
+              {LABELS.fieldEnvironments}
             </dt>
             <dd className="mt-0.5">
-              {entry.layersPresent.length === 0
+              {archState.environments.length === 0
                 ? "\u2014"
-                : entry.layersPresent.join(", ")}
+                : archState.environments.map((e) => e.name).join(", ")}
             </dd>
           </div>
         </dl>
         <div className="mt-4 flex flex-wrap gap-2">
           <Link
-            href={`/ctad/${encodeURIComponent(entry.adsId)}/${encodeURIComponent(entry.adsVersion)}`}
+            href={`/ctad/arch/${encodeURIComponent(archState.architecture.architectureId)}`}
           >
-            <Button variant="outline" size="sm" data-testid="track3-open-ctad">
-              {LABELS.openCtad}
+            <Button variant="outline" size="sm" data-testid="track3-open-architecture">
+              {LABELS.openArchitecture}
             </Button>
           </Link>
           <Button
             variant="outline"
             size="sm"
-            data-testid="track3-refresh-ctad"
+            data-testid="track3-refresh-architecture"
             onClick={onRefresh}
           >
             <RefreshCcw className="w-3 h-3 mr-1" />
-            {LABELS.refreshFromCtad}
+            {LABELS.refreshFromArch}
           </Button>
         </div>
       </CardContent>
@@ -518,14 +471,14 @@ function BindingPanel({
 }
 
 function ControlsBar({
-  binding,
+  architectureId,
   viewMode,
   perspective,
   hiddenLayers,
   focusedLabel,
   onClearFocus,
 }: {
-  binding: Track3Binding;
+  architectureId: string;
   viewMode: Track3ViewMode;
   perspective: Track3Perspective;
   hiddenLayers: readonly string[];
@@ -549,7 +502,7 @@ function ControlsBar({
             <button
               type="button"
               data-testid="track3-mode-2d"
-              onClick={() => setViewMode(binding.adsId, binding.adsVersion, "2d")}
+              onClick={() => setArchitectureViewMode(architectureId, "2d")}
               className={`px-2 py-1 text-[11px] ${viewMode === "2d" ? "bg-primary/20 text-primary" : "text-muted-foreground"}`}
             >
               {LABELS.mode2D}
@@ -557,7 +510,7 @@ function ControlsBar({
             <button
               type="button"
               data-testid="track3-mode-3d"
-              onClick={() => setViewMode(binding.adsId, binding.adsVersion, "3d")}
+              onClick={() => setArchitectureViewMode(architectureId, "3d")}
               className={`px-2 py-1 text-[11px] ${viewMode === "3d" ? "bg-primary/20 text-primary" : "text-muted-foreground"}`}
             >
               {LABELS.mode3D}
@@ -573,9 +526,8 @@ function ControlsBar({
             data-testid="track3-perspective"
             value={perspective}
             onChange={(e) =>
-              setPerspective(
-                binding.adsId,
-                binding.adsVersion,
+              setArchitecturePerspective(
+                architectureId,
                 e.target.value as Track3Perspective,
               )
             }
@@ -605,7 +557,7 @@ function ControlsBar({
                   type="checkbox"
                   checked={active}
                   onChange={() =>
-                    toggleLayerHidden(binding.adsId, binding.adsVersion, l)
+                    toggleArchitectureLayerHidden(architectureId, l)
                   }
                 />
                 <span>{formatLayerLabel(l)}</span>
