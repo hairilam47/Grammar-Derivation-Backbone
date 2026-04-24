@@ -25,6 +25,12 @@ import Track3Shell from "@/pages/acw/track3/Track3Shell";
 // any forbidden surface (structured ADC export, computed lifecycle
 // field, override mechanism) is re-introduced.
 import "@/governance/togafContainmentInvariants.test-shape";
+// Phase 2 (decouple ADC ↔ architectures) — module-load side effect:
+// the architecture-attachment store carries its own schema-version
+// lock, idempotency / many-to-many / empty-leak probe, and
+// malformed-id rejection. Importing it here fails the bundle if
+// any of those guarantees regress.
+import "@/governance/architectureAttachmentInvariants.test-shape";
 // ACW Workspace Builder — module-load side effects: hook stubs and
 // the build-time isolation invariant that fails the bundle if any
 // ACW source file imports from the Decision Canvas decision pipeline.

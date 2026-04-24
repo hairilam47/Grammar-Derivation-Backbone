@@ -76,6 +76,12 @@ CTAD owns four `localStorage` documents, each per-binding and bumpable independe
 | `ctad.constraints.v1` | `ctad-constraints-1.0` | `ctad/ctadConstraintsStore.ts` | Annotation-only constraint contributions per param (allowed-option subsets, with source card id) |
 | `acw.track3.viewprefs.v1` | `acw-track3-viewprefs-1.0` | `acw/track3/track3ViewPrefs.ts` | View mode, perspective, hidden layers, camera (per binding) |
 
+A fifth document is owned by the governance plane and read by CTAD architecture mode (read-only on portfolio):
+
+| Key | Schema | Owned by | Contents |
+| --- | --- | --- | --- |
+| `adc.architecture-attachments.v1` | `att-1.0` | `governance/architectureAttachmentStore.ts` | Many-to-many links `{ linkId → { architectureId, adsId, adsVersion, attachedAt } }` between standalone CTAD architectures and frozen ADC decisions; idempotent attach, empty-leak rule on detach |
+
 ### Environments (first-class, Task #77)
 
 `EnvironmentDef = { id: string; name: string; kind: EnvironmentKind; hostingModel: HostingModel | null }`. Authored through the **EnvironmentsPanel** in `pages/ctad/CtadShell.tsx`. CRUD goes through `ctad/ctadStore.ts` (`addEnvironment`, `renameEnvironment`, `setEnvironmentKind`, `setEnvironmentHostingModel`, `removeEnvironment`). Validators reject duplicate ids, non-canonical identifier shape, and empty names. The legacy synthesis path (`synthesizeEnvironments.ts` + `env:default` fallback) is **deleted** — the `@workspace/diagramspec` compiler reads `ctadState.environments ?? []` directly and fans hosts out per environment when a non-empty list is present, otherwise emits a flat host listing under `parentId: null`.
@@ -105,7 +111,8 @@ Environments are a first-class CTAD concept but deliberately not a member of `CT
 The system uses **`*Invariants.test-shape.ts`** modules that run at module load (side-effect imported from `App.tsx`). A regression makes the bundle fail to start. Current invariant modules:
 
 - `ctad/ctadGrammarInvariants.test-shape.ts` — schema is exactly `ctad-1.2`; exactly five canonical sections in canonical order; every paramId unique; every option non-empty; environments vocabulary (`KIND`, `HOSTING`) frozen; live probe round-trip closes the empty-binding-leak path AND the parity empty-architecture-leak path; architecture identity helpers (regex, generator, slug extractor) round-trip; an architecture create→export→remove round-trip asserts no `adsId`/`adsVersion`/`binding` leakage into standalone exports.
-- `ctad/ctadIsolationInvariants.test-shape.ts` — CTAD module surface only imports `{ listEntries, type PortfolioEntry }` from the portfolio store; every other import form is rejected at module load.
+- `ctad/ctadIsolationInvariants.test-shape.ts` — CTAD module surface only imports `{ listEntries, getEntry, type PortfolioEntry }` from the portfolio store (read-only); every other import form is rejected at module load. The CTAD allowlist also permits `@/governance/architectureAttachmentStore` (Phase 2 — many-to-many ADC ↔ architecture links; the store mutates only its own document and carries no decision-pipeline coupling).
+- `governance/architectureAttachmentInvariants.test-shape.ts` — locks the attachment-store schema (`att-1.0`), runs an isolated-storage probe asserting attach idempotency, many-to-many independence, the empty-binding-leak detach rule, and rejection of malformed identifiers.
 - `acw/acwIsolationInvariants.test-shape.ts` — ACW workspace imports nothing from the decision pipeline.
 - `acw/acwGrammar*Invariants.test-shape.ts`, `acw3DStructureInvariants.test-shape.ts`, `acw3DForbiddenSemantics.test-shape.ts` — ACW grammar / structure / vocabulary locks.
 - `acw/track3/acwTrack3IsolationInvariants.test-shape.ts`, `…StructureInvariants…`, `…ForbiddenSemantics…`, `…RendererIsolationInvariants…`, `…FocusIsolationInvariants…`, `…ViewPrefsInvariants…` — Track 3 isolation, derivation purity, structural identity, forbidden semantics.

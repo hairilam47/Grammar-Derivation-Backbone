@@ -325,6 +325,23 @@ export function listEntries(): PortfolioEntry[] {
   return readAll();
 }
 
+// Read-only lookup by ADS identity. Returns null if no entry
+// matches. Added in Phase 2 to support the CTAD architecture-mode
+// "Attached ADCs" panel, which needs to resolve an attachment link
+// (carrying only `adsId` + `adsVersion`) to the project name and
+// decision date for display. CTAD's build-time isolation invariant
+// permits only `listEntries`, `getEntry`, and the `PortfolioEntry`
+// type — never any write helper.
+export function getEntry(
+  adsId: string,
+  adsVersion: string,
+): PortfolioEntry | null {
+  const all = readAll();
+  return (
+    all.find((e) => e.adsId === adsId && e.adsVersion === adsVersion) ?? null
+  );
+}
+
 export function addOrUpdateEntry(entry: PortfolioEntry): void {
   assertAllowedFields(entry);
   const all = readAll();

@@ -60,6 +60,19 @@ import {
   type CtadParamValue,
 } from "@/ctad/ctadStore";
 import { isValidArchitectureId } from "@/ctad/architectureIdentity";
+import {
+  getEntry,
+  listEntries,
+  type PortfolioEntry,
+} from "@/governance/portfolioStore";
+import {
+  attachADC,
+  detachADC,
+  getAttachedADCs,
+  getStoreVersion as getAttachmentStoreVersion,
+  subscribe as subscribeAttachments,
+  type ArchitectureAttachmentLink,
+} from "@/governance/architectureAttachmentStore";
 
 const LABELS = {
   brandLabel: "Architecture Decision Canvas",
@@ -108,6 +121,31 @@ const LABELS = {
     "Identifier starts with a lowercase letter and uses only letters, digits, or hyphens.",
   environmentDuplicateId: "Identifier already in use.",
   environmentEmptyName: "Name is required.",
+  attachedHeading: "Attached ADCs",
+  attachedHint:
+    "Frozen ADC decisions linked to this architecture. A link is a contractual reference; it does not gate exploration here, and the architecture remains editable independently.",
+  attachedEmpty: "No ADC decisions are linked to this architecture.",
+  attachButton: "Attach ADC",
+  attachModalHeading: "Pick an ADC decision to attach",
+  attachModalHint:
+    "Pick a frozen decision from the portfolio. Linking carries no authority — it only records the contractual reference.",
+  attachModalEmpty:
+    "The portfolio has no frozen decisions yet. Freeze a decision in the wizard, then return here to link it.",
+  attachModalCancel: "Cancel",
+  attachFilterPlaceholder: "Filter by project name",
+  attachLinkButton: "Link",
+  detachButton: "Detach",
+  detachConfirmHeading: "Detach this ADC link?",
+  detachConfirmBody:
+    "Detaching removes the contractual reference only. The architecture and its parameters are not affected.",
+  detachConfirmYes: "Yes, detach",
+  detachConfirmNo: "Keep link",
+  attachedRowProjectLabel: "Project",
+  attachedRowVersionLabel: "Version",
+  attachedRowDateLabel: "Decision date",
+  attachedRowAttachedAtLabel: "Linked",
+  attachedRowMissingEntry:
+    "ADC entry no longer present in portfolio (link kept).",
 } as const;
 
 assertAllCtadLanguage(Object.values(LABELS));
@@ -222,10 +260,310 @@ function ArchitectureBody({ architectureId }: { architectureId: string }) {
     <>
       <ArchitectureTitle doc={doc} />
       <IdentityPanel doc={doc} />
+      <AttachedAdcsPanel architectureId={architectureId} />
       <EnvironmentsPanel architectureId={architectureId} doc={doc} />
       <ParametersPanel architectureId={architectureId} doc={doc} />
       <CtadStatePreview state={exported} />
     </>
+  );
+}
+
+// Attached ADCs panel — Phase 2 (decouple ADC ↔ architectures).
+//
+// Renders only inside CTAD architecture mode (this shell). The
+// panel is intentionally absent from `CtadShell.tsx` (legacy
+// ADC-bound CTAD workspaces), where the binding itself is the
+// authoritative ADC reference and a many-to-many attachment would
+// be redundant.
+function useAttachmentVersion(): number {
+  return useSyncExternalStore(
+    subscribeAttachments,
+    getAttachmentStoreVersion,
+    () => 0,
+  );
+}
+
+function AttachedAdcsPanel({
+  architectureId,
+}: {
+  architectureId: string;
+}) {
+  useAttachmentVersion();
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [confirmDetachLinkId, setConfirmDetachLinkId] =
+    useState<string | null>(null);
+
+  const links = useMemo(
+    () => getAttachedADCs(architectureId),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [architectureId, getAttachmentStoreVersion()],
+  );
+
+  return (
+    <Card data-testid="ctad-arch-attached-adcs-panel">
+      <CardHeader>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-sm">{LABELS.attachedHeading}</CardTitle>
+            <CardDescription className="text-xs">
+              {LABELS.attachedHint}
+            </CardDescription>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setAttachOpen(true)}
+            data-testid="ctad-arch-attach-adc-open"
+          >
+            {LABELS.attachButton}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {links.length === 0 ? (
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="ctad-arch-attached-empty"
+          >
+            {LABELS.attachedEmpty}
+          </p>
+        ) : (
+          <ul className="space-y-2" data-testid="ctad-arch-attached-list">
+            {links.map((link) => (
+              <AttachedRow
+                key={link.linkId}
+                link={link}
+                onDetach={() => setConfirmDetachLinkId(link.linkId)}
+              />
+            ))}
+          </ul>
+        )}
+      </CardContent>
+      {attachOpen && (
+        <AttachAdcModal
+          architectureId={architectureId}
+          existingLinks={links}
+          onClose={() => setAttachOpen(false)}
+        />
+      )}
+      {confirmDetachLinkId !== null && (
+        <DetachConfirmModal
+          linkId={confirmDetachLinkId}
+          onClose={() => setConfirmDetachLinkId(null)}
+        />
+      )}
+    </Card>
+  );
+}
+
+function AttachedRow({
+  link,
+  onDetach,
+}: {
+  link: ArchitectureAttachmentLink;
+  onDetach: () => void;
+}) {
+  const entry = useMemo(
+    () => getEntry(link.adsId, link.adsVersion),
+    [link.adsId, link.adsVersion],
+  );
+  return (
+    <li
+      className="border border-border rounded p-2 flex items-start justify-between gap-3"
+      data-testid={`ctad-arch-attached-row-${link.linkId}`}
+    >
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1 text-xs flex-1">
+        <Field
+          label={LABELS.attachedRowProjectLabel}
+          value={entry ? entry.projectName : link.adsId}
+        />
+        <Field
+          label={LABELS.attachedRowVersionLabel}
+          value={`v${link.adsVersion}`}
+        />
+        <Field
+          label={LABELS.attachedRowDateLabel}
+          value={entry ? entry.decisionDate : "—"}
+        />
+        <Field
+          label={LABELS.attachedRowAttachedAtLabel}
+          value={formatDate(link.attachedAt)}
+        />
+        {entry === null && (
+          <p className="col-span-full text-[10px] text-muted-foreground italic">
+            {LABELS.attachedRowMissingEntry}
+          </p>
+        )}
+      </div>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={onDetach}
+        data-testid={`ctad-arch-attached-detach-${link.linkId}`}
+      >
+        {LABELS.detachButton}
+      </Button>
+    </li>
+  );
+}
+
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-muted-foreground uppercase tracking-wider text-[10px]">
+        {label}
+      </dt>
+      <dd className="mt-0.5 break-all">{value}</dd>
+    </div>
+  );
+}
+
+function AttachAdcModal({
+  architectureId,
+  existingLinks,
+  onClose,
+}: {
+  architectureId: string;
+  existingLinks: readonly ArchitectureAttachmentLink[];
+  onClose: () => void;
+}) {
+  const [filter, setFilter] = useState("");
+  const entries = useMemo<PortfolioEntry[]>(() => listEntries(), []);
+  const attachedKeys = useMemo(
+    () => new Set(existingLinks.map((l) => `${l.adsId}@${l.adsVersion}`)),
+    [existingLinks],
+  );
+  const filtered = useMemo(() => {
+    const f = filter.trim().toLowerCase();
+    if (f.length === 0) return entries;
+    return entries.filter((e) => e.projectName.toLowerCase().includes(f));
+  }, [entries, filter]);
+
+  function link(entry: PortfolioEntry) {
+    attachADC(architectureId, entry.adsId, entry.adsVersion);
+    onClose();
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-20 bg-background/80 backdrop-blur flex items-center justify-center p-4"
+      data-testid="ctad-arch-attach-modal"
+    >
+      <Card className="w-full max-w-2xl max-h-[80vh] flex flex-col">
+        <CardHeader>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <CardTitle className="text-sm">
+                {LABELS.attachModalHeading}
+              </CardTitle>
+              <CardDescription className="text-xs">
+                {LABELS.attachModalHint}
+              </CardDescription>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onClose}
+              data-testid="ctad-arch-attach-modal-close"
+              aria-label={LABELS.attachModalCancel}
+            >
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="flex-1 overflow-y-auto space-y-3">
+          <input
+            className="w-full bg-background border border-border rounded px-2 py-1 text-xs"
+            placeholder={LABELS.attachFilterPlaceholder}
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            data-testid="ctad-arch-attach-modal-filter"
+          />
+          {entries.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              {LABELS.attachModalEmpty}
+            </p>
+          ) : (
+            <ul className="space-y-1">
+              {filtered.map((e) => {
+                const k = `${e.adsId}@${e.adsVersion}`;
+                const already = attachedKeys.has(k);
+                return (
+                  <li
+                    key={k}
+                    className="border border-border rounded p-2 flex items-center justify-between gap-3"
+                    data-testid={`ctad-arch-attach-candidate-${e.adsId}-${e.adsVersion}`}
+                  >
+                    <div className="text-xs flex-1">
+                      <div className="font-semibold">{e.projectName}</div>
+                      <div className="text-muted-foreground text-[10px]">
+                        {e.adsId} · v{e.adsVersion} · {e.decisionDate}
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => link(e)}
+                      disabled={already}
+                      data-testid={`ctad-arch-attach-link-${e.adsId}-${e.adsVersion}`}
+                    >
+                      {LABELS.attachLinkButton}
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function DetachConfirmModal({
+  linkId,
+  onClose,
+}: {
+  linkId: string;
+  onClose: () => void;
+}) {
+  function doDetach() {
+    detachADC(linkId);
+    onClose();
+  }
+  return (
+    <div
+      className="fixed inset-0 z-20 bg-background/80 backdrop-blur flex items-center justify-center p-4"
+      data-testid="ctad-arch-detach-modal"
+    >
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <CardTitle className="text-sm">
+            {LABELS.detachConfirmHeading}
+          </CardTitle>
+          <CardDescription className="text-xs">
+            {LABELS.detachConfirmBody}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex justify-end gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onClose}
+            data-testid="ctad-arch-detach-cancel"
+          >
+            {LABELS.detachConfirmNo}
+          </Button>
+          <Button
+            size="sm"
+            onClick={doDetach}
+            data-testid="ctad-arch-detach-yes"
+          >
+            {LABELS.detachConfirmYes}
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 

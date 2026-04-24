@@ -18,7 +18,14 @@ import {
   listEntries,
   type PortfolioEntry,
 } from "@/governance/portfolioStore";
+import {
+  getArchitecturesForADC,
+  getStoreVersion as getAttachmentStoreVersion,
+  subscribe as subscribeAttachments,
+} from "@/governance/architectureAttachmentStore";
+import { getArchitectureDoc } from "@/ctad/ctadStore";
 import { assertAllGovernanceLanguage } from "@/governance/staticTextGuard";
+import { useSyncExternalStore } from "react";
 
 // HC6 governance language guard: every static string the portfolio page
 // renders is registered here. The guard executes at module load and throws
@@ -45,6 +52,10 @@ const PORTFOLIO_STATIC_TEXT = {
   noRiskCategories: "No risk categories present across the portfolio.",
   indicatorHeading: "Indicator Distribution",
   filtersNoMatch: "No decisions match the current filters.",
+  attachmentsHeader: "Linked Architectures",
+  attachmentsTooltipPrefix: "Architecture workspaces linked to this decision: ",
+  attachmentsTooltipNone:
+    "No architecture workspaces are currently linked to this decision.",
 };
 
 assertAllGovernanceLanguage(Object.values(PORTFOLIO_STATIC_TEXT));
@@ -309,6 +320,7 @@ function PortfolioTable(props: {
                 <SortableHeader label="Op. Overhead" col="operationalOverheadScore" {...props} />
                 <SortableHeader label="Change Cost Later" col="changeCostLaterScore" {...props} />
                 <SortableHeader label="Highest Risk" col="highestRiskSeverity" {...props} />
+                <th className="py-2 px-2">{PORTFOLIO_STATIC_TEXT.attachmentsHeader}</th>
                 <th className="py-2 px-2">Read-only</th>
               </tr>
             </thead>
@@ -340,6 +352,9 @@ function PortfolioTable(props: {
                     >
                       {e.highestRiskSeverity}
                     </span>
+                  </td>
+                  <td className="py-2 px-2">
+                    <AttachmentBadge adsId={e.adsId} adsVersion={e.adsVersion} />
                   </td>
                   <td className="py-2 px-2">
                     <div className="flex gap-1">
@@ -377,7 +392,7 @@ function PortfolioTable(props: {
               ))}
               {props.entries.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="py-6 text-center text-muted-foreground text-xs">
+                  <td colSpan={11} className="py-6 text-center text-muted-foreground text-xs">
                     {PORTFOLIO_STATIC_TEXT.filtersNoMatch}
                   </td>
                 </tr>
@@ -633,3 +648,41 @@ function bucketise(values: number[]): { label: string; count: number }[] {
   }));
 }
 
+
+function AttachmentBadge({
+  adsId,
+  adsVersion,
+}: {
+  adsId: string;
+  adsVersion: string;
+}) {
+  // Re-render when the attachment store changes so the count stays
+  // live across attach / detach actions in another tab.
+  useSyncExternalStore(
+    subscribeAttachments,
+    getAttachmentStoreVersion,
+    () => 0,
+  );
+  const links = getArchitecturesForADC(adsId, adsVersion);
+  // Spec (task-79): tooltip lists attached architecture **names**, not ids.
+  // Fall back to the id if the architecture document was deleted out from
+  // under a stale link (the empty-leak rule prevents this on detach, but a
+  // direct CTAD `removeArchitecture` could still orphan one).
+  const names = links.map((l) => {
+    const doc = getArchitectureDoc(l.architectureId);
+    return doc ? doc.name : l.architectureId;
+  });
+  const tooltip =
+    links.length === 0
+      ? PORTFOLIO_STATIC_TEXT.attachmentsTooltipNone
+      : PORTFOLIO_STATIC_TEXT.attachmentsTooltipPrefix + names.join(", ");
+  return (
+    <span
+      className="inline-block px-2 py-0.5 border rounded text-[10px] tabular-nums bg-muted/40 border-border"
+      title={tooltip}
+      data-testid={`attachment-badge-${adsId}-${adsVersion}`}
+    >
+      {links.length}
+    </span>
+  );
+}

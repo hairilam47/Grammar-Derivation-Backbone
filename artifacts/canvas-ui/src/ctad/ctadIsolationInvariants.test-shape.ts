@@ -87,8 +87,15 @@ const ALLOWED_IMPORT_PREFIXES: readonly string[] = [
   "@/governance/staticTextGuard",
   // Portfolio store: read-only access only. The allowlist permits
   // the import path; the named-import scan below ensures CTAD
-  // imports only the read symbols (listEntries, PortfolioEntry).
+  // imports only the read symbols (listEntries, getEntry, PortfolioEntry).
   "@/governance/portfolioStore",
+  // Architecture-attachment store (Phase 2 — many-to-many ADC ↔
+  // architecture links). Owns its own localStorage document and
+  // mutates nothing else (no portfolio entries, signals, ADS, ECP,
+  // or CTAD store). Linking carries no authority — it only records
+  // a contractual reference — so this dependency does not introduce
+  // any decision-pipeline coupling.
+  "@/governance/architectureAttachmentStore",
 ];
 
 // Read-only named-import allowlist for the portfolio store. CTAD
@@ -96,6 +103,7 @@ const ALLOWED_IMPORT_PREFIXES: readonly string[] = [
 // other named import from the portfolio store fails the bundle.
 const PORTFOLIO_STORE_READ_ONLY_NAMED_IMPORTS: readonly string[] = [
   "listEntries",
+  "getEntry",
   "PortfolioEntry",
 ];
 
@@ -270,7 +278,7 @@ function selfTestPortfolioReadOnlyScan(): void {
     }
   }
   // Positive control: an approved import shape must NOT throw.
-  const ok = `import { listEntries, type PortfolioEntry } from "@/governance/portfolioStore";`;
+  const ok = `import { listEntries, getEntry, type PortfolioEntry } from "@/governance/portfolioStore";`;
   try {
     assertNoForbiddenCtadImports({ "/src/ctad/__synthetic__.ts": ok });
   } catch (e) {
