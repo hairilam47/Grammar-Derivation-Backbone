@@ -1,0 +1,142 @@
+Task: Make the Architecture Design Canvas Full‑Page
+
+### Problem
+Currently, the canvas for architecture diagrams (especially the Track 3 derived view at `/acw/derived/:adsId/:adsVersion`) is rendered inside a constrained panel, leaving a large portion of the screen for textual info that is rarely needed while working on the diagram. This makes the visual workspace too small for serious EA/SA work.
+
+### Goal
+Make the diagram canvas use the **entire browser window** (`position: fixed; inset: 0`). All panels (binding info, view controls, refresh button, stratum indicator) must become **transient overlays** – absolutely positioned, semi‑transparent, non‑intrusive – like the toolbar in Figma or Google Maps.
+
+### Scope
+- Primary: **Track 3 derived view** (`/acw/derived/*`)
+- Stretch: Apply the same full‑screen pattern to the **ACW authored workspace** lenses that embed a canvas (System Landscape, Deployment) if time permits.
+
+---
+
+## Implementation Steps
+
+### 1. Modify `Track3Shell.tsx` (derived view shell)
+
+**Location:** `artifacts/canvas-ui/src/pages/acw/track3/Track3Shell.tsx`
+
+**Changes:**
+
+- Introduce a state variable `isFullscreen` defaulting to `true`.
+- Conditionally apply a class on the canvas container:
+  - Fullscreen: `fixed inset-0 z-10`
+  - Normal (optional fallback): `flex-1` (existing layout)
+- Convert the current “left panel” area (ADC binding + controls) into a floating overlay (`<Track3FloatingOverlay />`).
+- The canvas (`<Track3Canvas2D>` or `<Track3Canvas3D>`) should fill its parent div completely.
+- The “Z AXIS = STRATUM …%” indicator should become a small badge in the bottom‑center or bottom‑left of the viewport.
+
+**Detailed changes:**
+
+```tsx
+// At top of component
+const [isFullscreen, setIsFullscreen] = useState(true);
+
+// Container div
+<div className={isFullscreen 
+  ? "fixed inset-0 z-10" 
+  : "flex-1 h-full"}
+  onKeyDown={(e) => e.key === 'Escape' && setIsFullscreen(false)}
+  tabIndex={0}
+>
+  {/* Canvas fills the container */}
+  <div className="w-full h-full">
+    {viewMode === '3d' ? <Track3Canvas3D ... /> : <Track3Canvas2D ... />}
+  </div>
+
+  {/* Overlays */}
+  <Track3FloatingOverlay
+    bindingInfo={...}
+    viewMode={viewMode}
+    onToggleFullscreen={() => setIsFullscreen(!isFullscreen)}
+    onRefresh={handleRefresh}
+    // other controls props
+  />
+</div>
+```
+
+2. Create Track3FloatingOverlay.tsx
+
+Location: artifacts/canvas-ui/src/components/acw/track3/Track3FloatingOverlay.tsx
+
+This component renders all informational panels as floating elements. Use Tailwind’s absolute positioning.
+
+Structure:
+
+· Top‑left corner (or a small bar):
+  · Architecture name (binding ID, truncated if long)
+  · “Refresh from CTAD” button (icon + tooltip)
+· Bottom‑right corner:
+  · View mode toggle (2D / 3D) as a pill selector
+  · Perspective selector (dropdown)
+  · Layer toggles (as a gear icon that opens a popover)
+· Bottom‑center:
+  · Stratum/zoom indicator as a small pill with current depth.
+
+Styling:
+
+· Use bg-white/80 backdrop-blur-sm rounded-lg p-2 shadow for the floating panels.
+· Use pointer-events-auto for interactive elements but consider pointer-events-none on the overlay container so it doesn’t block canvas interaction.
+
+Example snippet:
+
+```tsx
+<div className="absolute top-4 left-4 flex flex-col gap-2 pointer-events-none">
+  <div className="pointer-events-auto bg-white/80 backdrop-blur-sm rounded-lg p-3 shadow">
+    <h3 className="text-sm font-medium">{bindingKey}</h3>
+    <button onClick={onRefresh} className="text-xs ...">↻ Refresh from CTAD</button>
+  </div>
+</div>
+
+<div className="absolute bottom-4 right-4 flex gap-2 pointer-events-none">
+  <div className="pointer-events-auto bg-white/80 backdrop-blur-sm rounded-lg p-2 shadow flex gap-2">
+    {/* Toggle 2D/3D */}
+    {/* Perspective selector */}
+    {/* Layer toggles popover */}
+  </div>
+</div>
+
+<div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 pointer-events-none">
+  <div className="bg-black/60 text-white text-xs rounded-full px-3 py-1">
+    Z AXIS = {currentStratum} ({percentage}%)
+  </div>
+</div>
+```
+
+3. Adjust Canvas Components
+
+Files: Track3Canvas2D.tsx and Track3Canvas3D.tsx
+
+No major changes required. They already stretch to fill their container if given width: 100% and height: 100%. Ensure they are not explicitly constrained by parent height. If using R3F’s <Canvas>, it should be <Canvas style={{ width: '100%', height: '100%' }}>. The orthographic or perspective camera settings remain unchanged.
+
+4. Persist Fullscreen Preference
+
+File: artifacts/canvas-ui/src/acw/track3/track3ViewPrefs.ts
+
+Add a field isFullscreen: boolean to the per‑binding view preferences (schema version can stay acw-track3-viewprefs-1.0 with this field optional). Load and save it so the user’s preference is remembered.
+
+5. (Optional) Apply to ACW Authored Workspace
+
+In WorkspaceShell.tsx, you can use the same overlay pattern for the System Landscape and Deployment lenses. Replace the InteractiveCanvas2D or LensCanvas container with a full‑screen canvas and move the AuthoringPanel and LiveStructurePanel into floating overlays. This can be done in a separate step.
+
+---
+
+Important Considerations
+
+· Keyboard shortcut: Press Esc to exit fullscreen (or toggle).
+· Mouse interaction: Ensure camera controls (drag to rotate, right‑drag to pan, scroll to zoom) work without interference from overlays. Use pointer-events-none on the overlay wrapper and pointer-events-auto on interactive children.
+· 3D Canvas Performance: In fullscreen, the Three.js renderer will repaint the entire viewport. If performance is a concern, consider a lower pixel ratio when not focused (R3F already handles this).
+· Existing functionality: All existing controls (view mode, perspective, layer toggles) must remain functional and accessible.
+· Responsive: The canvas must resize with the window. R3F’s <Canvas> does this automatically if the parent is 100vw/100vh.
+
+---
+
+Acceptance Criteria
+
+· On opening a derived diagram, the canvas fills the entire browser window.
+· All textual info and controls appear as small floating overlays that do not obstruct the diagram.
+· The “Z AXIS = STRATUM” indicator is visible as a small pill.
+· Pressing Esc exits fullscreen mode (optional).
+· Camera interactions (drag/rotate/pan/zoom) work perfectly in fullscreen.
