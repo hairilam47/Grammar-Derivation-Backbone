@@ -51,6 +51,7 @@ import {
   getArchitectureDoc,
   getStoreVersion,
   removeArchitectureEnvironment,
+  renameArchitecture,
   setArchitectureParam,
   subscribe,
   updateArchitectureEnvironment,
@@ -62,9 +63,11 @@ import { isValidArchitectureId } from "@/ctad/architectureIdentity";
 
 const LABELS = {
   brandLabel: "Architecture Decision Canvas",
-  pageTitle: "Architecture exploration",
+  pageTitleFallback: "Architecture exploration",
   pageSubtitle:
     "Standalone technology exploration. Selections here are not anchored to any frozen ADC decision.",
+  titleEditAria: "Edit architecture name",
+  titleEditEmptyError: "Name is required.",
   identityHeading: "Architecture identity",
   identityHint:
     "This workspace exists independently of ADC. Identity fields are local to CTAD only.",
@@ -144,17 +147,18 @@ export default function CtadArchitectureShell() {
       </header>
 
       <main className="flex-1 container max-w-6xl mx-auto px-4 py-8 space-y-6">
-        <div className="space-y-1" data-testid="ctad-arch-shell-heading">
-          <h1 className="text-xl font-bold tracking-tight">
-            {LABELS.pageTitle}
-          </h1>
-          <p className="text-xs text-muted-foreground">
-            {LABELS.pageSubtitle}
-          </p>
-        </div>
-
         {!isValidArchitectureId(architectureId) ? (
-          <NotFoundCard />
+          <>
+            <div className="space-y-1" data-testid="ctad-arch-shell-heading">
+              <h1 className="text-xl font-bold tracking-tight">
+                {LABELS.pageTitleFallback}
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                {LABELS.pageSubtitle}
+              </p>
+            </div>
+            <NotFoundCard />
+          </>
         ) : (
           <ArchitectureBody architectureId={architectureId} />
         )}
@@ -199,14 +203,118 @@ function ArchitectureBody({ architectureId }: { architectureId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [architectureId, getStoreVersion()],
   );
-  if (doc === null || exported === null) return <NotFoundCard />;
+  if (doc === null || exported === null) {
+    return (
+      <>
+        <div className="space-y-1" data-testid="ctad-arch-shell-heading">
+          <h1 className="text-xl font-bold tracking-tight">
+            {LABELS.pageTitleFallback}
+          </h1>
+          <p className="text-xs text-muted-foreground">
+            {LABELS.pageSubtitle}
+          </p>
+        </div>
+        <NotFoundCard />
+      </>
+    );
+  }
   return (
     <>
+      <ArchitectureTitle doc={doc} />
       <IdentityPanel doc={doc} />
       <EnvironmentsPanel architectureId={architectureId} doc={doc} />
       <ParametersPanel architectureId={architectureId} doc={doc} />
       <CtadStatePreview state={exported} />
     </>
+  );
+}
+
+// Editable page title — clicking the title swaps in an inline
+// input. Pressing Enter commits via renameArchitecture; Escape
+// cancels. The title doubles as the architecture-mode H1 (spec:
+// "show the architecture name (editable) as the title").
+function ArchitectureTitle({ doc }: { doc: CtadArchitectureDoc }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(doc.architectureName);
+  const [error, setError] = useState<string | null>(null);
+
+  function start() {
+    setDraft(doc.architectureName);
+    setError(null);
+    setEditing(true);
+  }
+  function cancel() {
+    setEditing(false);
+    setError(null);
+  }
+  function commit() {
+    const trimmed = draft.trim();
+    if (trimmed.length === 0) {
+      setError(LABELS.titleEditEmptyError);
+      return;
+    }
+    try {
+      renameArchitecture(doc.architectureId, trimmed);
+      setEditing(false);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  return (
+    <div className="space-y-1" data-testid="ctad-arch-shell-heading">
+      {editing ? (
+        <div className="flex items-center gap-2">
+          <input
+            autoFocus
+            className="bg-background border border-border rounded px-2 py-1 text-xl font-bold tracking-tight w-full max-w-lg"
+            value={draft}
+            aria-label={LABELS.titleEditAria}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commit();
+              else if (e.key === "Escape") cancel();
+            }}
+            data-testid="ctad-arch-title-input"
+          />
+          <Button
+            size="sm"
+            onClick={commit}
+            data-testid="ctad-arch-title-save"
+          >
+            {LABELS.environmentSaveButton}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={cancel}
+            data-testid="ctad-arch-title-cancel"
+          >
+            {LABELS.environmentCancelButton}
+          </Button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={start}
+          className="text-xl font-bold tracking-tight text-left hover:underline"
+          aria-label={LABELS.titleEditAria}
+          data-testid="ctad-arch-title"
+        >
+          {doc.architectureName}
+        </button>
+      )}
+      <p className="text-xs text-muted-foreground">{LABELS.pageSubtitle}</p>
+      {error !== null && (
+        <p
+          className="text-xs text-destructive"
+          data-testid="ctad-arch-title-error"
+        >
+          {error}
+        </p>
+      )}
+    </div>
   );
 }
 

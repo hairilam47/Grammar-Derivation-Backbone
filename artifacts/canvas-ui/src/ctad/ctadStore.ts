@@ -620,13 +620,16 @@ export function setArchitectureParam(
   } else {
     params[paramId] = value;
   }
-  // NOTE: unlike bindings, architecture entries have an explicit
-  // lifecycle (createArchitecture / removeArchitecture). We
-  // therefore deliberately do NOT apply an empty-leak GC rule
-  // here — a named architecture with no selections is a legitimate
-  // intermediate state (a freshly-created workspace looks exactly
-  // like that) and must persist until removeArchitecture is
-  // explicitly called.
+  // Empty-architecture-leak rule mirrors the empty-binding rule:
+  // clearing the LAST param AND having no environments removes the
+  // architecture entry. The rule only triggers on a real transition
+  // (a no-op clear above is short-circuited and never reaches this
+  // point), so a freshly-created workspace with no selections still
+  // persists until a real param/env edit collapses it back to empty.
+  if (Object.keys(params).length === 0 && prev.environments.length === 0) {
+    writeArchitectureDoc(null, id);
+    return;
+  }
   writeArchitectureDoc(
     Object.freeze({
       ...prev,
@@ -657,13 +660,42 @@ function writeArchitectureEnvironments(
       `CTAD store: architecture "${id}" does not exist. Call createArchitecture first.`,
     );
   }
-  // Same lifecycle rationale as setArchitectureParam: architecture
-  // entries are not GC'd on emptiness; only removeArchitecture
-  // deletes them.
+  // Empty-architecture-leak parity with setArchitectureParam:
+  // removing the LAST environment AND having no params removes the
+  // architecture entry.
+  if (next.length === 0 && Object.keys(prev.params).length === 0) {
+    writeArchitectureDoc(null, id);
+    return;
+  }
   writeArchitectureDoc(
     Object.freeze({
       ...prev,
       environments: Object.freeze(next.map((e) => Object.freeze({ ...e }))),
+      updatedAt: new Date().toISOString(),
+    }),
+    id,
+  );
+}
+
+// Rename (also serves as the editable-title write path in the
+// architecture shell). Updates `updatedAt` so the listing's
+// "Last edited" column reflects the change.
+export function renameArchitecture(id: string, newName: string): void {
+  const trimmed = newName.trim();
+  if (trimmed.length === 0) {
+    throw new Error("CTAD store: architecture name must be non-empty.");
+  }
+  const prev = getArchitectureDoc(id);
+  if (prev === null) {
+    throw new Error(
+      `CTAD store: architecture "${id}" does not exist.`,
+    );
+  }
+  if (prev.architectureName === trimmed) return;
+  writeArchitectureDoc(
+    Object.freeze({
+      ...prev,
+      architectureName: trimmed,
       updatedAt: new Date().toISOString(),
     }),
     id,

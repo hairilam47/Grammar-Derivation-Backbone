@@ -45,6 +45,23 @@ import {
 
 const PREFIX = "CTAD v1 grammar invariant violation";
 
+// Helper: pick the first single-valued parameter and a permitted
+// option for it. Used by the architecture leak-rule probe so we
+// don't depend on a specific parameter id existing in any one
+// section.
+function findFirstSettableParam(): { id: string; value: string } {
+  for (const section of CTAD_SECTIONS) {
+    for (const p of section.parameters) {
+      if (p.kind === "single" && p.options.length > 0) {
+        return { id: p.id, value: p.options[0] };
+      }
+    }
+  }
+  throw new Error(
+    `${PREFIX}: no single-valued parameter exists; the leak-rule probe needs at least one.`,
+  );
+}
+
 // (0) Registry shape: frozen and well-formed.
 if (!Object.isFrozen(CTAD_REGISTRY)) {
   throw new Error(`${PREFIX}: CTAD_REGISTRY is not frozen.`);
@@ -346,14 +363,34 @@ if (ENVIRONMENT_HOSTING_MODEL_OPTIONS.length === 0) {
         `${PREFIX}: empty architecture exported environments=${JSON.stringify(exported.environments)}, expected [].`,
       );
     }
-    // Architecture entries have an explicit lifecycle: a freshly
-    // created workspace with no params and no envs must persist.
-    // Clearing an already-null param is a no-op and must not delete
-    // the entry; only removeArchitecture removes it.
+    // (a) No-op short-circuit: clearing an already-unset param on a
+    // freshly-created empty architecture must NOT trip the empty-leak
+    // rule. Without this guard the entry would self-destruct on
+    // create + first navigation.
     setArchitectureParam(created.architectureId, ALL_PARAM_IDS[0], null);
     if (getArchitectureDoc(created.architectureId) === null) {
       throw new Error(
-        `${PREFIX}: setting an already-null param deleted an empty architecture; architectures must persist until removeArchitecture is called.`,
+        `${PREFIX}: a no-op clear on an empty architecture deleted the entry; the no-op short-circuit is missing.`,
+      );
+    }
+    // (b) Empty-architecture-leak rule (parity with bindings):
+    // setting then clearing the last param, with no environments
+    // declared, must remove the entry.
+    const firstParam = findFirstSettableParam();
+    setArchitectureParam(
+      created.architectureId,
+      firstParam.id,
+      firstParam.value,
+    );
+    if (getArchitectureDoc(created.architectureId) === null) {
+      throw new Error(
+        `${PREFIX}: setArchitectureParam to a real value deleted the entry; this should only happen on a real empty-leak transition.`,
+      );
+    }
+    setArchitectureParam(created.architectureId, firstParam.id, null);
+    if (getArchitectureDoc(created.architectureId) !== null) {
+      throw new Error(
+        `${PREFIX}: empty-architecture-leak rule did not fire: clearing the last param on an architecture with no envs must remove the entry.`,
       );
     }
   } finally {

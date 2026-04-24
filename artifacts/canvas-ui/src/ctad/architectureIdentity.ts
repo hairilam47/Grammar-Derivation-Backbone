@@ -24,6 +24,23 @@ export function isValidArchitectureId(id: unknown): id is string {
   return typeof id === "string" && ARCHITECTURE_ID_REGEX.test(id);
 }
 
+// Spec-aligned alias. The store and the invariant probe use
+// `isValidArchitectureId` (the type-guard form); `validateArchitectureId`
+// is the name documented in the Phase 1 spec and is preserved as a
+// non-type-guard wrapper for callsites that just want a boolean.
+export function validateArchitectureId(id: unknown): boolean {
+  return isValidArchitectureId(id);
+}
+
+// Extracts the slug portion of a well-formed architecture id by
+// dropping the trailing 8-hex suffix. Returns null if the input is
+// not a valid architecture id, so callers cannot accidentally
+// derive a fake slug from a malformed value.
+export function extractUserSlug(id: string): string | null {
+  if (!isValidArchitectureId(id)) return null;
+  return id.slice(0, id.length - 9); // strip "-XXXXXXXX"
+}
+
 export function slugifyArchitectureName(name: string): string {
   const lower = name.toLowerCase();
   const replaced = lower.replace(/[^a-z0-9]+/g, "-");

@@ -1,5 +1,5 @@
 import { useMemo, useState, useSyncExternalStore } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Layers } from "lucide-react";
 import {
   listEntries,
@@ -176,6 +176,7 @@ function ArchitectureTab({
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [, setLocation] = useLocation();
 
   function submit() {
     const trimmed = name.trim();
@@ -184,9 +185,12 @@ function ArchitectureTab({
       return;
     }
     try {
-      createArchitecture(trimmed);
+      const created = createArchitecture(trimmed);
       setName("");
       setError(null);
+      // Spec: New Architecture creates the entry and navigates to
+      // the freshly minted workspace immediately.
+      setLocation(`/ctad/arch/${encodeURIComponent(created.architectureId)}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
