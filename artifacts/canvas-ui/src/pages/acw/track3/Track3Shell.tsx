@@ -10,7 +10,9 @@
 // so visibility cannot diverge between them.
 //
 // Phase 4 (Task #81): the canvas now defaults to a full-page
-// layout (`fixed inset-0 z-30`) with a `Track3FloatingOverlay`
+// layout (`fixed inset-0 z-0`, intentionally below the route's
+// sticky `z-10` header — see locked deviation note inline) with
+// a `Track3FloatingOverlay`
 // rendering all controls as absolutely-positioned quadrants. The
 // `isFullscreen` preference is per-architecture and persisted
 // via the v1.1 view-prefs schema. Pressing `Escape` toggles
@@ -497,7 +499,7 @@ function BoundShell({
           />
           {layoutPending && (
             <div
-              className="absolute top-3 right-3 text-[10px] uppercase tracking-widest text-muted-foreground italic px-2 py-1 rounded-md bg-card/80 border border-border/40 backdrop-blur z-40"
+              className="absolute top-16 right-3 text-[10px] uppercase tracking-widest text-muted-foreground italic px-2 py-1 rounded-md bg-card/80 border border-border/40 backdrop-blur z-40"
               data-testid="track3-layout-pending"
             >
               {LABELS.layoutPending}

@@ -110,7 +110,7 @@ export function Track3FloatingOverlay(props: Track3FloatingOverlayProps) {
       {/* Top-left quadrant: architecture identity + refresh +
           exit-fullscreen. */}
       <div
-        className="pointer-events-none absolute top-3 left-3 flex flex-col gap-2 max-w-[60vw]"
+        className="pointer-events-none absolute top-16 left-3 flex flex-col gap-2 max-w-[60vw]"
         data-testid="track3-overlay-topleft"
       >
         <div className="pointer-events-none inline-flex items-center gap-2 rounded-md border border-border/50 bg-card/80 backdrop-blur px-3 py-1.5 text-xs">
