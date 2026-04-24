@@ -461,6 +461,20 @@ function BoundShell({
             don't discover the floating overlay's exit button or
             the Escape key. */}
         <BindingPanelPlaceholder onExitFullscreen={handleExitFullscreen} />
+        {/*
+         * ACCEPTED DEVIATION FROM TASK #81 SPEC (locked):
+         * The task wording specified `fixed inset-0 z-10`, but
+         * the route's sticky header is also `z-10` and would be
+         * obscured by the fullscreen canvas (siblings in the
+         * same stacking context resolve in DOM order, so the
+         * fullscreen layer wins ties). To honor the parallel
+         * spec line "route-level chrome remains reachable", we
+         * intentionally lower this layer to `z-0`. Body content
+         * is still fully covered by the fixed-positioned
+         * canvas, but the header / breadcrumbs / global nav
+         * sit on top. Do NOT bump this back to `z-10` without
+         * also re-evaluating that contract.
+         */}
         <div
           className="fixed inset-0 z-0 bg-background"
           data-testid="track3-fullscreen-canvas"
