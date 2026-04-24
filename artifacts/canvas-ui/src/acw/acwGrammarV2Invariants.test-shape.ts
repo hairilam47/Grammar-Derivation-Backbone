@@ -242,6 +242,84 @@ if (ACW_SCHEMA_VERSION !== "acw-1.0") {
   );
 }
 
+// (7) Phase 5 — read-validator accepts the optional `boundParam`
+// and `boundTechnologyCategory` fields on a node, and rejects
+// malformed shapes for both. Pre-Phase-5 documents (without either
+// field) must remain valid; that case is exercised by every other
+// probe above. Here we cover the four shape outcomes the Phase 5
+// allowlist widening introduces:
+//   - well-formed boundParam (string ids, string|null optionValue)
+//   - well-formed boundTechnologyCategory (non-empty string)
+//   - boundParam containing an unexpected key  → rejected
+//   - boundTechnologyCategory of wrong type    → rejected
+{
+  const baseGood = (extra: Record<string, unknown>) => ({
+    schemaVersion: ACW_SCHEMA_VERSION,
+    structureGraph: {
+      nodes: [
+        {
+          id: "n1",
+          type: "Zone",
+          parentId: null,
+          label: "z",
+          x: 0,
+          y: 0,
+          ...extra,
+        },
+      ],
+      edges: [],
+    },
+  });
+  // Well-formed semantic fields: read-validator must ACCEPT.
+  const ok1 = baseGood({
+    boundParam: { sectionId: "ops", paramId: "containerOrchestration", optionValue: "Kubernetes" },
+    boundTechnologyCategory: "Container orchestrator",
+  });
+  if (!__acwStoreInternals.isValidWorkspace(ok1)) {
+    throw new Error(
+      `${PREFIX}: read-validator refused a well-formed Phase 5 node carrying boundParam + boundTechnologyCategory.`,
+    );
+  }
+  // optionValue may be null (CTAD "Not specified"): must ACCEPT.
+  const ok2 = baseGood({
+    boundParam: { sectionId: "application", paramId: "frontendArchitecture", optionValue: null },
+  });
+  if (!__acwStoreInternals.isValidWorkspace(ok2)) {
+    throw new Error(
+      `${PREFIX}: read-validator refused a well-formed Phase 5 node with optionValue: null.`,
+    );
+  }
+  // Forbidden extra key inside boundParam: must REJECT.
+  const bad1 = baseGood({
+    boundParam: {
+      sectionId: "ops",
+      paramId: "containerOrchestration",
+      optionValue: "Kubernetes",
+      // Smuggled extra key — not on the AcwBoundParam allow-list.
+      smuggledScore: 7,
+    },
+  });
+  if (__acwStoreInternals.isValidWorkspace(bad1)) {
+    throw new Error(
+      `${PREFIX}: read-validator accepted a node.boundParam carrying an unknown key.`,
+    );
+  }
+  // boundTechnologyCategory of wrong type: must REJECT.
+  const bad2 = baseGood({ boundTechnologyCategory: 42 });
+  if (__acwStoreInternals.isValidWorkspace(bad2)) {
+    throw new Error(
+      `${PREFIX}: read-validator accepted a non-string boundTechnologyCategory.`,
+    );
+  }
+  // Empty-string boundTechnologyCategory: must REJECT.
+  const bad3 = baseGood({ boundTechnologyCategory: "" });
+  if (__acwStoreInternals.isValidWorkspace(bad3)) {
+    throw new Error(
+      `${PREFIX}: read-validator accepted an empty-string boundTechnologyCategory.`,
+    );
+  }
+}
+
 function parseSnapshot(s: string): {
   nodes: Array<{ id: string; type: string; parentId: string | null; label: string }>;
   edges: Array<{ id: string; kind: string; fromId: string; toId: string }>;

@@ -28,8 +28,13 @@ import {
   type AcwExplicitEdgeKind,
 } from "@/acw/acwGrammar";
 import { useAcwWorkspace } from "@/acw/acwGrammarHooks";
-import { createNode, createEdge } from "@/acw/acwStore";
+import { createNode, createEdge, updateNodeBinding } from "@/acw/acwStore";
 import { subscribeRefusals } from "@/acw/acwRefusalChannel";
+import {
+  resolveBoundOptions,
+  resolveLabel,
+} from "@/acw/semantic/techNodeBinding";
+import { lookupIconForCategory } from "@/acw/icons/iconRegistry";
 
 const PANEL_TITLE = "Workspace authoring";
 const PANEL_HINT =
@@ -48,6 +53,15 @@ const SUBMIT_LABEL = "Add";
 const REFUSAL_PREFIX = "Refused:";
 const DISMISS_LABEL = "Dismiss";
 const NO_NODES_HINT = "No nodes exist yet. Add an element first.";
+// Phase 5 — bound-bindings subsection labels.
+const BINDINGS_TITLE = "Bound parameters";
+const BINDINGS_HINT =
+  "Nodes seeded from a CTAD architecture carry a bound parameter. Changing the option here updates the node label in place.";
+const NO_BOUND_NODES_HINT = "No bound nodes in this workspace.";
+const SECTION_LABEL = "Section";
+const PARAM_LABEL = "Parameter";
+const OPTION_LABEL = "Option";
+const NOT_SPECIFIED_LABEL = "Not specified";
 
 assertAllAcwPlaceholderLanguage([
   PANEL_TITLE,
@@ -66,6 +80,13 @@ assertAllAcwPlaceholderLanguage([
   REFUSAL_PREFIX,
   DISMISS_LABEL,
   NO_NODES_HINT,
+  BINDINGS_TITLE,
+  BINDINGS_HINT,
+  NO_BOUND_NODES_HINT,
+  SECTION_LABEL,
+  PARAM_LABEL,
+  OPTION_LABEL,
+  NOT_SPECIFIED_LABEL,
 ]);
 
 const SELECT_CLASS =
@@ -163,6 +184,33 @@ export function AuthoringPanel() {
   };
 
   const allNodes = workspace.structureGraph.nodes;
+
+  // Phase 5 — bound nodes (those carrying a `boundParam`). The
+  // dropdown below routes through `updateNodeBinding` which
+  // re-validates the resulting workspace; CTAD itself is never
+  // mutated from this surface.
+  const boundNodes = useMemo(
+    () => allNodes.filter((n) => n.boundParam !== undefined),
+    [allNodes],
+  );
+
+  const onChangeBinding = (nodeId: string, raw: string) => {
+    const node = allNodes.find((n) => n.id === nodeId);
+    if (node === undefined || node.boundParam === undefined) return;
+    const optionValue = raw === "" ? null : raw;
+    const result = updateNodeBinding(nodeId, {
+      boundParam: {
+        sectionId: node.boundParam.sectionId,
+        paramId: node.boundParam.paramId,
+        optionValue,
+      },
+    });
+    if (!result.ok) {
+      setRefusal(result.reason);
+      return;
+    }
+    setRefusal(null);
+  };
 
   return (
     <Card data-testid="acw-authoring-panel">
@@ -345,6 +393,82 @@ export function AuthoringPanel() {
               {NO_NODES_HINT}
             </p>
           ) : null}
+        </div>
+
+        {/* Phase 5 — bound parameters subsection. Visible whenever
+            the workspace contains at least one node with a
+            boundParam; lists each bound node with a dropdown
+            sourced from the CTAD registry's option set. */}
+        <div
+          className="space-y-2 md:col-span-2"
+          data-testid="acw-authoring-bound-bindings"
+        >
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            {BINDINGS_TITLE}
+          </h3>
+          <p className="text-[11px] text-muted-foreground">{BINDINGS_HINT}</p>
+          {boundNodes.length === 0 ? (
+            <p
+              className="text-[11px] italic text-muted-foreground"
+              data-testid="acw-authoring-no-bound-nodes-hint"
+            >
+              {NO_BOUND_NODES_HINT}
+            </p>
+          ) : (
+            <ul className="space-y-2" data-testid="acw-bound-nodes-list">
+              {boundNodes.map((node) => {
+                const bp = node.boundParam!;
+                const options = resolveBoundOptions(node);
+                const iconEntry = lookupIconForCategory(node.boundTechnologyCategory);
+                const display = resolveLabel(node);
+                return (
+                  <li
+                    key={node.id}
+                    data-testid={`acw-bound-node-${node.id}`}
+                    className="border border-border/50 rounded p-2 space-y-1"
+                  >
+                    <div className="flex items-center gap-2 text-xs font-mono">
+                      {iconEntry ? (
+                        <iconEntry.Icon
+                          width={14}
+                          height={14}
+                          aria-hidden="true"
+                        />
+                      ) : null}
+                      <span data-testid={`acw-bound-node-display-${node.id}`}>
+                        {display}
+                      </span>
+                    </div>
+                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                      {SECTION_LABEL}: {bp.sectionId} · {PARAM_LABEL}: {bp.paramId}
+                    </div>
+                    <div className="space-y-1">
+                      <Label
+                        className="text-[10px] uppercase tracking-widest"
+                        htmlFor={`acw-bound-option-${node.id}`}
+                      >
+                        {OPTION_LABEL}
+                      </Label>
+                      <select
+                        id={`acw-bound-option-${node.id}`}
+                        data-testid={`acw-bound-option-select-${node.id}`}
+                        className={SELECT_CLASS}
+                        value={bp.optionValue ?? ""}
+                        onChange={(e) => onChangeBinding(node.id, e.target.value)}
+                      >
+                        <option value="">{NOT_SPECIFIED_LABEL}</option>
+                        {options.map((o) => (
+                          <option key={o} value={o}>
+                            {o}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
       </CardContent>
     </Card>

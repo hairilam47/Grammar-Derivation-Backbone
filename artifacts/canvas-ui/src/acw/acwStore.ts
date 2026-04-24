@@ -20,7 +20,13 @@
 // The store exposes a small subscriber API so React lens views can
 // re-render on workspace mutations without coupling to the storage
 // mechanism.
-import { isAcwElementType, type AcwElementType, type AcwExplicitEdgeKind } from "./acwGrammar";
+import {
+  isAcwElementType,
+  isAcwBoundParamShape,
+  type AcwBoundParam,
+  type AcwElementType,
+  type AcwExplicitEdgeKind,
+} from "./acwGrammar";
 import {
   canCreateEdge,
   canCreateNode,
@@ -42,6 +48,13 @@ export interface AcwNode {
   readonly label: string;
   readonly x: number;
   readonly y: number;
+  // Phase 5 — optional technology-aware semantic binding. Older
+  // documents persisted before Phase 5 simply omit these fields;
+  // the read-validator widens the node allow-list to accept their
+  // absence and to accept their presence in the new shape. Both
+  // fields default to undefined.
+  readonly boundParam?: AcwBoundParam;
+  readonly boundTechnologyCategory?: string;
 }
 
 export interface AcwEdge {
@@ -63,7 +76,18 @@ export interface AcwWorkspace {
 
 const ALLOWED_TOP_LEVEL = ["schemaVersion", "structureGraph"] as const;
 const ALLOWED_GRAPH = ["nodes", "edges"] as const;
-const ALLOWED_NODE = ["id", "type", "parentId", "label", "x", "y"] as const;
+const ALLOWED_NODE = [
+  "id",
+  "type",
+  "parentId",
+  "label",
+  "x",
+  "y",
+  // Phase 5 — optional semantic binding fields. Both are absent on
+  // pre-Phase-5 documents; their absence reads as undefined.
+  "boundParam",
+  "boundTechnologyCategory",
+] as const;
 const ALLOWED_EDGE = ["id", "kind", "fromId", "toId"] as const;
 
 const EXPLICIT_EDGE_KINDS = new Set<AcwExplicitEdgeKind>([
@@ -129,6 +153,26 @@ function assertAllowedFields(workspace: unknown): void {
     }
     if (typeof node.x !== "number" || typeof node.y !== "number") {
       throw new Error("ACW node.x and node.y must be numbers.");
+    }
+    // Phase 5 — optional semantic binding shape. Absent (undefined)
+    // is the pre-Phase-5 default and always permitted; present must
+    // match the AcwBoundParam shape exactly via the grammar predicate.
+    if (node.boundParam !== undefined) {
+      if (!isAcwBoundParamShape(node.boundParam)) {
+        throw new Error(
+          "ACW node.boundParam, when present, must be an object with sectionId (string), paramId (string) and optionValue (string or null) fields only.",
+        );
+      }
+    }
+    if (node.boundTechnologyCategory !== undefined) {
+      if (
+        typeof node.boundTechnologyCategory !== "string" ||
+        node.boundTechnologyCategory.length === 0
+      ) {
+        throw new Error(
+          "ACW node.boundTechnologyCategory, when present, must be a non-empty string.",
+        );
+      }
     }
     nodeIds.add(node.id);
   }
@@ -286,6 +330,11 @@ export interface CreateNodeRequest {
   readonly label?: string;
   readonly x?: number;
   readonly y?: number;
+  // Phase 5 — optional semantic binding fields. When present they
+  // are persisted on the new node; when absent the node is created
+  // unbound and renders exactly as a pre-Phase-5 node.
+  readonly boundParam?: AcwBoundParam;
+  readonly boundTechnologyCategory?: string;
 }
 
 export interface CreateEdgeRequest {
@@ -314,7 +363,27 @@ export function createNode(req: CreateNodeRequest): CreateNodeResult {
     viewFor(ws),
   );
   if (!result.ok) return { ok: false, reason: result.reason };
+  if (req.boundParam !== undefined && !isAcwBoundParamShape(req.boundParam)) {
+    return {
+      ok: false,
+      reason: "boundParam, when supplied, must match the AcwBoundParam shape.",
+    };
+  }
+  if (
+    req.boundTechnologyCategory !== undefined &&
+    (typeof req.boundTechnologyCategory !== "string" ||
+      req.boundTechnologyCategory.length === 0)
+  ) {
+    return {
+      ok: false,
+      reason: "boundTechnologyCategory, when supplied, must be a non-empty string.",
+    };
+  }
   const id = freshId("node");
+  // Object.freeze with conditional spread keeps the optional Phase 5
+  // fields absent (undefined) rather than serialised as `null`, so a
+  // node created without a binding remains byte-identical to its
+  // pre-Phase-5 shape on disk.
   const node: AcwNode = Object.freeze({
     id,
     type: req.type,
@@ -322,6 +391,10 @@ export function createNode(req: CreateNodeRequest): CreateNodeResult {
     label: req.label ?? req.type,
     x: typeof req.x === "number" ? req.x : 0,
     y: typeof req.y === "number" ? req.y : 0,
+    ...(req.boundParam !== undefined ? { boundParam: req.boundParam } : {}),
+    ...(req.boundTechnologyCategory !== undefined
+      ? { boundTechnologyCategory: req.boundTechnologyCategory }
+      : {}),
   });
   const next: AcwWorkspace = Object.freeze({
     schemaVersion: ACW_SCHEMA_VERSION,
@@ -458,6 +531,87 @@ export function updateNodeParent(
   );
   if (!validation.ok) return { ok: false, reason: validation.reason };
   const updated: AcwNode = Object.freeze({ ...node, parentId: newParentId });
+  const nodes = ws.structureGraph.nodes.slice();
+  nodes[idx] = updated;
+  const next: AcwWorkspace = Object.freeze({
+    schemaVersion: ACW_SCHEMA_VERSION,
+    structureGraph: Object.freeze({
+      nodes: Object.freeze(nodes),
+      edges: ws.structureGraph.edges,
+    }),
+  });
+  writeToStorage(next);
+  cache = next;
+  notify();
+  return { ok: true };
+}
+
+// Phase 5 — semantic binding mutation.
+//
+// Updates the optional `boundParam` and `boundTechnologyCategory`
+// fields on an existing node. Pass `undefined` for either argument
+// to leave that field unchanged; pass `null` for `boundParam` to
+// clear it. Structural fields (id, type, parentId, label, x, y) are
+// never modified by this path. Re-runs the full read-validation
+// (including `isAcwBoundParamShape`) on the resulting workspace via
+// `writeToStorage`, so a malformed binding is refused at the
+// storage boundary even if a future caller skips the in-line check.
+export interface UpdateNodeBindingRequest {
+  readonly boundParam?: AcwBoundParam | null;
+  readonly boundTechnologyCategory?: string | null;
+}
+
+export function updateNodeBinding(
+  nodeId: string,
+  req: UpdateNodeBindingRequest,
+): StoreResult {
+  const ws = getWorkspace();
+  const idx = ws.structureGraph.nodes.findIndex((n) => n.id === nodeId);
+  if (idx === -1) {
+    return { ok: false, reason: "The node referenced does not exist." };
+  }
+  if (
+    req.boundParam !== undefined &&
+    req.boundParam !== null &&
+    !isAcwBoundParamShape(req.boundParam)
+  ) {
+    return {
+      ok: false,
+      reason: "boundParam, when supplied, must match the AcwBoundParam shape.",
+    };
+  }
+  if (
+    req.boundTechnologyCategory !== undefined &&
+    req.boundTechnologyCategory !== null &&
+    (typeof req.boundTechnologyCategory !== "string" ||
+      req.boundTechnologyCategory.length === 0)
+  ) {
+    return {
+      ok: false,
+      reason: "boundTechnologyCategory, when supplied, must be a non-empty string.",
+    };
+  }
+  const prev = ws.structureGraph.nodes[idx];
+  // Build the next node by stripping the optional fields explicitly
+  // when the caller asked for `null`, otherwise carrying them through.
+  const nextBoundParam =
+    req.boundParam === undefined ? prev.boundParam : req.boundParam ?? undefined;
+  const nextBoundCategory =
+    req.boundTechnologyCategory === undefined
+      ? prev.boundTechnologyCategory
+      : req.boundTechnologyCategory ?? undefined;
+  const updated: AcwNode = Object.freeze({
+    id: prev.id,
+    type: prev.type,
+    parentId: prev.parentId,
+    label: prev.label,
+    x: prev.x,
+    y: prev.y,
+    ...(nextBoundParam !== undefined ? { boundParam: nextBoundParam } : {}),
+    ...(nextBoundCategory !== undefined
+      ? { boundTechnologyCategory: nextBoundCategory }
+      : {}),
+  });
   const nodes = ws.structureGraph.nodes.slice();
   nodes[idx] = updated;
   const next: AcwWorkspace = Object.freeze({

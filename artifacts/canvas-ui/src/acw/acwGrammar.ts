@@ -242,6 +242,38 @@ export function isPermittedEdge(
 }
 
 // ---------------------------------------------------------------------------
+// Phase 5 — Technology-aware semantic node binding
+// ---------------------------------------------------------------------------
+//
+// A node may carry an optional binding to a CTAD parameter so its
+// rendered label / icon can be resolved from the live CTAD state
+// (one-way read of CTAD into ACW). The grammar declares only the
+// shape; resolution is done in `acw/semantic/techNodeBinding.ts`.
+// All three fields are plain strings — no decision-pipeline shape
+// is admitted into the ACW document.
+export interface AcwBoundParam {
+  readonly sectionId: string;
+  readonly paramId: string;
+  // The CTAD option currently selected for this binding. `null`
+  // mirrors the CTAD "Not specified" state and renders the node
+  // with the node's own `label` fallback.
+  readonly optionValue: string | null;
+}
+
+export function isAcwBoundParamShape(value: unknown): value is AcwBoundParam {
+  if (value === null || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  const keys = Object.keys(v);
+  for (const k of keys) {
+    if (k !== "sectionId" && k !== "paramId" && k !== "optionValue") return false;
+  }
+  if (typeof v.sectionId !== "string" || v.sectionId.length === 0) return false;
+  if (typeof v.paramId !== "string" || v.paramId.length === 0) return false;
+  if (v.optionValue !== null && typeof v.optionValue !== "string") return false;
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // Registry summary (what the rest of the app reads)
 // ---------------------------------------------------------------------------
 //

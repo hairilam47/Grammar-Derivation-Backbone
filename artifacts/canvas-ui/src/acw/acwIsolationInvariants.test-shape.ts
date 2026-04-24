@@ -103,6 +103,18 @@ const ALLOWED_IMPORT_PREFIXES: readonly string[] = [
   "@/governance/staticTextGuard",
   "../governance/staticTextGuard",
   "../../governance/staticTextGuard",
+  // Phase 5 — one-way read of the CTAD parameter REGISTRY
+  // (sections, parameters, options) into ACW so the semantic
+  // binding helpers in `acw/semantic/*` can resolve a node's
+  // dropdown options and label fallback. The registry is a frozen
+  // module-load constant — it is *not* the CTAD STORE (which lives
+  // at `@/ctad/ctadStore` and is intentionally NOT on this
+  // allowlist). The reverse direction (ACW writing back into CTAD)
+  // remains constitutionally forbidden by the absence of any CTAD
+  // store / mutator on this list.
+  "@/ctad/ctadRegistry",
+  "../ctad/ctadRegistry",
+  "../../ctad/ctadRegistry",
 ];
 
 function isAllowedSpecifier(specifier: string): boolean {
