@@ -2684,29 +2684,50 @@ two negative refusals (System-in-Business and
 Component-in-Business produce a refusal whose reason references
 the containment chain).
 
-### Drop-target topology
+### Embedded 2D canvas per quadrant
 
-`DomainGrid.tsx` renders a 2×2 grid of `Quadrant` cells. Two
-levels of drop target are wired:
+`DomainGrid.tsx` renders a 2×2 grid of `Quadrant` cells. Each
+quadrant **embeds an `InteractiveCanvas2D` instance** — the same
+validator-gated 2D primitive used by the other ACW lenses — so
+drag-to-move, drag-to-reparent, marquee-select, group, and
+collapse / expand all work in EAStudio without re-implementing
+any rendering primitive. Each canvas runs under its own studio
+lens id (`studio-{domain}`) so per-lens view-state slices stay
+isolated per quadrant.
 
-1. The **quadrant background** accepts palette tiles for
-   creation directly under the domain container, and accepts
-   card drags from any other quadrant for cross-quadrant
-   reparent. A UI-level alignment refusal runs before the store
-   call: a tile whose `domain` does not match the quadrant's
-   `domain` is refused with a banner that names both domains —
-   the store validator would gate the operation by element type
-   anyway, but this earlier refusal carries the domain context.
-2. Each **`DomainCard`** is itself a drop target for palette
-   tiles. Dropping a tile on a card calls `createNode` with the
-   card as `parentId`. This is the authoring path for the
-   Business chain: drop a Department on the Business quadrant,
-   drop an OrgUnit on the Department card, drop a Business
-   Process on the OrgUnit card. The card's drop handler stops
-   propagation so the parent quadrant does not also fire and
-   create a sibling. The grammar validator gates the nesting,
-   so an ill-formed nest (e.g. a Business Process dropped on the
-   Business container directly) surfaces a refusal banner.
+A thin wrapping div around the canvas provides:
+
+1. **Palette drop intake.** The wrapper accepts the
+   `application/x-eastudio-palette-kind` dataTransfer payload
+   and routes it through `createNode` with `parentId` set to the
+   quadrant's *current focus* — the container the user has
+   drilled down into. Two refusal layers run before the store
+   call:
+   - **Domain alignment.** A tile whose `domain` does not match
+     the quadrant's `domain` is refused with a banner that names
+     both domains.
+   - **Strict Business chain.** A `Business process` tile
+     (`elementType: "System"`) dropped in the Business quadrant
+     is refused unless the current focus is an OrgUnit-tier Zone
+     — i.e. a Zone whose parent is itself a Zone. The refusal
+     reason references the chain literally
+     (`BusinessEntity → Department → Org unit → Business
+     process`). This Business-domain refusal is layered on top
+     of the grammar (which still permits System under any Zone,
+     used by the Application quadrant for `Application` as
+     `System` directly under a Zone).
+2. **Drill-down breadcrumbs.** The quadrant tracks a per-
+   quadrant focus path in local React state, defaulting to the
+   sealed container. Double-clicking a child node inside the
+   embedded 2D canvas pushes that node onto the focus path and
+   re-renders the canvas with `focusedParentId` updated;
+   clicking a crumb pops the path back to that depth. The
+   breadcrumb never mutates the workspace.
+
+Cross-quadrant moves do not need a separate handler in this
+file — drag-to-reparent is owned by `InteractiveCanvas2D`
+itself, which calls `updateNodeParent` and surfaces refusals
+through the same channel.
 
 Refusals from any path publish through `acwRefusalChannel`. The
 `StudioCanvas` view subscribes to the channel **before** calling
@@ -2729,16 +2750,23 @@ switching domains never alters `ACW_STATE` or its schema.
 
 ### Phase 2 deferred scope
 
-Phase 1 deliberately renders quadrant content as a flat list of
-`DomainCard` components rather than embedding four instances of
-`InteractiveCanvas2D`. Embedding the full 2D canvas surface —
-together with x/y positioning, resizable container chrome, and
-the connect-mode SVG overlay — pairs with the Phase 2
-Properties panel and Connect mode. Phase 1's UI surface is
-deliberately additive and does not change `InteractiveCanvas2D`
-or any other rendering surface; the constitutional invariants
-hold regardless of which surface initiates a drop, because the
-store's validator gating is the single source of legality.
+Phase 1 embeds `InteractiveCanvas2D` per quadrant for rendering
+and validator-gated authoring, but deliberately does **not**
+ship:
+
+- a connect-mode SVG overlay or any palette-authored edges
+  (Phase 1 sets `edges={[]}` on each embedded canvas; the
+  palette registry has no edge tiles),
+- a Properties panel for the currently-selected node,
+- a status bar surfacing structural counts or chain validation
+  state.
+
+These pair with one another in the spec and land together in
+Phase 2 (Task #91). Phase 1's UI surface is additive and does
+not change `InteractiveCanvas2D` itself; the constitutional
+invariants hold regardless of which surface initiates a drop,
+because the store's validator gating is the single source of
+legality.
 
 ### Strictly removable
 
