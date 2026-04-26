@@ -96,8 +96,6 @@ const ALLOWED_IMPORT_PREFIXES: readonly string[] = [
   "@/components/acw/track3",
   // Generic UI primitives (shadcn-style); render-only.
   "@/components/ui",
-  // Top-level header nav reused across pages — read-only.
-  "@/components/governance/GlobalNav",
   // Vocabulary guard — read-only assertion utility.
   "@/governance/staticTextGuard",
   // Read-only CTAD store. The named-import scan below further

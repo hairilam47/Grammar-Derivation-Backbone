@@ -1,15 +1,15 @@
 // ACW Workspace Builder — workspace shell + lens-style sub-navigation.
 //
-// The shell renders the top app nav (GlobalNav), an
-// ACW-specific sub-nav listing the five TOGAF-aligned lenses, and a
-// content slot for the active lens view. Navigation is "lens, not
+// The shell renders a slim brand bar, an ACW-specific sub-nav
+// listing the five TOGAF-aligned lenses, and a content slot for the
+// active lens view. The app-wide primary navigation lives in the
+// left-side AppSidebar (Task #108). Navigation here is "lens, not
 // step": no progress indicators, no next / previous, no maturity or
 // completion language. The same workspace is observed through five
 // different lenses.
 import type { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { Workflow } from "lucide-react";
-import { GlobalNav } from "@/components/governance/GlobalNav";
 import { AuthoringPanel } from "@/components/acw/AuthoringPanel";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 // Side-effect imports: ACW grammar hook stubs, isolation invariant,
@@ -104,14 +104,13 @@ export function WorkspaceShell({
   return (
     <div className="min-h-[100dvh] bg-background text-foreground flex flex-col font-mono">
       <header className="border-b border-border/50 bg-card/50 backdrop-blur sticky top-0 z-10">
-        <div className="container max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
+        <div className="container max-w-6xl mx-auto px-4 h-14 flex items-center">
           <div className="flex items-center gap-2 text-primary">
             <Workflow className="w-5 h-5" />
             <span className="font-bold tracking-tight text-sm uppercase">
               {SHELL_TITLE}
             </span>
           </div>
-          <GlobalNav />
         </div>
       </header>
 

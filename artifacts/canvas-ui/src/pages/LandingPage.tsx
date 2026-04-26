@@ -8,7 +8,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { GlobalNav } from "@/components/governance/GlobalNav";
 
 interface IntentCard {
   testId: string;
@@ -84,7 +83,7 @@ export default function LandingPage() {
   return (
     <div className="min-h-[100dvh] bg-background text-foreground flex flex-col">
       <header className="glass-header sticky top-0 z-10">
-        <div className="container max-w-6xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
+        <div className="container max-w-6xl mx-auto px-4 h-16 flex items-center gap-4">
           <div className="flex items-center gap-3">
             <span className="brand-mark" aria-hidden="true">
               <Layout />
@@ -93,7 +92,6 @@ export default function LandingPage() {
               Architecture Decision Canvas
             </span>
           </div>
-          <GlobalNav />
         </div>
         <div className="hairline-accent h-px w-full opacity-60" aria-hidden="true" />
       </header>

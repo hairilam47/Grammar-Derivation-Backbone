@@ -74,7 +74,8 @@ The project is structured as a pnpm workspace monorepo, separating deployable su
 - **Motion tokens:** `--motion-fast / -base / -slow` with `--motion-ease` / `-ease-out`. A `prefers-reduced-motion: reduce` block zeros all three durations and disables the route fade.
 - **Glass utilities:** `.glass-surface(-strong)` for tooltips/popovers/toasts; `.glass-header` and `.glass-rail` for the app chrome. Glass is used only on overlays and chrome — never on decision surfaces.
 - **Interaction utilities:** `.lift` (cards), `.interactive` (controls), `.ui-transition`, `.ui-transition-card`, `.ui-transition-input` (shadcn primitives), `.nav-active-bar` (active route indicator), `.brand-mark` (gradient logo square), `.route-fade-in` + `RouteTransition` (App.tsx page change).
-- **Shared header:** `components/AppHeader.tsx` is the canonical top bar (brand mark, page title/subtitle, GlobalNav). Used by Portfolio, Signals, Reflection, Exposure, Containment.
+- **Shared header:** `components/AppHeader.tsx` is the canonical top bar (brand mark, page title/subtitle). Used by Portfolio, Signals, Reflection, Exposure, Containment.
+- **App shell (Task #108):** `components/AppSidebar.tsx` exports `AppSidebar` + `AppShell` — a collapsible left sidebar wrapping every route. Top-level entries: Landing, Architecture Workspace (with `Derived view` sub-link). All decision-pipeline destinations (Decision Canvas, CTAD, Portfolio, Signals, Reflection) live under a parent **Design Contract** group (auto-expands on those routes; testid `nav-design-contract`). Collapsed rail ~64px / expanded ~240px; persists to `localStorage` (`app:sidebar:collapsed`); becomes a dismissible overlay below `md` (Esc + outside-click). Existing nav `data-testid`s are preserved.
 
 # External Dependencies
 

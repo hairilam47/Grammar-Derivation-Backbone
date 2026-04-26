@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AppShell } from "@/components/AppSidebar";
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/LandingPage";
 import DecisionCanvasShell from "@/components/DecisionCanvasShell";
@@ -138,9 +139,11 @@ function App() {
       <DarkModeApplier />
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <RouteTransition>
-            <Router />
-          </RouteTransition>
+          <AppShell>
+            <RouteTransition>
+              <Router />
+            </RouteTransition>
+          </AppShell>
         </WouterRouter>
         <Toaster />
       </TooltipProvider>

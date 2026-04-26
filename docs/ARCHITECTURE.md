@@ -3315,8 +3315,9 @@ its prototype-aligned scope from §20C is preserved.
   - `.brand-mark`, `.gradient-accent(-soft)`, `.gradient-text`,
     `.hairline-accent` for the brand mark, hero headline accent
     word, and decorative hairline rules.
-  - `.nav-active-bar` — the active-route underline rendered by
-    `GlobalNav`.
+  - `.nav-active-bar` — the active-route underline (originally
+    rendered by `GlobalNav`; the equivalent indicator is now
+    drawn by the left `AppSidebar` introduced in §22).
   - `.route-fade-in` driven by the root-scope
     `@keyframes routeFadeIn`. The `RouteTransition` wrapper in
     `App.tsx` re-keys on `useLocation()` so each navigation
@@ -3331,8 +3332,10 @@ its prototype-aligned scope from §20C is preserved.
 
 - **Page-level**
   - New `components/AppHeader.tsx` is the canonical top bar
-    (brand mark, page title / subtitle, GlobalNav). Adopted by
-    Portfolio, Signals, Reflection, Exposure, Containment.
+    (brand mark, page title / subtitle). Adopted by Portfolio,
+    Signals, Reflection, Exposure, Containment. Primary
+    navigation is no longer carried by the header — it lives in
+    the left `AppSidebar` introduced in §22.
   - `LandingPage` and `DecisionCanvasShell` keep their bespoke
     headers but adopt the `.brand-mark` + `.glass-header` +
     `.hairline-accent` pattern.
@@ -3356,3 +3359,57 @@ its prototype-aligned scope from §20C is preserved.
 
 The seven EAStudio prototype-parity items already deferred in
 §20C are still deferred and not addressed here.
+
+
+## 22. Collapsible Left Sidebar (Task #108)
+
+### Purpose
+
+Replace the horizontal `GlobalNav` strip with a persistent
+collapsible left sidebar that wraps every route in
+`artifacts/canvas-ui`. Render-only navigation rework — no grammar,
+schema, validator, refusal channel, or store touched.
+
+### Structure (`components/AppSidebar.tsx`)
+
+- `AppShell` is the single render wrapper used in `App.tsx`. It
+  mounts `AppSidebar` plus the route content and reserves a
+  matching `padding-left` (64 px collapsed / 240 px expanded) at
+  `md` and above.
+- Top-level entries: **Landing**, **Architecture Workspace** (the
+  Architecture Workspace item carries a `Derived view` sub-link
+  that surfaces whenever the active route is the workspace
+  itself — `/workspace/*` — or the derived view `/acw/derived/*`).
+- A parent **Design Contract** group (testid
+  `nav-design-contract`) collapses **Decision Canvas**, **CTAD**,
+  **Portfolio**, **Signals**, and **Reflection** into one menu.
+  The group auto-expands when the active route lives under any
+  of those entries.
+- Existing per-route nav `data-testid`s are preserved verbatim so
+  the build-time invariants and downstream test surface continue
+  to address them.
+
+### Behaviour
+
+- Collapse state persists in `localStorage` under
+  `app:sidebar:collapsed`. Default state on first load is
+  expanded.
+- Below the `md` breakpoint the rail becomes a dismissible
+  overlay opened by a small floating button rendered by
+  `AppShell` (`data-testid="app-sidebar-mobile-open"`). `Esc`,
+  an outside click on the backdrop, and the in-rail close button
+  all dismiss it. While closed the rail is marked `aria-hidden`
+  and `inert` so its links are not focusable.
+- The right-side EAStudio `DecisionContractNav` (Task #100) is
+  untouched and uses its own independent storage key.
+
+### Constitutional compliance
+
+- No traffic-light colour palette, no judgement animation, no
+  emoji. Icons come exclusively from `lucide-react`.
+- Read-only navigation: the sidebar reads `useLocation()` only
+  and does not import any decision-pipeline store, builder,
+  deriver, or signals surface.
+- ACW / CTAD / Track 3 isolation invariants no longer need to
+  allow `@/components/governance/GlobalNav`; the now-unused
+  `GlobalNav.tsx` was removed.

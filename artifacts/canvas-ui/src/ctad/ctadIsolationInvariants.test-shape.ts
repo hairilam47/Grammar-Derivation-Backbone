@@ -79,9 +79,6 @@ const ALLOWED_IMPORT_PREFIXES: readonly string[] = [
   "@/components/ctad",
   // Generic UI primitives (shadcn-style); render-only, no pipeline state.
   "@/components/ui",
-  // Top-level header nav reused across pages — read-only navigation
-  // shell with no decision-pipeline state.
-  "@/components/governance/GlobalNav",
   // Vocabulary guard — read-only assertion utility shared with the
   // rest of the application; introduces no decision-pipeline coupling.
   "@/governance/staticTextGuard",

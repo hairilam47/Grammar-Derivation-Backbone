@@ -1360,3 +1360,280 @@ body {
 .eastudio-root .es-rnav[data-collapsed="true"] .es-rnav-item-label {
   display: none;
 }
+
+/* ---------------------------------------------------------------- */
+/* Task #108 — App-wide collapsible left sidebar.                   */
+/*                                                                  */
+/* The sidebar is a fixed-position left rail that arranges all      */
+/* primary navigation as vertical items. On md+ viewports it is     */
+/* always visible; below md it slides in as an overlay opened by    */
+/* the floating menu button. Collapsed state persists via           */
+/* localStorage (key `app:sidebar:collapsed`).                      */
+/* ---------------------------------------------------------------- */
+.app-shell {
+  min-height: 100dvh;
+}
+.app-shell-content {
+  min-height: 100dvh;
+  transition: padding-left var(--motion-base) var(--motion-ease);
+}
+@media (min-width: 768px) {
+  .app-shell-content--expanded { padding-left: 240px; }
+  .app-shell-content--collapsed { padding-left: 64px; }
+}
+.app-shell-mobile-open {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 25;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  background: hsl(var(--card) / 0.92);
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  color: hsl(var(--foreground));
+  box-shadow: var(--shadow-sm);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+.app-shell-mobile-open:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-sm), 0 0 0 2px hsl(var(--ring) / 0.5);
+}
+
+.app-sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  background: hsl(0 0% 0% / 0.45);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  animation: appSidebarBackdropIn var(--motion-base) var(--motion-ease) both;
+}
+@keyframes appSidebarBackdropIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.app-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 40;
+  width: 240px;
+  display: flex;
+  flex-direction: column;
+  background: hsl(var(--sidebar) / 0.94);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  backdrop-filter: blur(14px) saturate(1.4);
+  border-right: 1px solid hsl(var(--sidebar-border) / 0.7);
+  overflow: hidden;
+  transition:
+    width var(--motion-base) var(--motion-ease),
+    transform var(--motion-base) var(--motion-ease);
+}
+.app-sidebar[data-collapsed="true"] {
+  width: 64px;
+}
+@media (max-width: 767px) {
+  .app-sidebar {
+    width: 240px;
+    transform: translateX(-100%);
+    box-shadow: none;
+  }
+  .app-sidebar[data-collapsed="true"] {
+    width: 240px;
+  }
+  .app-sidebar[data-mobile-open="true"] {
+    transform: translateX(0);
+    box-shadow: var(--shadow-xl);
+  }
+}
+
+.app-sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 12px;
+  border-bottom: 1px solid hsl(var(--sidebar-border) / 0.6);
+  min-height: 56px;
+}
+.app-sidebar-brand {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background-image: var(--accent-gradient);
+  color: white;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-sm), inset 0 1px 0 hsl(0 0% 100% / 0.18);
+}
+.app-sidebar-brand > svg {
+  width: 14px;
+  height: 14px;
+}
+.app-sidebar-brand-label {
+  flex: 1;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: hsl(var(--sidebar-foreground));
+}
+.app-sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid hsl(var(--sidebar-border) / 0.6);
+  color: hsl(var(--sidebar-foreground));
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background-color var(--motion-base) var(--motion-ease),
+    border-color var(--motion-base) var(--motion-ease),
+    color var(--motion-base) var(--motion-ease);
+}
+.app-sidebar-toggle:hover {
+  background: hsl(var(--sidebar-accent));
+  color: hsl(var(--sidebar-accent-foreground));
+}
+.app-sidebar-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px hsl(var(--ring) / 0.5);
+}
+.app-sidebar[data-collapsed="true"] .app-sidebar-header {
+  justify-content: center;
+  padding: 14px 8px;
+}
+
+.app-sidebar-nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+.app-sidebar-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.app-sidebar-sublist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+.app-sidebar-sublist[data-open="false"] {
+  display: none;
+}
+.app-sidebar-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.app-sidebar-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  margin: 0 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: hsl(var(--sidebar-foreground) / 0.78);
+  text-decoration: none;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  width: calc(100% - 16px);
+  text-align: left;
+  transition:
+    background-color var(--motion-base) var(--motion-ease),
+    color var(--motion-base) var(--motion-ease);
+}
+.app-sidebar-item:hover {
+  background: hsl(var(--sidebar-accent) / 0.6);
+  color: hsl(var(--sidebar-accent-foreground));
+}
+.app-sidebar-item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px hsl(var(--ring) / 0.5);
+}
+.app-sidebar-item--active {
+  background: hsl(var(--sidebar-accent));
+  color: hsl(var(--sidebar-accent-foreground));
+  font-weight: 600;
+}
+.app-sidebar-item--indent {
+  padding-left: 32px;
+}
+.app-sidebar-item-icon {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: inherit;
+}
+.app-sidebar-item-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.app-sidebar-group-chevron {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  color: hsl(var(--sidebar-foreground) / 0.6);
+  flex-shrink: 0;
+}
+.app-sidebar-item-bar {
+  position: absolute;
+  left: -8px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 2px;
+  background-image: var(--accent-gradient);
+}
+
+/* Collapsed rail — hide labels, center icons. */
+.app-sidebar[data-collapsed="true"] .app-sidebar-item {
+  justify-content: center;
+  padding: 8px 0;
+  margin: 0 8px;
+  width: calc(100% - 16px);
+}
+.app-sidebar[data-collapsed="true"] .app-sidebar-item--indent {
+  padding-left: 0;
+}
+.app-sidebar[data-collapsed="true"] .app-sidebar-item-label,
+.app-sidebar[data-collapsed="true"] .app-sidebar-group-chevron {
+  display: none;
+}
+
+/* On md+ in collapsed mode, sublists hide entirely; the children
+   are rendered as a flat list of icon items by AppSidebar so they
+   remain reachable. */
+.app-sidebar[data-collapsed="true"] .app-sidebar-sublist {
+  display: flex;
+}

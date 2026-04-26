@@ -26,7 +26,6 @@ import {
   X,
 } from "lucide-react";
 import { assertAllCtadLanguage } from "@/governance/staticTextGuard";
-import { GlobalNav } from "@/components/governance/GlobalNav";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -170,7 +169,7 @@ export default function CtadArchitectureShell() {
   return (
     <div className="min-h-[100dvh] bg-background text-foreground flex flex-col font-mono">
       <header className="border-b border-border/50 bg-card/50 backdrop-blur sticky top-0 z-10">
-        <div className="container max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
+        <div className="container max-w-6xl mx-auto px-4 h-14 flex items-center">
           <div className="flex items-center gap-2 text-primary">
             <Layers className="w-5 h-5" />
             <span
@@ -180,7 +179,6 @@ export default function CtadArchitectureShell() {
               {LABELS.brandLabel}
             </span>
           </div>
-          <GlobalNav />
         </div>
       </header>
 
