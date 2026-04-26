@@ -189,23 +189,28 @@ export const ACW_CONTAINMENT_RULES: readonly ContainmentRule[] = Object.freeze([
     child: "System",
     // EAStudio Phase 1 widening: a System may also live inside a
     // Zone (e.g. an Application System inside the Application domain
-    // Zone, or a BusinessProcess System inside an OrgUnit Zone) or
-    // inside a `BusinessEntity` (e.g. a Strategy Map System directly
-    // under the Business domain container). Root and ComputeNode
-    // remain permitted.
+    // Zone, or a BusinessProcess System inside an OrgUnit Zone).
+    // Root and ComputeNode remain permitted. `BusinessEntity` is
+    // intentionally NOT a permitted parent for System: the spec
+    // requires the strict Business chain
+    // (BusinessEntity → Zone → Zone → System), so a Business
+    // Process dropped directly into the Business domain container
+    // is refused by the validator and surfaces a refusal banner.
     permittedParents: Object.freeze(
-      [null, "ComputeNode", "Zone", "BusinessEntity"] as const,
+      [null, "ComputeNode", "Zone"] as const,
     ),
   }),
   Object.freeze({
     child: "Component",
     // EAStudio Phase 1 widening: a Component may also live inside a
     // Zone (e.g. a Database Component inside the Technology domain
-    // Zone) or inside a `BusinessEntity` (e.g. a KPI Dashboard
-    // Component directly under the Business domain container). The
-    // legacy `System` parent is preserved.
+    // Zone). The legacy `System` parent is preserved. `BusinessEntity`
+    // is intentionally NOT a permitted parent for Component: the
+    // strict Business chain forbids Components from sitting directly
+    // under the Business domain container; KPI Cards must live
+    // inside an OrgUnit / Department Zone.
     permittedParents: Object.freeze(
-      ["System", "Zone", "BusinessEntity"] as const,
+      ["System", "Zone"] as const,
     ),
   }),
   Object.freeze({
@@ -249,11 +254,14 @@ export const ACW_EDGE_RULES: readonly EdgeRule[] = Object.freeze([
     // CONTAINS is the structural-containment chain stated as an edge:
     // each pair below mirrors the containment rule for the child
     // type, including the EAStudio Phase 1 widening (Zone-in-Zone,
-    // System-in-Zone, Component-in-Zone, and BusinessEntity →
-    // Zone / System / Component). Edges are direction-agnostic at
-    // the rule level; the store records the authored direction
-    // (fromId → toId) so v2 can render it visually without changing
-    // the grammar.
+    // System-in-Zone, Component-in-Zone, and BusinessEntity → Zone).
+    // BusinessEntity → System and BusinessEntity → Component are
+    // intentionally absent: the strict Business chain refuses a
+    // Business Process (System) or KPI Card (Component) parented
+    // directly under the Business domain container. Edges are
+    // direction-agnostic at the rule level; the store records the
+    // authored direction (fromId → toId) so v2 can render it
+    // visually without changing the grammar.
     permittedPairs: Object.freeze([
       Object.freeze(["Zone", "ComputeNode"] as const),
       Object.freeze(["ComputeNode", "System"] as const),
@@ -262,8 +270,6 @@ export const ACW_EDGE_RULES: readonly EdgeRule[] = Object.freeze([
       Object.freeze(["Zone", "System"] as const),
       Object.freeze(["Zone", "Component"] as const),
       Object.freeze(["BusinessEntity", "Zone"] as const),
-      Object.freeze(["BusinessEntity", "System"] as const),
-      Object.freeze(["BusinessEntity", "Component"] as const),
     ] as const),
   }),
   Object.freeze({

@@ -2579,3 +2579,185 @@ Removing the entire Track 3 surface is a four-step delete:
 No other surface depends on Track 3. ADC, CTAD, ACW Tracks 1–2,
 the Reflection view, the Decision Exposure View, and the Phase 6
 Containment surface all continue to function unchanged.
+
+## 20. EAStudio Phase 1 — Four-Domain Canvas (`/workspace/studio`)
+
+EAStudio is an **additive** authoring lens layered on top of the
+ACW v1 grammar. It surfaces the same `acw-1.0`-schema workspace
+as the existing ACW lenses (Context & Domain, System Landscape,
+Integration, Deployment & Infrastructure, Operations &
+Continuity) but renders it as a four-quadrant board (Business /
+Data / Application / Technology) with a left-side palette and a
+domain tab bar driven by per-lens view-state.
+
+Phase 1 makes no breaking change to the grammar or the store.
+Schema stays at `acw-1.0`; the ACW isolation invariant remains
+intact; every existing lens continues to read and write the same
+`ACW_STATE`. EAStudio is a sixth entry in `ACW_LENSES` and
+mounts at `/workspace/studio`.
+
+### Four immutable domain containers
+
+The Studio canvas seeds four root nodes on first mount, one per
+domain, via `ensureDomainContainers()` in
+`src/acw/palette/domainContainerSeed.ts`. Each seed has a stable
+id (`domain-business`, `domain-data`, `domain-application`,
+`domain-technology`) and a `domainTag` (`business`, `data`,
+`application`, `technology`); the stable id makes the seed
+idempotent — a second `createNode` call with the same id
+short-circuits to `ok:true` rather than colliding. Container
+**element types** differ per domain so that each container's
+permitted children remain inside its quadrant's chain:
+
+- `domain-business` is a `BusinessEntity` (so the strict chain
+  `BusinessEntity → Zone → Zone → System → Component` applies),
+- `domain-data`, `domain-application`, and `domain-technology`
+  are `Zone` elements (so child types like `System`,
+  `Component`, `ComputeNode`, and nested `Zone` are permitted
+  under each quadrant root).
+
+The seeds are visually marked **Sealed** in the quadrant header
+— the UI never offers a delete affordance for them; only their
+descendants can be authored or removed.
+
+### Domain marker on nodes
+
+`AcwNode` gains an optional `domainTag?: AcwDomainTag` field
+(`business | data | application | technology`). The store
+serialises and validates the field as an additive markup; it has
+no influence on grammar legality. The validator key for any
+given operation is still the element type and parent type pair.
+
+### Palette registry
+
+`src/acw/palette/paletteRegistry.ts` lists the Phase 1 palette
+items distributed across the four domains:
+
+- **Business** (4 tiles): Department (`Zone`), Org unit
+  (`Zone`), Business process (`System`), KPI card
+  (`Component`).
+- **Data** (3 tiles): Data domain (`Zone`), Dataset
+  (`Component`), Data product (`System`).
+- **Application** (3 tiles): Application (`System`), Service
+  (`System`), Module (`Component`).
+- **Technology** (4 tiles): Compute node (`ComputeNode`),
+  Container (`Component`), Database (`Component`), Network
+  zone (`Zone`).
+
+Each item declares:
+
+- `paletteKind` — opaque string id (e.g. `biz-department`,
+  `app-application`, `tech-compute-node`),
+- `elementType` — the `AcwElementType` materialised on drop
+  (`Zone`, `System`, `Component`, or `ComputeNode`; Phase 1
+  does not author edges from the palette — edges are a Phase 2
+  Connect-mode concern),
+- `domain` — which quadrant the tile belongs to,
+- `label` — neutral display text (asserted against the
+  vocabulary guard at module load),
+- `icon` — a `lucide-react` component reference. **Vector icons
+  only** — emoji are forbidden in the EAStudio surface, mirroring
+  the broader vocabulary discipline.
+
+### Strict Business chain
+
+The four-domain spec calls for a strict containment chain in the
+Business quadrant:
+
+```
+BusinessEntity (Business container, sealed root)
+  └─ Zone (Department)
+      └─ Zone (Org Unit)
+          └─ System (Business Process)
+              └─ Component (KPI Card, optional)
+```
+
+To enforce this, the grammar widens `Zone.permittedParents` to
+include `BusinessEntity` (Department-in-Business), but
+**deliberately does not** widen `System.permittedParents` or
+`Component.permittedParents` to include `BusinessEntity`. The
+matching `CONTAINS` edge rule lists `BusinessEntity → Zone` and
+omits `BusinessEntity → System` and `BusinessEntity → Component`.
+Section 6 of `acwGrammarInvariants.test-shape.ts` asserts both
+the positive widening (Zone-in-Business is permitted) and the
+two negative refusals (System-in-Business and
+Component-in-Business produce a refusal whose reason references
+the containment chain).
+
+### Drop-target topology
+
+`DomainGrid.tsx` renders a 2×2 grid of `Quadrant` cells. Two
+levels of drop target are wired:
+
+1. The **quadrant background** accepts palette tiles for
+   creation directly under the domain container, and accepts
+   card drags from any other quadrant for cross-quadrant
+   reparent. A UI-level alignment refusal runs before the store
+   call: a tile whose `domain` does not match the quadrant's
+   `domain` is refused with a banner that names both domains —
+   the store validator would gate the operation by element type
+   anyway, but this earlier refusal carries the domain context.
+2. Each **`DomainCard`** is itself a drop target for palette
+   tiles. Dropping a tile on a card calls `createNode` with the
+   card as `parentId`. This is the authoring path for the
+   Business chain: drop a Department on the Business quadrant,
+   drop an OrgUnit on the Department card, drop a Business
+   Process on the OrgUnit card. The card's drop handler stops
+   propagation so the parent quadrant does not also fire and
+   create a sibling. The grammar validator gates the nesting,
+   so an ill-formed nest (e.g. a Business Process dropped on the
+   Business container directly) surfaces a refusal banner.
+
+Refusals from any path publish through `acwRefusalChannel`. The
+`StudioCanvas` view subscribes to the channel **before** calling
+`ensureDomainContainers()` so seed-time refusals (if any) are
+not lost.
+
+### Domain tab bar and view-state
+
+`DomainTabBar.tsx` reads and writes the per-lens active domain
+through the shared `acwViewState` slice (`src/acw/acwViewState.ts`,
+backed by localStorage key `acw.workspace.view.v1`). EAStudio
+stores its per-lens active domain inside the existing
+`currentDomainByLens: Record<string, AcwDomainTag>` field on
+that slice — keyed by the EAStudio lens id (`studio`) — rather
+than introducing a new slice. Activating a tab also activates
+the corresponding quadrant's visual highlight; conversely,
+dropping into a quadrant activates that domain on the tab bar.
+View-state is per-lens and does not mutate the workspace, so
+switching domains never alters `ACW_STATE` or its schema.
+
+### Phase 2 deferred scope
+
+Phase 1 deliberately renders quadrant content as a flat list of
+`DomainCard` components rather than embedding four instances of
+`InteractiveCanvas2D`. Embedding the full 2D canvas surface —
+together with x/y positioning, resizable container chrome, and
+the connect-mode SVG overlay — pairs with the Phase 2
+Properties panel and Connect mode. Phase 1's UI surface is
+deliberately additive and does not change `InteractiveCanvas2D`
+or any other rendering surface; the constitutional invariants
+hold regardless of which surface initiates a drop, because the
+store's validator gating is the single source of legality.
+
+### Strictly removable
+
+Removing the entire EAStudio surface is a five-step delete:
+- delete the directories `src/acw/palette/` and
+  `src/components/acw/palette/`,
+- delete the file `src/pages/acw/views/StudioCanvas.tsx`,
+- remove the sixth `ACW_LENSES` entry and the
+  `/workspace/studio` route declaration from
+  `src/pages/acw/WorkspaceShell.tsx` and `src/App.tsx`,
+- remove the `currentDomainByLens` field from the
+  `acwViewState` slice (`src/acw/acwViewState.ts`) along with the
+  `getCurrentDomain` / `setCurrentDomain` helpers; the existing
+  `acw.workspace.view.v1` localStorage key continues to back the
+  remaining view-state without any cleanup,
+- revert the `domainTag?: AcwDomainTag` field on `AcwNode` and
+  the EAStudio Phase 1 widening in `acwGrammar.ts` (Zone gains
+  `BusinessEntity` as a permitted parent; the `CONTAINS` rule
+  gains `BusinessEntity → Zone`). The Section 6 probe in
+  `acwGrammarInvariants.test-shape.ts` reverts in lock-step.
+
+No existing ACW lens or downstream surface depends on EAStudio.

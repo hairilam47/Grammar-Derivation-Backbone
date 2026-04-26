@@ -260,17 +260,22 @@ expectRefusal(
   }
 }
 
-// (6) EAStudio Phase 1 — positive widening probes. These guard the
+// (6) EAStudio Phase 1 — Business chain probes. These guard the
 // new containment rules introduced for the four-domain canvas:
 //   - BusinessEntity is a root-only element type.
 //   - Zone may live inside BusinessEntity (Department-in-Business).
 //   - Zone may live inside Zone (OrgUnit-in-Department).
 //   - System may live inside Zone (BusinessProcess-in-OrgUnit, or
 //     Application-in-domain-Zone).
-//   - Component may live inside Zone (e.g. Database-in-Technology)
-//     and inside BusinessEntity (e.g. KPI-in-Business).
-// Each probe checks the validator returns ok:true for a structurally
-// well-formed creation against a fabricated view.
+//   - Component may live inside Zone (e.g. Database-in-Technology).
+//   - System and Component may NOT live directly inside a
+//     BusinessEntity — the strict Business chain
+//     (BusinessEntity → Zone → Zone → System) is enforced at the
+//     validator level so a Business Process dropped on the Business
+//     domain container produces a refusal banner, not a silent
+//     reparent.
+// Each positive probe checks ok:true; each negative probe asserts a
+// refusal whose reason references the containment chain.
 {
   const r = canCreateNode("BusinessEntity", null, emptyView);
   if (r.ok !== true) {
@@ -284,14 +289,29 @@ expectRefusal(
     getNodeType: (id: string) =>
       id === "be" ? ("BusinessEntity" as AcwElementType) : undefined,
   };
-  for (const child of ["Zone", "System", "Component"] as const) {
-    const r = canCreateNode(child, "be", view);
+  // Positive: Zone is the only permitted child of BusinessEntity.
+  {
+    const r = canCreateNode("Zone", "be", view);
     if (r.ok !== true) {
       throw new Error(
-        `${PREFIX}: EAStudio widening — ${child} as child of BusinessEntity refused: ${r.ok === false ? r.reason : "unknown reason"}.`,
+        `${PREFIX}: EAStudio widening — Zone as child of BusinessEntity refused: ${r.ok === false ? r.reason : "unknown reason"}.`,
       );
     }
   }
+  // Negative: System (e.g. Business Process) directly under
+  // BusinessEntity must be refused.
+  expectRefusal(
+    "System as direct child of BusinessEntity",
+    canCreateNode("System", "be", view),
+    "permitted inside",
+  );
+  // Negative: Component (e.g. KPI Card) directly under
+  // BusinessEntity must be refused.
+  expectRefusal(
+    "Component as direct child of BusinessEntity",
+    canCreateNode("Component", "be", view),
+    "permitted inside",
+  );
 }
 {
   const view: ValidatorWorkspaceView = {
