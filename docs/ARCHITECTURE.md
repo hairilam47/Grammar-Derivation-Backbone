@@ -3373,9 +3373,22 @@ schema, validator, refusal channel, or store touched.
 ### Structure (`components/AppSidebar.tsx`)
 
 - `AppShell` is the single render wrapper used in `App.tsx`. It
-  mounts `AppSidebar` plus the route content and reserves a
-  matching `padding-left` (64 px collapsed / 240 px expanded) at
-  `md` and above.
+  mounts `AppSidebar`, a slim shared top header, and the route
+  content. The content column reserves a matching `padding-left`
+  (64 px collapsed / 240 px expanded) at `md` and above.
+- The shared top header (`data-testid="app-topbar"`) is sticky,
+  ~48 px tall, and contains three things in this order: the
+  sidebar toggle (`data-testid="app-topbar-toggle"`), a small
+  brand mark, and the resolved page title
+  (`data-testid="app-topbar-title"`). Page titles come from a
+  static route → label map keyed off `useLocation()` (Landing,
+  Decision Canvas, CTAD, Portfolio, Exposure, Signals,
+  Reflection, Containment, Derived view, Architecture Workspace).
+  Per-page brand bars in `LandingPage`, `DecisionCanvasShell`,
+  `CtadEntry`, `CtadShell`, `CtadArchitectureShell`, the Track 3
+  shells, `WorkspaceShell`, and the legacy `AppHeader` callers
+  were removed; `AppHeader` itself is now a typed no-op so its
+  remaining imports are inert.
 - Top-level entries: **Landing**, **Architecture Workspace** (the
   Architecture Workspace item carries a `Derived view` sub-link
   that surfaces whenever the active route is the workspace
@@ -3394,12 +3407,18 @@ schema, validator, refusal channel, or store touched.
 - Collapse state persists in `localStorage` under
   `app:sidebar:collapsed`. Default state on first load is
   expanded.
-- Below the `md` breakpoint the rail becomes a dismissible
-  overlay opened by a small floating button rendered by
-  `AppShell` (`data-testid="app-sidebar-mobile-open"`). `Esc`,
-  an outside click on the backdrop, and the in-rail close button
-  all dismiss it. While closed the rail is marked `aria-hidden`
-  and `inert` so its links are not focusable.
+- The toggle button in the shared top header drives both modes:
+  on `md` and above it flips the collapsed state of the rail; on
+  mobile it opens the rail as a dismissible overlay (the rail
+  becomes a fixed full-width drawer with a backdrop). `Esc`, an
+  outside click on the backdrop, the in-rail close button, and
+  any route change all dismiss the overlay. While closed on
+  mobile the rail is marked `aria-hidden` and `inert` so its
+  links are not focusable.
+- The active in-rail item renders a 2 px gradient accent bar
+  carrying both `app-sidebar-item-bar` and `nav-active-bar` so
+  the legacy CSS class contract used elsewhere in the app stays
+  satisfied.
 - The right-side EAStudio `DecisionContractNav` (Task #100) is
   untouched and uses its own independent storage key.
 

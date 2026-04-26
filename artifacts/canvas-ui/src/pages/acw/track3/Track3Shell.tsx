@@ -179,20 +179,6 @@ export default function Track3Shell() {
 
   return (
     <div className="min-h-[100dvh] bg-background text-foreground flex flex-col font-mono">
-      <header className="border-b border-border/50 bg-card/50 backdrop-blur sticky top-0 z-10">
-        <div className="container max-w-6xl mx-auto px-4 h-14 flex items-center">
-          <div className="flex items-center gap-2 text-primary">
-            <Layers className="w-5 h-5" />
-            <span
-              className="font-bold tracking-tight text-sm uppercase"
-              data-testid="track3-brand"
-            >
-              {LABELS.brandLabel}
-            </span>
-          </div>
-        </div>
-      </header>
-
       <main className="flex-1 container max-w-6xl mx-auto px-4 py-8 space-y-6">
         <div className="space-y-1" data-testid="track3-shell-heading">
           <h1 className="text-xl font-bold tracking-tight">

@@ -15,8 +15,11 @@ import {
   FileSignature,
   Home,
   Layers,
+  Layout,
   LayoutGrid,
+  Menu,
   Radio,
+  Shield,
   ShieldCheck,
   Workflow,
   X,
@@ -108,8 +111,10 @@ const SUB_ITEMS: readonly SubNavItem[] = [
 
 const COLLAPSE_LABEL = "Collapse navigation";
 const EXPAND_LABEL = "Expand navigation";
+const OPEN_NAV_LABEL = "Open navigation";
 const CLOSE_LABEL = "Close navigation";
 const DESIGN_CONTRACT_LABEL = "Design Contract";
+const APP_TITLE = "Architecture Decision Canvas";
 
 // Persisted under a separate key from the right-side EAStudio rail
 // so the two collapsibles do not share state.
@@ -139,9 +144,42 @@ function writePersistedCollapsed(collapsed: boolean): void {
   }
 }
 
+interface PageTitleEntry {
+  match: (loc: string) => boolean;
+  title: string;
+}
+
+const PAGE_TITLES: readonly PageTitleEntry[] = [
+  { match: (l) => l === "/", title: "Landing" },
+  { match: (l) => l === "/decision-canvas", title: "Decision Canvas" },
+  { match: (l) => l === "/ctad" || l.startsWith("/ctad/"), title: "CTAD" },
+  { match: (l) => l === "/portfolio", title: "Portfolio" },
+  { match: (l) => l.startsWith("/exposure/"), title: "Exposure" },
+  { match: (l) => l === "/signals", title: "Signals" },
+  { match: (l) => l === "/reflection", title: "Reflection" },
+  {
+    match: (l) =>
+      l === "/governance/containment" ||
+      l.startsWith("/governance/containment/"),
+    title: "Containment",
+  },
+  {
+    match: (l) => l === "/acw/derived" || l.startsWith("/acw/derived/"),
+    title: "Derived view",
+  },
+  {
+    match: (l) => l === "/workspace" || l.startsWith("/workspace/"),
+    title: "Architecture Workspace",
+  },
+];
+
+function resolvePageTitle(location: string): string {
+  const hit = PAGE_TITLES.find((e) => e.match(location));
+  return hit ? hit.title : APP_TITLE;
+}
+
 interface AppSidebarProps {
   collapsed: boolean;
-  onToggleCollapsed: () => void;
   mobileOpen: boolean;
   onMobileClose: () => void;
   isMobile: boolean;
@@ -149,7 +187,6 @@ interface AppSidebarProps {
 
 export function AppSidebar({
   collapsed,
-  onToggleCollapsed,
   mobileOpen,
   onMobileClose,
   isMobile,
@@ -195,7 +232,10 @@ export function AppSidebar({
           </span>
           <span className="app-sidebar-item-label">{item.label}</span>
           {active && (
-            <span className="app-sidebar-item-bar" aria-hidden="true" />
+            <span
+              className="app-sidebar-item-bar nav-active-bar"
+              aria-hidden="true"
+            />
           )}
         </Link>
       </li>
@@ -239,33 +279,19 @@ export function AppSidebar({
             <ShieldCheck className="w-4 h-4" />
           </span>
           {!collapsed && (
-            <span className="app-sidebar-brand-label">
-              Architecture Decision Canvas
-            </span>
+            <span className="app-sidebar-brand-label">{APP_TITLE}</span>
           )}
-          <button
-            type="button"
-            className="app-sidebar-toggle md:inline-flex hidden"
-            onClick={onToggleCollapsed}
-            aria-label={collapsed ? EXPAND_LABEL : COLLAPSE_LABEL}
-            aria-expanded={!collapsed}
-            data-testid="app-sidebar-toggle"
-          >
-            {collapsed ? (
-              <ChevronRight className="w-3.5 h-3.5" />
-            ) : (
-              <ChevronLeft className="w-3.5 h-3.5" />
-            )}
-          </button>
-          <button
-            type="button"
-            className="app-sidebar-toggle md:hidden"
-            onClick={onMobileClose}
-            aria-label={CLOSE_LABEL}
-            data-testid="app-sidebar-mobile-close"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
+          {isMobile && (
+            <button
+              type="button"
+              className="app-sidebar-toggle"
+              onClick={onMobileClose}
+              aria-label={CLOSE_LABEL}
+              data-testid="app-sidebar-mobile-close"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
         <nav
@@ -294,7 +320,7 @@ export function AppSidebar({
                   title={DESIGN_CONTRACT_LABEL}
                 >
                   <span className="app-sidebar-item-icon" aria-hidden="true">
-                    <ShieldCheck className="w-4 h-4" />
+                    <Shield className="w-4 h-4" />
                   </span>
                   <span className="app-sidebar-item-label">
                     {DESIGN_CONTRACT_LABEL}
@@ -320,7 +346,7 @@ export function AppSidebar({
                   }}
                 >
                   <span className="app-sidebar-item-icon" aria-hidden="true">
-                    <ShieldCheck className="w-4 h-4" />
+                    <Shield className="w-4 h-4" />
                   </span>
                   <span className="app-sidebar-item-label">
                     {DESIGN_CONTRACT_LABEL}
@@ -396,6 +422,7 @@ export function AppShell({ children }: AppShellProps) {
   const [location] = useLocation();
   const lastLocation = useRef<string>(location);
   const isMobile = useIsMobile();
+  const pageTitle = resolvePageTitle(location);
 
   useEffect(() => {
     writePersistedCollapsed(collapsed);
@@ -428,21 +455,18 @@ export function AppShell({ children }: AppShellProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [mobileOpen]);
 
+  const onTopbarToggle = () => {
+    if (isMobile) {
+      setMobileOpen(true);
+    } else {
+      setCollapsed((c) => !c);
+    }
+  };
+
   return (
     <div className="app-shell" data-testid="app-shell">
-      <button
-        type="button"
-        className="app-shell-mobile-open md:hidden"
-        onClick={() => setMobileOpen(true)}
-        aria-label="Open navigation"
-        aria-expanded={mobileOpen}
-        data-testid="app-sidebar-mobile-open"
-      >
-        <ChevronRight className="w-4 h-4" />
-      </button>
       <AppSidebar
         collapsed={collapsed}
-        onToggleCollapsed={() => setCollapsed((c) => !c)}
         mobileOpen={mobileOpen}
         onMobileClose={() => setMobileOpen(false)}
         isMobile={isMobile}
@@ -454,6 +478,48 @@ export function AppShell({ children }: AppShellProps) {
             : "app-shell-content--expanded"
         }`}
       >
+        <header
+          className="app-shell-topbar glass-header"
+          data-testid="app-topbar"
+        >
+          <div className="app-shell-topbar-inner">
+            <button
+              type="button"
+              className="app-shell-topbar-toggle"
+              onClick={onTopbarToggle}
+              aria-label={
+                isMobile
+                  ? OPEN_NAV_LABEL
+                  : collapsed
+                    ? EXPAND_LABEL
+                    : COLLAPSE_LABEL
+              }
+              aria-expanded={isMobile ? mobileOpen : !collapsed}
+              data-testid="app-topbar-toggle"
+            >
+              {isMobile ? (
+                <Menu className="w-4 h-4" />
+              ) : collapsed ? (
+                <ChevronRight className="w-4 h-4" />
+              ) : (
+                <ChevronLeft className="w-4 h-4" />
+              )}
+            </button>
+            <span className="app-shell-topbar-brand" aria-hidden="true">
+              <Layout className="w-4 h-4" />
+            </span>
+            <span
+              className="app-shell-topbar-title"
+              data-testid="app-topbar-title"
+            >
+              {pageTitle}
+            </span>
+          </div>
+          <div
+            className="hairline-accent h-px w-full opacity-60"
+            aria-hidden="true"
+          />
+        </header>
         {children}
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { FileSignature, Workflow, Layout, Layers } from "lucide-react";
+import { FileSignature, Workflow, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -82,20 +82,6 @@ const CARDS: readonly IntentCard[] = [
 export default function LandingPage() {
   return (
     <div className="min-h-[100dvh] bg-background text-foreground flex flex-col">
-      <header className="glass-header sticky top-0 z-10">
-        <div className="container max-w-6xl mx-auto px-4 h-16 flex items-center gap-4">
-          <div className="flex items-center gap-3">
-            <span className="brand-mark" aria-hidden="true">
-              <Layout />
-            </span>
-            <span className="font-semibold tracking-tight text-sm">
-              Architecture Decision Canvas
-            </span>
-          </div>
-        </div>
-        <div className="hairline-accent h-px w-full opacity-60" aria-hidden="true" />
-      </header>
-
       <main className="flex-1 container max-w-6xl mx-auto px-4 py-16">
         <div className="mb-12 text-center space-y-4" data-testid="intent-heading">
           <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">

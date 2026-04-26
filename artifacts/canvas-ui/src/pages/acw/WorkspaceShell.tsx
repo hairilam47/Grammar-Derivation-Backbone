@@ -1,15 +1,16 @@
 // ACW Workspace Builder — workspace shell + lens-style sub-navigation.
 //
-// The shell renders a slim brand bar, an ACW-specific sub-nav
-// listing the five TOGAF-aligned lenses, and a content slot for the
-// active lens view. The app-wide primary navigation lives in the
-// left-side AppSidebar (Task #108). Navigation here is "lens, not
-// step": no progress indicators, no next / previous, no maturity or
-// completion language. The same workspace is observed through five
+// The shell renders the ACW-specific lens sub-nav and a content
+// slot for the active lens view. The app-wide brand mark, page
+// title, and sidebar toggle live in the shared AppShell top
+// header rendered above this shell (Task #108). The primary
+// navigation itself lives in the left-side AppSidebar (also Task
+// #108). Navigation here is "lens, not step": no progress
+// indicators, no next / previous, no maturity or completion
+// language. The same workspace is observed through five
 // different lenses.
 import type { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { Workflow } from "lucide-react";
 import { AuthoringPanel } from "@/components/acw/AuthoringPanel";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 // Side-effect imports: ACW grammar hook stubs, isolation invariant,
@@ -103,19 +104,8 @@ export function WorkspaceShell({
   const [location] = useLocation();
   return (
     <div className="min-h-[100dvh] bg-background text-foreground flex flex-col font-mono">
-      <header className="border-b border-border/50 bg-card/50 backdrop-blur sticky top-0 z-10">
-        <div className="container max-w-6xl mx-auto px-4 h-14 flex items-center">
-          <div className="flex items-center gap-2 text-primary">
-            <Workflow className="w-5 h-5" />
-            <span className="font-bold tracking-tight text-sm uppercase">
-              {SHELL_TITLE}
-            </span>
-          </div>
-        </div>
-      </header>
-
       <div
-        className="border-b border-border/40 bg-muted/10 sticky top-14 z-10"
+        className="border-b border-border/40 bg-muted/10 sticky top-12 z-10"
         data-testid="acw-lens-nav"
       >
         <div className="container max-w-6xl mx-auto px-4 py-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] uppercase tracking-widest">
