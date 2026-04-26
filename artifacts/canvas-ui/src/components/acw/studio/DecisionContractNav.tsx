@@ -23,7 +23,15 @@
 //     receives pointer events on behalf of the canvas.
 //   - The rail mutates nothing in the workspace; navigation is
 //     handled by wouter `<Link>` components.
-import { useState } from "react";
+//
+// Task #101 — collapsed/expanded state is persisted in
+// `localStorage` under the namespaced key
+// `eastudio:decisionContractNav:collapsed` so a user who prefers
+// the icon-only rail does not have to collapse it on every visit.
+// The default for a first-time visitor (and for any environment
+// where storage is unavailable, e.g. SSR or a private-mode reject)
+// remains "expanded".
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   Activity,
@@ -40,6 +48,38 @@ import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 const NAV_TITLE = "Decision Contract";
 const COLLAPSE_LABEL = "Collapse navigation";
 const EXPAND_LABEL = "Expand navigation";
+
+// Namespaced under `eastudio:` so it cannot collide with other
+// UI-state keys persisted by unrelated workspaces. The value is
+// the literal string "true" or "false" — anything else is treated
+// as "no preference recorded" and we fall back to expanded.
+const COLLAPSED_STORAGE_KEY = "eastudio:decisionContractNav:collapsed";
+
+function readPersistedCollapsed(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const raw = window.localStorage.getItem(COLLAPSED_STORAGE_KEY);
+    if (raw === "true") return true;
+    if (raw === "false") return false;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function writePersistedCollapsed(collapsed: boolean): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      COLLAPSED_STORAGE_KEY,
+      collapsed ? "true" : "false",
+    );
+  } catch {
+    // Storage may be unavailable (private mode, quota exceeded,
+    // disabled by the user). Persistence is a convenience; failing
+    // to write must never break the rail's interactivity.
+  }
+}
 
 interface NavLink {
   readonly path: string;
@@ -62,8 +102,18 @@ assertAllAcwPlaceholderLanguage([
 ]);
 
 export function DecisionContractNav() {
-  const [collapsed, setCollapsed] = useState(false);
+  // Lazy initializer reads the persisted preference exactly once
+  // on mount. Subsequent toggles re-write through the effect
+  // below, keeping storage in sync without re-reading on every
+  // render.
+  const [collapsed, setCollapsed] = useState<boolean>(
+    readPersistedCollapsed,
+  );
   const [location] = useLocation();
+
+  useEffect(() => {
+    writePersistedCollapsed(collapsed);
+  }, [collapsed]);
 
   return (
     <aside
