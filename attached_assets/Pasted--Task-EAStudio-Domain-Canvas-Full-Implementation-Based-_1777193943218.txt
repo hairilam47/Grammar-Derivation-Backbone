@@ -1,0 +1,125 @@
+## Task: EAStudio Domain Canvas – Full Implementation (Based on Design Prototype)
+
+You are working on `Grammar-Derivation-Backbone`. The goal is to transform the ACW authored workspace into an interactive **EAStudio** with four domain containers, a domain-switching palette, drag‑and‑drop, connections, and a properties panel. A complete HTML prototype (`ea_studio_full_platform.html`) is provided as the UI/UX reference; you must translate its behaviour into React while reusing the existing ACW store, node/edge types, and invariants.
+
+### Prototype Reference
+The prototype demonstrates:
+- A top bar with “Design / Matrix / Export” view tabs.
+- Domain tabs (Business, Data, Application, Technology) under the top bar.
+- A left palette that changes items based on the active domain. Each item is draggable.
+- A main canvas area divided into four drop zones (one per domain), arranged in a 2×2 grid.
+- Nodes with a delete button and a “↔” connection button. Nodes are domain‑coloured.
+- A global “Connect” mode that, when active, lets you click a source node and then click a target node to create an SVG‑curve connection (with path and arrowhead).
+- A right properties panel (Name, Description, Owner, Status, Maturity, Priority) that opens when a node is selected.
+- A status bar showing component count and connection count.
+- Matrix view (relationship table) and Export view (JSON/CSV).
+- Sample data (“✦ Sample”) and Clear buttons.
+
+**Key design principle:** The prototype is vanilla JS; you must build the same interactions using React, the existing ACW store (`acw/acwStore.ts`), and the existing ACW element types/validator. The ACW schema (`acw‑1.0`) remains structurally the same; you will extend it with `domainTag` and other metadata fields as needed.
+
+---
+
+### Implementation Plan (Phases 1‑3)
+
+#### Phase 1 – Domain Containers & Palette
+
+1. **Extend ACW Element Types (grammar + validator)**
+   - In `acw/acwGrammar.ts`, add `isDomainContainer` and `domainTag` fields to `AcwNode`. `domainTag` can be `'business' | 'data' | 'application' | 'technology'`.
+   - The four domain containers are special Zone nodes that:
+     - Have `isDomainContainer: true`, a fixed ID (e.g., `domain-business`, `domain-data`, etc.), and a `domainTag`.
+     - Are created automatically when a new workspace is initialised (or migrated on first open). They persist in the store.
+     - Cannot be deleted; the UI hides the delete button for them.
+   - The `lodRange` field is currently unused for these; later it will serve LoS.
+   - Assign colours to each domain using CSS variables (match prototype: business=orange, data=cyan, application=purple, technology=green).
+
+2. **Update the Workspace Layout**
+   - Replace the current single‑canvas view with a **2×2 grid** of resizable domain containers (zones). Each container is a rendering of the corresponding domain container node.
+   - Use the existing drag/resize logic from InteractiveCanvas2D to allow resizing the containers; children nodes are positioned relative to the container.
+   - The overall canvas should still be full‑page (the fixed‑inset layout from Track 3 can be reused).
+   - The domain containers are drawn as dashed borders with a coloured header (like the prototype’s `.zone` styling).
+
+3. **Domain Palette Component (`acw/palette/PalettePanel.tsx`)**
+   - Build a collapsible left panel (width ~210px) that lists items for the currently active domain.
+   - The palette uses `lucide-react` icons instead of emoji; map prototype’s emojis to appropriate Lucide icons (e.g., `Target` for Strategy Map, `Workflow` for Business Process, `Gavel` for Governance Model, `Puzzle` for Capability Map, `FolderKanban` for Org Unit, `BarChart` for KPI, `ShieldAlert` for Compliance, etc.).
+   - Each palette item is draggable (using `draggable` attribute and `onDragStart`).
+   - When a palette item is dropped onto a domain container, call `createNode` with the appropriate ACW node type, `domainTag`, and default label/icon. Enforce containment: the node’s `parentId` becomes the domain container’s ID.
+   - The palette content changes based on the active domain tab (selected from the top domain tab bar).
+
+   **Palette definitions (expandable later):**
+
+   - **Business:** Strategy Map (type `System`), Business Process (type `System`), Governance Model (type `System`), Capability Map (type `System`), Value Stream (type `System`), Org Unit (type `Zone`), KPI Dashboard (type `Component`), Compliance (type `Component`). Additionally, add special hierarchy items: **Department** (must be inside Business Entity), **Org Unit** (inside Department), **Business Process** (inside Org Unit). The drop logic should validate containment.
+
+   - **Data:** Data Store (type `Component`), Data Flow (type `Component` or `System`), Data Model (type `Component`), Data Product (type `Component`), Master Data (type `Component`), Data Catalog (type `Component`), Data Policy (type `Component`), ETL Pipeline (type `Component`).
+
+   - **Application:** Application (type `System`), API Gateway (type `Component`), Microservice (type `System`), Module (type `Component`), Mobile App (type `System`), Event Bus (type `Component`), Web Portal (type `System`), Integration (type `Component`).
+
+   - **Technology:** Cloud Region (type `Zone`), Network Layer (type `Zone`), Database (type `Component`), Runtime Engine (type `Component`), IAM Service (type `Component`), Monitoring (type `Component`), Object Storage (type `Component`), CI/CD Pipeline (type `Component`).
+
+4. **Business Hierarchy Enforcements**
+   - The Business domain container is of type `BusinessEntity` (new type). Inside it, you can create `Department` nodes (type `Zone`). Inside a Department, `OrgUnit` nodes (type `Zone`). Inside an OrgUnit, `BusinessProcess` nodes (type `System`). The palette for Business must expose these hierarchy items and the drop target must be validated using the ACW validator. If a user tries to drop a Business Process outside an OrgUnit, show the refusal banner.
+
+5. **Global Domain Tabs**
+   - Create a `DomainTabBar` component just below the top bar, with tabs for Business, Data, Application, Technology (styled as in prototype). The active tab sets a `currentDomain` state (stored in view state, `acwViewState`). The palette and any domain‑specific filters update accordingly.
+   - The canvas always shows all four domain containers; the tab only changes the palette and perhaps which container is highlighted when you drop.
+
+6. **Backward Compatibility**
+   - Existing workspaces without domain containers are migrated: on load, if no domain container nodes exist, create the four containers and distribute any existing free‑floating nodes into them based on their `domainTag` (if absent, leave them on the root or let user manually move). Alternatively, you can prompt the user to migrate.
+
+---
+
+#### Phase 2 – Connections & Properties Panel
+
+1. **Connection Mode**
+   - Implement a global “Connect” toggle in the top bar (as in prototype). When active, clicking a node sets it as the source; clicking another adds a connection.
+   - Connections are stored as ACW edges (type `CONNECTS`). Use the existing ACW edge model; you may add optional metadata fields (protocol, description) later.
+   - Draw connections as SVG paths (cubic bezier, arrowhead) on an overlay (`<svg>` element positioned over the canvas). The prototype uses a `conn‑svg` that covers the canvas. Re‑render when nodes move or connections change.
+   - Support deletion of connections via a right‑click or click on the path (as prototype: confirm dialog).
+
+2. **Properties Panel**
+   - Create a right‑side sliding panel (as `props-panel` in prototype) that appears when a node is selected.
+   - The panel shows fields: Name (editable, updates node label), Description (stores in node metadata), Owner (optional field), Status (Planned/Active/Deprecated, using tag buttons), Maturity (dropdown: Initial/Managed/Defined/Quantitatively Managed/Optimizing), Priority (Low/Medium/High/Critical).
+   - These fields correspond to new optional properties on `AcwNode`; extend the node type (e.g., `status`, `maturity`, `priority`, `owner`). Update the store validator to accept them.
+   - The panel also lists the node’s connections (like prototype); allow removal of connections from there.
+   - Close the panel via a button or clicking outside the node.
+
+3. **Status Bar**
+   - Add a status bar at the bottom (fixed height) showing live counts: total components, total connections, current mode (Design/Connect), and a small badge indicating TOGAF/ArchiMate reference (can be static text).
+
+---
+
+#### Phase 3 – Matrix & Export Views (Secondary)
+
+1. **Matrix View**
+   - Implement a view that shows a table of all nodes across all domains (rows) and all other nodes (columns), with cells indicating whether a connection exists. The prototype’s `matrixContent` is a good reference.
+   - Use the existing ACW data; clicking a cell toggles a connection.
+
+2. **Export View**
+   - Provide JSON export of the current ACW workspace (already serializable). Add CSV export of nodes. Design a simple export panel with download buttons (as prototype).
+
+---
+
+### UI Styling & Integration
+- Use CSS modules or Tailwind to match the prototype’s dark, custom theme. The prototype uses CSS variables (`--bg`, `--surface`, etc.). You can extract these into a global theme and reuse.
+- The top bar should be integrated with the existing global navigation but can be local to the ACW workspace page. Reuse the existing `WorkspaceShell` layout (top, left palette, canvas, right panel).
+- The floating overlay system from the full‑page canvas work can be replaced/adapted with this static layout.
+
+---
+
+### Important Architectural Rules
+- Do **not** modify `lib/architecture-grammar` or `lib/cncf-catalog`.
+- Maintain all existing build‑time invariants; any new fields on nodes/edges must be allowed by the corresponding test‑shape modules (update them accordingly).
+- The existing ACW isolation must remain: the workspace still does not import from the decision pipeline.
+- Keep the ACW store (`acwStore.ts`) as the single source of truth; the view state (active domain, connect mode, selected node) is UI‑only.
+
+---
+
+### Extensibility
+The palette items and domain list should be defined in a configuration file or registry so that future domains and archetypes can be added easily. Currently we support exactly four domains; the configuration can be in `acw/palette/paletteRegistry.ts` with the structure:
+
+```ts
+export const DOMAIN_PALETTE = {
+  business: { ... items },
+  data: { ... },
+  application: { ... },
+  technology: { ... },
+};
