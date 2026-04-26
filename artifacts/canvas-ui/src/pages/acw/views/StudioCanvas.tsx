@@ -39,9 +39,13 @@ import { DomainGrid } from "@/components/acw/palette/DomainGrid";
 import { ConnectToggle } from "@/components/acw/studio/ConnectToggle";
 import { NodePropertiesPanel } from "@/components/acw/studio/NodePropertiesPanel";
 import { StatusBar } from "@/components/acw/studio/StatusBar";
+import { StudioTopBar } from "@/components/acw/studio/StudioTopBar";
+import { MatrixView } from "@/components/acw/studio/MatrixView";
+import { ExportView } from "@/components/acw/studio/ExportView";
 import { ensureDomainContainers } from "@/acw/palette/domainContainerSeed";
 import {
   getCurrentDomain,
+  getViewTab,
   setConnectMode,
   setConnectPendingSource,
   setSelectedEdgeId,
@@ -92,6 +96,7 @@ export default function StudioCanvas() {
   useEffect(() => subscribeViewState(() => setTick((t) => t + 1)), []);
   void tick;
   const activeDomain = getCurrentDomain(lensId);
+  const activeTab = getViewTab(lensId);
 
   // EAStudio Phase 2 — Escape cancels Connect mode (clearing any
   // pending source) and dismisses any standing edge selection. The
@@ -140,7 +145,9 @@ export default function StudioCanvas() {
           <ConnectToggle lensId={lensId} />
         </header>
 
-        <DomainTabBar lensId={lensId} />
+        <StudioTopBar lensId={lensId} />
+
+        {activeTab === "design" ? <DomainTabBar lensId={lensId} /> : null}
 
         {refusal !== null ? (
           <div
@@ -164,11 +171,15 @@ export default function StudioCanvas() {
           </div>
         ) : null}
 
-        <div className="flex flex-1 min-h-[480px]">
-          <PalettePanel activeDomain={activeDomain} />
-          <DomainGrid lensId={lensId} />
-          <NodePropertiesPanel lensId={lensId} />
-        </div>
+        {activeTab === "design" ? (
+          <div className="flex flex-1 min-h-[480px]">
+            <PalettePanel activeDomain={activeDomain} />
+            <DomainGrid lensId={lensId} />
+            <NodePropertiesPanel lensId={lensId} />
+          </div>
+        ) : null}
+        {activeTab === "matrix" ? <MatrixView lensId={lensId} /> : null}
+        {activeTab === "export" ? <ExportView lensId={lensId} /> : null}
 
         <StatusBar lensId={lensId} />
       </div>

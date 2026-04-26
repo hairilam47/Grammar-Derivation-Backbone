@@ -83,6 +83,34 @@ export interface AcwViewState {
   // entries read as "no edge selected", and a selection never
   // mutates the workspace until the user confirms the delete.
   readonly selectedEdgeIdByLens?: Readonly<Record<string, string>>;
+  // EAStudio Phase 3 — top-bar view-tab per lens. Drives which
+  // sub-surface the Studio shell renders: "design" (the four-
+  // domain authoring canvas from Phases 1+2), "matrix" (the
+  // node × node CONNECTS toggle table), or "export" (the
+  // JSON/CSV preview + download surface). Optional, additive,
+  // and lens-keyed in line with the other Phase-2/3 slices;
+  // absence reads as DEFAULT_VIEW_TAB ("design") so the
+  // existing canvas remains the landing surface for every
+  // pre-Phase-3 document.
+  readonly viewTabByLens?: Readonly<Record<string, AcwStudioViewTab>>;
+}
+
+// EAStudio Phase 3 — top-bar tab values. Closed set; the read-
+// validator rejects unknown literals so a future caller cannot
+// smuggle a fourth tab in via a hand-edited document.
+export const ACW_STUDIO_VIEW_TABS = [
+  "design",
+  "matrix",
+  "export",
+] as const;
+export type AcwStudioViewTab = (typeof ACW_STUDIO_VIEW_TABS)[number];
+const DEFAULT_VIEW_TAB: AcwStudioViewTab = "design";
+
+export function isAcwStudioViewTab(value: unknown): value is AcwStudioViewTab {
+  return (
+    typeof value === "string" &&
+    (ACW_STUDIO_VIEW_TABS as readonly string[]).includes(value)
+  );
 }
 
 const ALLOWED_TOP = [
@@ -94,6 +122,7 @@ const ALLOWED_TOP = [
   "connectPendingSourceByLens",
   "selectedNodeIdByLens",
   "selectedEdgeIdByLens",
+  "viewTabByLens",
 ] as const;
 
 function emptyView(): AcwViewState {
@@ -106,6 +135,7 @@ function emptyView(): AcwViewState {
     connectPendingSourceByLens: Object.freeze({}),
     selectedNodeIdByLens: Object.freeze({}),
     selectedEdgeIdByLens: Object.freeze({}),
+    viewTabByLens: Object.freeze({}),
   });
 }
 
@@ -254,6 +284,25 @@ function assertValid(raw: unknown): asserts raw is AcwViewState {
       }
     }
   }
+  // EAStudio Phase 3 — viewTabByLens. Optional. When present each
+  // value must be one of the closed AcwStudioViewTab literals.
+  // Mirrors the viewModeByLens shape but for the top-bar tab strip.
+  if (r.viewTabByLens !== undefined) {
+    if (r.viewTabByLens === null || typeof r.viewTabByLens !== "object") {
+      throw new Error("ACW view-state viewTabByLens must be an object.");
+    }
+    const tm = r.viewTabByLens as Record<string, unknown>;
+    for (const [lensId, tab] of Object.entries(tm)) {
+      if (typeof lensId !== "string" || lensId.length === 0) {
+        throw new Error("ACW view-state lens id must be a non-empty string.");
+      }
+      if (!isAcwStudioViewTab(tab)) {
+        throw new Error(
+          `ACW view-state viewTabByLens value must be one of ${ACW_STUDIO_VIEW_TABS.join(" | ")}. Got: ${JSON.stringify(tab)}.`,
+        );
+      }
+    }
+  }
   // EAStudio Phase 2 — selectedEdgeIdByLens. Optional. When present
   // each value must be a non-empty string (an edge id). Identical
   // shape to the node selection slice; absent entries mean "no edge
@@ -303,7 +352,8 @@ function notify(): void {
 
 function normalize(raw: AcwViewState): AcwViewState {
   // Backfill optional fields added by v3 / EAStudio Phase 1 / Phase 2
-  // for older persisted documents so callers never have to null-check.
+  // / Phase 3 for older persisted documents so callers never have to
+  // null-check.
   return Object.freeze({
     schemaVersion: raw.schemaVersion,
     collapseByLens: raw.collapseByLens,
@@ -314,6 +364,7 @@ function normalize(raw: AcwViewState): AcwViewState {
       raw.connectPendingSourceByLens ?? Object.freeze({}),
     selectedNodeIdByLens: raw.selectedNodeIdByLens ?? Object.freeze({}),
     selectedEdgeIdByLens: raw.selectedEdgeIdByLens ?? Object.freeze({}),
+    viewTabByLens: raw.viewTabByLens ?? Object.freeze({}),
   });
 }
 
@@ -550,6 +601,36 @@ export function setSelectedEdgeId(
     ...prev,
     schemaVersion: ACW_VIEW_SCHEMA_VERSION,
     selectedEdgeIdByLens: Object.freeze(nextSel),
+  });
+  writeToStorage(next);
+  cache = next;
+  notify();
+}
+
+// EAStudio Phase 3 — top-bar tab selector.
+//
+// Pure UI state. Switching tabs swaps the rendered sub-surface in
+// the Studio shell (Design canvas | Matrix | Export) and never
+// touches the workspace document. The default ("design") matches
+// the existing landing surface so every pre-Phase-3 lens reads
+// identically to before.
+export function getViewTab(lensId: string): AcwStudioViewTab {
+  const map = getViewState().viewTabByLens ?? {};
+  return map[lensId] ?? DEFAULT_VIEW_TAB;
+}
+
+export function setViewTab(lensId: string, tab: AcwStudioViewTab): void {
+  if (!isAcwStudioViewTab(tab)) {
+    throw new Error(
+      `ACW view-state setViewTab rejected tab "${String(tab)}". Permitted: ${ACW_STUDIO_VIEW_TABS.join(" | ")}.`,
+    );
+  }
+  const prev = getViewState();
+  const prevTab = prev.viewTabByLens ?? {};
+  const next: AcwViewState = Object.freeze({
+    ...prev,
+    schemaVersion: ACW_VIEW_SCHEMA_VERSION,
+    viewTabByLens: Object.freeze({ ...prevTab, [lensId]: tab }),
   });
   writeToStorage(next);
   cache = next;

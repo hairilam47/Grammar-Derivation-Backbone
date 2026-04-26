@@ -583,6 +583,46 @@ if (ACW_SCHEMA_VERSION !== "acw-1.0") {
   }
 }
 
+// (11b) EAStudio Phase 3 — view-state read-validator accepts the
+// new optional `viewTabByLens` field at every legal literal and
+// rejects unknown values. Mirrors the (9) currentDomainByLens
+// probe shape; a fourth-tab smuggle attempt must be refused so
+// the Studio shell only ever renders one of design/matrix/export.
+{
+  for (const tab of ["design", "matrix", "export"] as const) {
+    const ok = {
+      schemaVersion: ACW_VIEW_SCHEMA_VERSION,
+      collapseByLens: {},
+      viewTabByLens: { "/workspace/studio": tab },
+    };
+    if (!__acwViewStateInternals.isValid(ok)) {
+      throw new Error(
+        `${PREFIX}: view-state read-validator refused a well-formed viewTabByLens "${tab}".`,
+      );
+    }
+  }
+  const bad = {
+    schemaVersion: ACW_VIEW_SCHEMA_VERSION,
+    collapseByLens: {},
+    viewTabByLens: { "/workspace/studio": "matrix-2" },
+  };
+  if (__acwViewStateInternals.isValid(bad)) {
+    throw new Error(
+      `${PREFIX}: view-state read-validator accepted an unknown viewTabByLens value.`,
+    );
+  }
+  const badType = {
+    schemaVersion: ACW_VIEW_SCHEMA_VERSION,
+    collapseByLens: {},
+    viewTabByLens: { "/workspace/studio": 3 },
+  };
+  if (__acwViewStateInternals.isValid(badType)) {
+    throw new Error(
+      `${PREFIX}: view-state read-validator accepted a non-string viewTabByLens value.`,
+    );
+  }
+}
+
 // (12) EAStudio Phase 2 — live-store probes for updateNodeProperties,
 // renameNode, and deleteEdge. Same snapshot-and-restore discipline
 // as the (3..6) probes; we mutate the live singleton briefly under

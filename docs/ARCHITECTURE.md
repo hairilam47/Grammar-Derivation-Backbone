@@ -3064,3 +3064,107 @@ Removing the entire EAStudio surface is a five-step delete:
   `acwGrammarInvariants.test-shape.ts` reverts in lock-step.
 
 No existing ACW lens or downstream surface depends on EAStudio.
+
+## 20B. EAStudio Phase 3 — Top-Bar Tabs (Design / Matrix / Export)
+
+EAStudio Phase 3 (Task #92) is a UI-only layer on top of the
+Phase 1 four-domain canvas and Phase 2 interactive editing. It
+introduces no new schema and no new persisted slice key; it
+adds:
+
+| Surface | Path | Purpose |
+| --- | --- | --- |
+| `StudioTopBar` | `src/components/acw/studio/StudioTopBar.tsx` | Three-tab strip (Design / Matrix / Export) reading and writing the lens-keyed `viewTabByLens` slice. |
+| `MatrixView` | `src/components/acw/studio/MatrixView.tsx` | Square node × node CONNECTS toggle table; off-diagonal cells route through `createEdge` / `deleteEdge`; cells where `isPermittedEdge("CONNECTS", from, to)` is `false` render visually-disabled. |
+| `ExportView` | `src/components/acw/studio/ExportView.tsx` | JSON preview of `getWorkspace()` and CSV preview of the node list, both with Blob + `URL.createObjectURL` downloads (stable filenames `acw-workspace.json` / `acw-nodes.csv`). |
+
+### View-state slice
+
+`acwViewState` gains one strictly-optional, lens-keyed slice on
+the existing `acw.workspace.view.v1` storage key (schema stays
+`acw-view-1.0` — no version bump):
+
+```ts
+viewTabByLens?: Readonly<Record<string, AcwStudioViewTab>>;
+type AcwStudioViewTab = "design" | "matrix" | "export";
+```
+
+The read-validator (`__acwViewStateInternals.isValid`) accepts
+absence (defaults to `"design"` per `getViewTab`), every legal
+literal, and rejects anything else. Invariant probe (11b) in
+`acwGrammarV2Invariants.test-shape.ts` covers all three legal
+values plus an unknown-tab smuggle and a non-string smuggle.
+
+### Matrix discipline
+
+- The matrix is a pure read of `getWorkspace()`. Rows and
+  columns are the same sorted node list, sorted by canonical
+  four-domain order (`business → data → application →
+  technology`, with un-tagged nodes last) then by label, with
+  a stable `id` tiebreak so two same-label nodes never swap.
+- A cell at `(row, col)` is "on" when **any** CONNECTS edge
+  exists between the two nodes regardless of authorship
+  direction (CONNECTS is bidirectional in the grammar). The
+  lookup is built once per render from `structureGraph.edges`.
+- Click toggles: an existing edge is removed via `deleteEdge`,
+  otherwise a new CONNECTS edge is created via `createEdge`
+  with the row node as `fromId`. Both refusals surface through
+  `acwRefusalChannel` so the existing `WorkspaceShell` /
+  Studio refusal banner already covers them.
+- Cells where `isPermittedEdge("CONNECTS", row.type, col.type)`
+  is `false` render with the `Slash` icon and `disabled` button
+  (cursor `not-allowed`, no click handler reaches the store).
+  The grammar — not the matrix — remains the legality
+  authority; the disabled state is a UX hint that mirrors what
+  the validator would refuse anyway. Sealed domain containers
+  fall into this branch automatically because the validator
+  refuses every CONNECTS attempt with a sealed endpoint.
+- Diagonal cells render the `Minus` icon and are non-
+  interactive — there is no grammar concept of a self-loop
+  CONNECTS edge.
+
+### Export discipline
+
+- Both previews are pure `useMemo` derivations of `getWorkspace()`.
+  No mutation flows from this view.
+- JSON: `JSON.stringify(getWorkspace(), null, 2)`, downloaded
+  as `acw-workspace.json` with MIME `application/json`.
+- CSV: column order is fixed at `id, type, label, parentId,
+  domainTag, status, maturity, priority, owner` (the order is
+  documented as the public contract for the export). Cells are
+  RFC-4180 escaped — fields containing comma, double-quote,
+  CR, or LF are wrapped in double-quotes with embedded
+  double-quotes doubled. `null` and `undefined` collapse to
+  the empty string so the column stays positional. Lines end
+  with `CRLF` and the file is downloaded as `acw-nodes.csv`
+  with MIME `text/csv`.
+- Downloads use a transient `Blob` + `URL.createObjectURL` +
+  hidden `<a download>` click + `URL.revokeObjectURL` on the
+  next tick. Filenames are stable strings (no timestamps) so
+  the same workspace produces a diff-friendly file across
+  exports and across users.
+
+### Strictly removable
+
+Removing Phase 3 is a four-step revert that does not affect Phase
+1 or Phase 2 or any other ACW surface:
+
+- delete `src/components/acw/studio/{StudioTopBar,
+  MatrixView, ExportView}.tsx`,
+- remove the `viewTabByLens` field, the `AcwStudioViewTab`
+  type, the `ACW_STUDIO_VIEW_TABS` / `isAcwStudioViewTab` /
+  `getViewTab` / `setViewTab` exports, the `viewTabByLens`
+  validator branch, the `ALLOWED_TOP` entry, the `emptyView`
+  field, and the `normalize` backfill from
+  `src/acw/acwViewState.ts`,
+- revert the `Phase 3` wiring in `StudioCanvas.tsx` (top-bar
+  mount, `activeTab` read, conditional Design / Matrix / Export
+  branches; restore the unconditional `DomainTabBar` and
+  four-domain `<div>`),
+- remove the `(11b)` probe block from
+  `acwGrammarV2Invariants.test-shape.ts`.
+
+The `acw-1.0` snapshot schema and the `acw-view-1.0` view-state
+schema are unchanged. Persisted documents continue to load after
+rollback because the optional slice simply reverts to being
+unknown to the reader.
