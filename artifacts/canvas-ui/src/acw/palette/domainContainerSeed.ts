@@ -101,12 +101,46 @@ export function findDomainContainerById(
 }
 
 // Idempotent: returns true if every domain container is present
-// after the call (whether it was already there or just created).
-// Refused creations route through the refusal channel and the
-// function returns false so callers can surface a fallback hint.
+// *and shape-correct* after the call (whether it was already there
+// or just created). Refused creations route through the refusal
+// channel and the function returns false so callers can surface a
+// fallback hint.
+//
+// Hardening: a malformed pre-existing node at a stable
+// `domain-{tag}` id would otherwise let `createNode`'s id-collision
+// short-circuit silently bypass proper container creation. Before
+// calling `createNode`, this routine inspects the live workspace
+// and refuses to short-circuit when an existing node at the seed
+// id is missing the expected `type`, `domainTag`, or
+// `isDomainContainer === true` marker. In that case we publish a
+// refusal so the StudioCanvas surface can show a banner and we
+// return false; we do not silently overwrite the existing node
+// (the store has no overwrite primitive at this layer, and a
+// silent overwrite would erase whatever the user had authored
+// there).
 export function ensureDomainContainers(): boolean {
   let allOk = true;
+  const ws = getWorkspace();
+  const byId = new Map(ws.structureGraph.nodes.map((n) => [n.id, n] as const));
   for (const spec of ACW_DOMAIN_CONTAINERS) {
+    const existing = byId.get(spec.id);
+    if (existing !== undefined) {
+      // Shape check — a pre-existing node at the well-known id
+      // must match the seed contract on type, domain tag, and the
+      // domain-container marker.
+      const shapeOk =
+        existing.type === spec.elementType &&
+        existing.isDomainContainer === true &&
+        existing.domainTag === spec.domain &&
+        existing.parentId === null;
+      if (!shapeOk) {
+        allOk = false;
+        publishRefusal(
+          `The workspace already contains a node at the well-known id "${spec.id}" that is not a sealed ${spec.domain} domain container. The Studio canvas will not overwrite it.`,
+        );
+      }
+      continue;
+    }
     const r = createNode({
       id: spec.id,
       type: spec.elementType,

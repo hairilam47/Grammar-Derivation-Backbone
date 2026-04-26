@@ -172,30 +172,6 @@ function Quadrant(props: QuadrantProps) {
 
   const [isOver, setIsOver] = useState(false);
 
-  // Classify the current focus for the strict Business chain. We
-  // only need this in the Business quadrant; other domains accept
-  // System under any Zone per the standard grammar. Returns:
-  //   - "container"  : the sealed BusinessEntity quadrant root
-  //   - "department" : a Zone whose parent is the BusinessEntity
-  //                    (Department-tier — System refused here)
-  //   - "orgunit"    : a Zone whose parent is itself a Zone
-  //                    (OrgUnit-tier or deeper — System permitted)
-  //   - "other"      : focus is on a non-Zone, non-container node
-  //                    (don't apply business-chain extra refusal;
-  //                    the grammar will gate normally)
-  const classifyBusinessFocus = (): "container" | "department" | "orgunit" | "other" => {
-    if (focusedParentId === containerId) return "container";
-    const node = nodeById.get(focusedParentId);
-    if (node === undefined) return "other";
-    if (node.type !== "Zone") return "other";
-    if (node.parentId === null) return "other";
-    const parent = nodeById.get(node.parentId);
-    if (parent === undefined) return "other";
-    if (parent.type === "BusinessEntity") return "department";
-    if (parent.type === "Zone") return "orgunit";
-    return "other";
-  };
-
   const onDragOver = (e: DragEvent<HTMLDivElement>) => {
     const types = Array.from(e.dataTransfer.types);
     if (!types.includes(ACW_PALETTE_DATA_KEY)) return;
@@ -238,14 +214,13 @@ function Quadrant(props: QuadrantProps) {
     // (b) The strict Business chain (BusinessEntity → Department
     // → Org unit → Business process) is enforced at the
     // *validator* level for both palette drops and drag-to-
-    // reparent, so the duplicate UI-layer check that previously
-    // lived here has been removed. The validator surfaces a
-    // refusal whose reason text references the chain literally
-    // when a System tile lands directly inside the Business
-    // container or a Department-tier Zone, and `createNode`
-    // routes it through the standard refusal channel below. Two
-    // historical concerns motivated keeping the previous UI
-    // check; both are now resolved:
+    // reparent, so a duplicate UI-layer check is intentionally
+    // not performed here. The validator surfaces a refusal whose
+    // reason text references the chain literally when a System
+    // tile lands directly inside the Business container or a
+    // Department-tier Zone, and `createNode` routes it through
+    // the standard refusal channel below. Two historical concerns
+    // motivated routing the check through the validator instead:
     //   - palette-drop and reparent paths used to diverge in
     //     enforcement strength, letting a user move a Business
     //     process out of an OrgUnit by drag. The validator now
@@ -256,7 +231,6 @@ function Quadrant(props: QuadrantProps) {
     //     in only when the parent Zone's top-most ancestor is a
     //     `BusinessEntity`, so Application-in-Zone continues to
     //     pass.
-    void classifyBusinessFocus;
 
     const r = createNode({
       type: item.elementType,
