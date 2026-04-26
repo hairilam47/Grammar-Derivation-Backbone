@@ -18,6 +18,12 @@
 // `suppressEdgeRendering={true}` so they no longer draw edges or
 // the in-canvas confirm pill — both responsibilities move here.
 //
+// Visual styling notes (Task #99):
+//   - All stroke / fill colors come from the scoped `.eastudio-root`
+//     CSS palette via the `es-edge-*` classes. The wrapper sits
+//     inside `.eastudio-root`, so the cascade resolves the tokens
+//     to the prototype's `var(--border3)` / `var(--accent)`.
+//
 // How it stays accurate without instrumenting every layout source:
 //   - Each rendered node `<g>` carries `data-acw-node-id` (added in
 //     `InteractiveCanvas2D`). The overlay queries the grid-rooted
@@ -150,15 +156,10 @@ export function StudioEdgeOverlay(props: StudioEdgeOverlayProps) {
   return (
     <svg
       data-testid="acw-studio-edge-overlay"
+      className="es-edge-svg"
       width={size.w}
       height={size.h}
       viewBox={`0 0 ${size.w} ${size.h}`}
-      style={{
-        position: "absolute",
-        inset: 0,
-        pointerEvents: "none",
-        zIndex: 5,
-      }}
     >
       <defs>
         <marker
@@ -170,10 +171,7 @@ export function StudioEdgeOverlay(props: StudioEdgeOverlayProps) {
           markerHeight="6"
           orient="auto-start-reverse"
         >
-          <path
-            d="M 0 0 L 10 5 L 0 10 z"
-            fill="rgba(255,255,255,0.6)"
-          />
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--border3)" />
         </marker>
         <marker
           id="acw-studio-overlay-arrowhead-selected"
@@ -184,10 +182,7 @@ export function StudioEdgeOverlay(props: StudioEdgeOverlayProps) {
           markerHeight="6"
           orient="auto-start-reverse"
         >
-          <path
-            d="M 0 0 L 10 5 L 0 10 z"
-            fill="rgba(120,200,255,0.95)"
-          />
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--accent)" />
         </marker>
       </defs>
       {edges.map((e) => {
@@ -239,11 +234,8 @@ export function StudioEdgeOverlay(props: StudioEdgeOverlayProps) {
                 `pointer-events: none` wrapper does not swallow
                 clicks meant for edges. */}
             <path
+              className="es-edge-hit"
               d={path}
-              stroke="rgba(0,0,0,0)"
-              strokeWidth={12}
-              fill="none"
-              style={{ pointerEvents: "stroke", cursor: "pointer" }}
               onClick={(ev) => {
                 ev.stopPropagation();
                 onEdgeClick(e.id);
@@ -255,14 +247,9 @@ export function StudioEdgeOverlay(props: StudioEdgeOverlayProps) {
               }}
             />
             <path
+              className="es-edge-line"
+              data-selected={isSelected ? "true" : "false"}
               d={path}
-              stroke={
-                isSelected
-                  ? "rgba(120,200,255,0.95)"
-                  : "rgba(255,255,255,0.55)"
-              }
-              strokeWidth={isSelected ? 1.6 : 1}
-              fill="none"
               markerEnd={`url(#acw-studio-overlay-arrowhead${isSelected ? "-selected" : ""})`}
             />
             {isSelected ? (
@@ -278,8 +265,8 @@ export function StudioEdgeOverlay(props: StudioEdgeOverlayProps) {
                   height={18}
                   rx={4}
                   ry={4}
-                  fill="rgba(20,28,40,0.96)"
-                  stroke="rgba(120,200,255,0.95)"
+                  fill="var(--bg2)"
+                  stroke="var(--accent)"
                   strokeWidth={0.6}
                 />
                 <g
@@ -297,15 +284,15 @@ export function StudioEdgeOverlay(props: StudioEdgeOverlayProps) {
                     height={16}
                     rx={3}
                     ry={3}
-                    fill="rgba(180,60,60,0.0)"
+                    fill="rgba(0,0,0,0)"
                   />
                   <text
                     x={19}
                     y={12}
                     textAnchor="middle"
                     fontSize={9}
-                    fill="rgba(255,180,180,0.95)"
-                    fontFamily="ui-sans-serif, system-ui, sans-serif"
+                    fill="var(--danger)"
+                    fontFamily="'DM Mono', ui-monospace, monospace"
                   >
                     {DELETE_LABEL}
                   </text>
@@ -315,7 +302,7 @@ export function StudioEdgeOverlay(props: StudioEdgeOverlayProps) {
                   y1={3}
                   x2={38}
                   y2={15}
-                  stroke="rgba(120,200,255,0.4)"
+                  stroke="var(--border2)"
                   strokeWidth={0.4}
                 />
                 <g
@@ -340,8 +327,8 @@ export function StudioEdgeOverlay(props: StudioEdgeOverlayProps) {
                     y={12}
                     textAnchor="middle"
                     fontSize={9}
-                    fill="rgba(220,220,220,0.85)"
-                    fontFamily="ui-sans-serif, system-ui, sans-serif"
+                    fill="var(--text1)"
+                    fontFamily="'DM Mono', ui-monospace, monospace"
                   >
                     {CANCEL_LABEL}
                   </text>

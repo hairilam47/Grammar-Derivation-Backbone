@@ -274,3 +274,619 @@
     inset: -1px;
   }
 }
+
+/* ---------------------------------------------------------------- */
+/* EAStudio Phase 1–3 visual alignment (Task #99) — scoped theme.   */
+/*                                                                  */
+/* All styles below are scoped under `.eastudio-root` so they apply */
+/* only inside the Studio canvas surface. The four-domain CSS vars  */
+/* mirror the prototype's `--biz / --data / --app / --tech` accent  */
+/* tokens and are read by `[data-domain]` selectors below. Body     */
+/* font becomes Syne; mono surfaces (status bar, palette sub-label, */
+/* card sub-label, breadcrumbs, export panel) use DM Mono.          */
+/* ---------------------------------------------------------------- */
+.eastudio-root {
+  --bg0: #0a0e1a;
+  --bg1: #0f1422;
+  --bg2: #161c2e;
+  --bg3: #1d2438;
+  --border1: rgba(255, 255, 255, 0.05);
+  --border2: rgba(255, 255, 255, 0.08);
+  --border3: rgba(255, 255, 255, 0.12);
+  --text0: #e8eaf0;
+  --text1: #b8bcc9;
+  --text2: #6e7384;
+  --text3: #4a4f60;
+  --accent: #5b8def;
+  --biz: #f7934f;
+  --data: #4fc8f7;
+  --app: #a34ff7;
+  --tech: #4ff7a3;
+  --danger: #f74f7e;
+  font-family: 'Syne', system-ui, sans-serif;
+  color: var(--text0);
+  background: var(--bg0);
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+.eastudio-root .es-mono { font-family: 'DM Mono', ui-monospace, monospace; }
+
+/* Top bar -------------------------------------------------------- */
+.eastudio-root .es-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--bg1);
+  border-bottom: 1px solid var(--border2);
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.eastudio-root .es-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  font-size: 14px;
+}
+.eastudio-root .es-brand-mark {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, var(--biz), var(--app));
+  display: grid;
+  place-items: center;
+  color: var(--bg0);
+}
+.eastudio-root .es-brand-sub {
+  color: var(--text2);
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+/* Top bar tab strip — view tabs (Design / Matrix / Export). */
+.eastudio-root .es-vtabs {
+  display: flex;
+  gap: 4px;
+  background: var(--bg2);
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--border2);
+}
+.eastudio-root .es-vtab {
+  background: transparent;
+  border: none;
+  color: var(--text2);
+  padding: 6px 12px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border-radius: 5px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: color 0.18s, background 0.18s;
+}
+.eastudio-root .es-vtab:hover { color: var(--text0); }
+.eastudio-root .es-vtab[aria-selected="true"] {
+  background: var(--bg3);
+  color: var(--text0);
+}
+
+/* Top bar action buttons. */
+.eastudio-root .es-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.eastudio-root .es-btn {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  color: var(--text1);
+  padding: 6px 12px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-family: inherit;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.18s, color 0.18s, border-color 0.18s;
+}
+.eastudio-root .es-btn:hover {
+  background: var(--bg3);
+  color: var(--text0);
+  border-color: var(--border3);
+}
+.eastudio-root .es-btn[data-active="true"] {
+  background: var(--accent);
+  color: var(--bg0);
+  border-color: var(--accent);
+}
+.eastudio-root .es-btn[data-tone="danger"]:hover {
+  background: var(--danger);
+  color: var(--bg0);
+  border-color: var(--danger);
+}
+
+/* Domain tab bar ------------------------------------------------- */
+.eastudio-root .es-dtabs {
+  display: flex;
+  gap: 0;
+  background: var(--bg1);
+  border-bottom: 1px solid var(--border2);
+  padding: 0 16px;
+}
+.eastudio-root .es-dtab {
+  background: transparent;
+  border: none;
+  color: var(--text2);
+  padding: 12px 18px;
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: color 0.18s, border-color 0.18s;
+}
+.eastudio-root .es-dtab:hover { color: var(--text0); }
+.eastudio-root .es-dtab[aria-selected="true"] { color: var(--text0); }
+.eastudio-root .es-dtab[data-domain="business"][aria-selected="true"] { border-bottom-color: var(--biz); }
+.eastudio-root .es-dtab[data-domain="data"][aria-selected="true"] { border-bottom-color: var(--data); }
+.eastudio-root .es-dtab[data-domain="application"][aria-selected="true"] { border-bottom-color: var(--app); }
+.eastudio-root .es-dtab[data-domain="technology"][aria-selected="true"] { border-bottom-color: var(--tech); }
+
+/* Studio body grid ---------------------------------------------- */
+.eastudio-root .es-body {
+  display: grid;
+  grid-template-columns: 240px 1fr 280px;
+  flex: 1;
+  min-height: 0;
+}
+.eastudio-root .es-body[data-properties="hidden"] {
+  grid-template-columns: 240px 1fr;
+}
+
+/* Palette panel ------------------------------------------------- */
+.eastudio-root .es-palette {
+  background: var(--bg1);
+  border-right: 1px solid var(--border2);
+  padding: 14px;
+  overflow-y: auto;
+}
+.eastudio-root .es-palette-title {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text2);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.eastudio-root .es-palette-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.eastudio-root .es-palette-item {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  padding: 9px 11px;
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  transition: background 0.18s, border-color 0.18s, transform 0.12s;
+  user-select: none;
+}
+.eastudio-root .es-palette-item:hover {
+  background: var(--bg3);
+  border-color: var(--border3);
+  transform: translateX(2px);
+}
+.eastudio-root .es-palette-item:active { cursor: grabbing; }
+.eastudio-root .es-palette-item .es-pal-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.eastudio-root .es-palette-item[data-domain="business"] .es-pal-icon { background: rgba(247, 147, 79, 0.14); color: var(--biz); }
+.eastudio-root .es-palette-item[data-domain="data"] .es-pal-icon { background: rgba(79, 200, 247, 0.14); color: var(--data); }
+.eastudio-root .es-palette-item[data-domain="application"] .es-pal-icon { background: rgba(163, 79, 247, 0.14); color: var(--app); }
+.eastudio-root .es-palette-item[data-domain="technology"] .es-pal-icon { background: rgba(79, 247, 163, 0.14); color: var(--tech); }
+.eastudio-root .es-pal-text { display: flex; flex-direction: column; min-width: 0; }
+.eastudio-root .es-pal-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text0);
+  letter-spacing: 0.02em;
+}
+.eastudio-root .es-pal-sub {
+  font-size: 10px;
+  color: var(--text2);
+  letter-spacing: 0.04em;
+}
+
+/* Canvas region — flat zones ------------------------------------ */
+.eastudio-root .es-canvas-wrap {
+  position: relative;
+  background: var(--bg0);
+  overflow: auto;
+  padding: 18px;
+  min-height: 0;
+}
+.eastudio-root .es-zones {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 14px;
+  min-height: 100%;
+}
+.eastudio-root .es-zone {
+  background: var(--bg1);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  min-height: 240px;
+  transition: border-color 0.18s, background 0.18s;
+}
+.eastudio-root .es-zone[data-drop-active="true"] {
+  background: var(--bg2);
+}
+.eastudio-root .es-zone[data-domain="business"][data-drop-active="true"] { border-color: var(--biz); }
+.eastudio-root .es-zone[data-domain="data"][data-drop-active="true"] { border-color: var(--data); }
+.eastudio-root .es-zone[data-domain="application"][data-drop-active="true"] { border-color: var(--app); }
+.eastudio-root .es-zone[data-domain="technology"][data-drop-active="true"] { border-color: var(--tech); }
+
+.eastudio-root .es-zone-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border2);
+}
+.eastudio-root .es-zone-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.eastudio-root .es-zone[data-domain="business"] .es-zone-title { color: var(--biz); }
+.eastudio-root .es-zone[data-domain="data"] .es-zone-title { color: var(--data); }
+.eastudio-root .es-zone[data-domain="application"] .es-zone-title { color: var(--app); }
+.eastudio-root .es-zone[data-domain="technology"] .es-zone-title { color: var(--tech); }
+.eastudio-root .es-zone-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+.eastudio-root .es-zone-nodes {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 8px;
+  min-height: 60px;
+}
+.eastudio-root .es-zone-empty {
+  color: var(--text3);
+  font-size: 11px;
+  font-style: italic;
+  margin: auto;
+  text-align: center;
+}
+
+/* Card / cnode -------------------------------------------------- */
+.eastudio-root .es-cnode {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 7px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  cursor: pointer;
+  transition: border-color 0.18s, background 0.18s, transform 0.12s;
+  min-width: 150px;
+  max-width: 220px;
+}
+.eastudio-root .es-cnode:hover { background: var(--bg3); border-color: var(--border3); }
+.eastudio-root .es-cnode[data-selected="true"] { border-color: var(--accent); }
+.eastudio-root .es-cnode[data-pending-source="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(91, 141, 239, 0.25); }
+.eastudio-root .es-cnode[data-domain="business"] { border-left: 3px solid var(--biz); }
+.eastudio-root .es-cnode[data-domain="data"] { border-left: 3px solid var(--data); }
+.eastudio-root .es-cnode[data-domain="application"] { border-left: 3px solid var(--app); }
+.eastudio-root .es-cnode[data-domain="technology"] { border-left: 3px solid var(--tech); }
+
+.eastudio-root .es-cnode-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.eastudio-root .es-cnode[data-domain="business"] .es-cnode-icon { background: rgba(247, 147, 79, 0.14); color: var(--biz); }
+.eastudio-root .es-cnode[data-domain="data"] .es-cnode-icon { background: rgba(79, 200, 247, 0.14); color: var(--data); }
+.eastudio-root .es-cnode[data-domain="application"] .es-cnode-icon { background: rgba(163, 79, 247, 0.14); color: var(--app); }
+.eastudio-root .es-cnode[data-domain="technology"] .es-cnode-icon { background: rgba(79, 247, 163, 0.14); color: var(--tech); }
+
+.eastudio-root .es-cnode-text { display: flex; flex-direction: column; min-width: 0; }
+.eastudio-root .es-cnode-label {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text0);
+}
+.eastudio-root .es-cnode-sub {
+  font-size: 9px;
+  color: var(--text2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.04em;
+}
+
+.eastudio-root .es-cnode-actions {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.eastudio-root .es-cnode:hover .es-cnode-actions,
+.eastudio-root .es-cnode[data-selected="true"] .es-cnode-actions,
+.eastudio-root .es-cnode[data-pending-source="true"] .es-cnode-actions {
+  opacity: 1;
+}
+.eastudio-root .es-cnode-btn {
+  background: transparent;
+  border: none;
+  color: var(--text2);
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.eastudio-root .es-cnode-btn:hover { background: var(--bg0); color: var(--text0); }
+.eastudio-root .es-cnode-btn[data-tone="danger"]:hover { background: var(--danger); color: var(--bg0); }
+
+/* Properties panel --------------------------------------------- */
+.eastudio-root .es-props {
+  background: var(--bg1);
+  border-left: 1px solid var(--border2);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.eastudio-root .es-props-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border2);
+}
+.eastudio-root .es-props-title {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text2);
+}
+.eastudio-root .es-props-close {
+  background: transparent;
+  border: none;
+  color: var(--text2);
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.eastudio-root .es-props-close:hover { background: var(--bg2); color: var(--text0); }
+.eastudio-root .es-props-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border1);
+}
+.eastudio-root .es-props-label {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text2);
+}
+.eastudio-root .es-props-input,
+.eastudio-root .es-props-select {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  color: var(--text0);
+  padding: 6px 9px;
+  border-radius: 5px;
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.eastudio-root .es-props-input:focus,
+.eastudio-root .es-props-select:focus { border-color: var(--accent); }
+.eastudio-root .es-props-sealed {
+  padding: 12px 16px;
+  font-size: 11px;
+  color: var(--text2);
+  font-style: italic;
+}
+.eastudio-root .es-props-section {
+  padding: 10px 16px;
+  border-top: 1px solid var(--border2);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.eastudio-root .es-props-section h4 {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text2);
+}
+.eastudio-root .es-props-edge {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-size: 11px;
+  gap: 6px;
+}
+.eastudio-root .es-props-edge-other { color: var(--text0); overflow: hidden; text-overflow: ellipsis; }
+.eastudio-root .es-props-edge-dir { color: var(--text2); margin-right: 4px; text-transform: uppercase; font-size: 9px; letter-spacing: 0.12em; }
+
+/* Status bar --------------------------------------------------- */
+.eastudio-root .es-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg1);
+  border-top: 1px solid var(--border2);
+  padding: 8px 16px;
+  gap: 16px;
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--text2);
+  letter-spacing: 0.06em;
+}
+.eastudio-root .es-status-group { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.eastudio-root .es-status-cell { display: inline-flex; align-items: center; gap: 5px; }
+.eastudio-root .es-status-key { text-transform: uppercase; letter-spacing: 0.16em; }
+.eastudio-root .es-status-val { color: var(--text0); }
+.eastudio-root .es-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text1);
+}
+
+/* Edge overlay svg --------------------------------------------- */
+.eastudio-root .es-edge-svg { position: absolute; inset: 0; pointer-events: none; }
+.eastudio-root .es-edge-line { stroke: var(--border3); stroke-width: 1.5; fill: none; pointer-events: stroke; cursor: pointer; transition: stroke 0.15s, stroke-width 0.15s; }
+.eastudio-root .es-edge-line:hover { stroke: var(--accent); stroke-width: 2; }
+.eastudio-root .es-edge-line[data-selected="true"] { stroke: var(--accent); stroke-width: 2.5; }
+.eastudio-root .es-edge-hit { stroke: transparent; stroke-width: 14; fill: none; pointer-events: stroke; cursor: pointer; }
+.eastudio-root .es-edge-confirm {
+  pointer-events: auto;
+  background: var(--bg2);
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  padding: 4px 6px;
+  display: inline-flex;
+  gap: 3px;
+}
+.eastudio-root .es-edge-confirm button {
+  background: transparent;
+  border: none;
+  color: var(--text1);
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.eastudio-root .es-edge-confirm button:hover { background: var(--bg0); color: var(--text0); }
+.eastudio-root .es-edge-confirm button[data-tone="danger"]:hover { background: var(--danger); color: var(--bg0); }
+
+/* Refusal banner ----------------------------------------------- */
+.eastudio-root .es-refusal {
+  margin: 12px 16px 0;
+  padding: 10px 12px;
+  background: rgba(247, 79, 126, 0.08);
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--text0);
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+.eastudio-root .es-refusal-prefix {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 9px;
+  font-weight: 700;
+  margin-right: 6px;
+  color: var(--danger);
+}
+.eastudio-root .es-refusal-dismiss {
+  background: transparent;
+  border: none;
+  color: var(--text2);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  font-family: inherit;
+}
+.eastudio-root .es-refusal-dismiss:hover { color: var(--text0); }
+
+/* Matrix view -------------------------------------------------- */
+.eastudio-root .es-matrix-wrap { padding: 16px; flex: 1; overflow: auto; min-height: 0; }
+.eastudio-root .es-matrix-head h3 { margin: 0 0 4px; font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text2); }
+.eastudio-root .es-matrix-head p { margin: 0 0 12px; font-size: 11px; color: var(--text2); }
+.eastudio-root .es-matrix-table { border-collapse: collapse; font-family: 'DM Mono', ui-monospace, monospace; font-size: 10px; background: var(--bg1); border: 1px solid var(--border2); border-radius: 6px; overflow: hidden; }
+.eastudio-root .es-matrix-table th { background: var(--bg2); color: var(--text1); padding: 6px 8px; text-align: left; border-right: 1px solid var(--border1); border-bottom: 1px solid var(--border2); white-space: nowrap; font-weight: 600; }
+.eastudio-root .es-matrix-table td { border-right: 1px solid var(--border1); border-bottom: 1px solid var(--border1); padding: 0; text-align: center; }
+.eastudio-root .es-matrix-cell { width: 30px; height: 30px; display: grid; place-items: center; background: transparent; border: none; cursor: pointer; color: var(--text3); }
+.eastudio-root .es-matrix-cell:hover:not(:disabled) { background: rgba(91, 141, 239, 0.15); }
+.eastudio-root .es-matrix-cell:disabled { cursor: not-allowed; opacity: 0.45; }
+.eastudio-root .es-matrix-cell[data-state="on"] { color: var(--accent); }
+.eastudio-root .es-matrix-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; color: var(--text2); gap: 4px; padding: 36px; }
+
+/* Export view -------------------------------------------------- */
+.eastudio-root .es-export-wrap { padding: 16px; flex: 1; overflow: auto; min-height: 0; }
+.eastudio-root .es-export-head h3 { margin: 0 0 4px; font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text2); }
+.eastudio-root .es-export-head p { margin: 0 0 12px; font-size: 11px; color: var(--text2); }
+.eastudio-root .es-export-block { background: var(--bg1); border: 1px solid var(--border2); border-radius: 6px; padding: 12px; font-family: 'DM Mono', ui-monospace, monospace; font-size: 11px; color: var(--text1); white-space: pre; overflow: auto; max-height: 60vh; }
+.eastudio-root .es-export-toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }

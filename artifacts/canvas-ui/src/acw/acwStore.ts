@@ -1018,6 +1018,72 @@ export function deleteEdge(edgeId: string): StoreResult {
   return { ok: true };
 }
 
+// EAStudio Phase 1–3 visual alignment (Task #99) — leaf-node
+// deletion. The Studio surface needs a way to remove a card the
+// user added by mistake; the prototype binds this to the small
+// `node-del` button on every card. Routing through the store keeps
+// the validator in the loop (sealed-container refusal still applies)
+// and lets every consumer subscribe via the workspace `notify`
+// channel instead of mutating the document directly.
+//
+// Refusal rules:
+//   - The id must reference an existing node.
+//   - Sealed domain containers (`isDomainContainer === true`) are
+//     never deletable. The prototype's flat zone layout makes them
+//     unreachable from the UI today, but a future surface that
+//     surfaces a delete affordance on a container would otherwise
+//     silently corrupt the workspace; the refusal here makes the
+//     guarantee structural rather than UI-policy.
+//   - A node that still has at least one child (`parentId === id`
+//     for any other node) is refused. EAStudio's flat layout means
+//     leaf cards never have children, but again — defensive against
+//     future drilldown re-introduction. Cascade-delete would couple
+//     the store to a multi-step intent the validator does not model.
+//
+// Side effects:
+//   - Every incident edge (CONNECTS or otherwise) is removed in the
+//     same write so the workspace cannot end up with dangling
+//     endpoints. The single write goes through the validator's
+//     `assertAllowedFields` invariant chain, identical to every
+//     other mutation.
+export function deleteNode(nodeId: string): StoreResult {
+  const ws = getWorkspace();
+  const node = ws.structureGraph.nodes.find((n) => n.id === nodeId);
+  if (node === undefined) {
+    return { ok: false, reason: "The node referenced does not exist." };
+  }
+  if (node.isDomainContainer === true) {
+    return {
+      ok: false,
+      reason: "The sealed domain container cannot be deleted.",
+    };
+  }
+  const hasChildren = ws.structureGraph.nodes.some(
+    (n) => n.parentId === nodeId,
+  );
+  if (hasChildren) {
+    return {
+      ok: false,
+      reason: "The node has child nodes and cannot be deleted.",
+    };
+  }
+  const nodes = ws.structureGraph.nodes.filter((n) => n.id !== nodeId);
+  const edges = ws.structureGraph.edges.filter(
+    (e) => e.fromId !== nodeId && e.toId !== nodeId,
+  );
+  const next: AcwWorkspace = Object.freeze({
+    schemaVersion: ACW_SCHEMA_VERSION,
+    structureGraph: Object.freeze({
+      nodes: Object.freeze(nodes),
+      edges: Object.freeze(edges),
+    }),
+  });
+  writeToStorage(next);
+  cache = next;
+  notify();
+  return { ok: true };
+}
+
 // Test / maintenance affordance: clear the workspace back to empty.
 // Not bound to any UI in v1; provided so future tooling and the
 // build-time invariants can reset state without touching localStorage

@@ -21,13 +21,16 @@
 // the panel renders a plain "sealed container" notice instead of
 // the editor form.
 //
+// Visual styling notes (Task #99):
+//   - All chrome is rendered with the prototype-aligned `es-props-*`
+//     class set defined in `.eastudio-root` scoped CSS. The panel
+//     occupies the third column of the `.es-body` grid (the grid
+//     itself owns the 280px width); when nothing is selected the
+//     component returns null and the grid switches to a two-column
+//     layout via `data-properties="hidden"`.
+//
 // Constitutional discipline:
 //   - Lucide icons only.
-//   - `@/components/ui` primitives only for buttons, inputs, and
-//     labels. (No raw `<input>` / `<button>` outside this file's
-//     `<select>`, which has no shadcn equivalent in the project's
-//     UI kit and is styled to match the Input primitive's class
-//     vocabulary.)
 //   - Every static label asserted against ACW_PLACEHOLDER_FORBIDDEN
 //     at module load.
 //   - Vocabulary "permitted" not "allowed".
@@ -66,9 +69,6 @@ import {
   type AcwNodePriority,
   type AcwNodeStatus,
 } from "@/acw/acwNodeProperties";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 
 const PANEL_TITLE = "Properties";
 const SEALED_NOTICE = "This is a sealed domain container and is not editable.";
@@ -124,22 +124,18 @@ export interface NodePropertiesPanelProps {
 
 function PanelHeader({ onClose }: { onClose?: () => void }) {
   return (
-    <header className="flex items-center justify-between px-3 py-2 border-b border-border/30">
-      <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-        {PANEL_TITLE}
-      </h3>
+    <header className="es-props-head">
+      <h3 className="es-props-title">{PANEL_TITLE}</h3>
       {onClose ? (
-        <Button
+        <button
           type="button"
-          variant="ghost"
-          size="icon"
           onClick={onClose}
           aria-label={CLOSE_LABEL}
           data-testid="acw-studio-properties-close"
-          className="h-6 w-6"
+          className="es-props-close"
         >
           <X className="w-3 h-3" />
-        </Button>
+        </button>
       ) : null}
     </header>
   );
@@ -153,23 +149,21 @@ interface DebouncedTextFieldProps {
   testIdPrefix: string;
 }
 
-// Pure controlled-input wrapper around the shared Input primitive.
-// The debounced commit lives in the parent so the timer can be
-// reset when the selection changes (otherwise a stale timer from a
-// previous selection would commit against the wrong node).
+// Pure controlled-input wrapper around the prototype-styled
+// `es-props-input`. The debounced commit lives in the parent so
+// the timer can be reset when the selection changes (otherwise a
+// stale timer from a previous selection would commit against the
+// wrong node).
 function DebouncedTextField(p: DebouncedTextFieldProps) {
   return (
-    <div className="px-3 py-2 border-b border-border/20 flex flex-col gap-1">
-      <Label
-        htmlFor={p.id}
-        className="text-[10px] uppercase tracking-widest text-muted-foreground"
-      >
+    <div className="es-props-field">
+      <label htmlFor={p.id} className="es-props-label">
         {p.label}
-      </Label>
-      <Input
+      </label>
+      <input
         id={p.id}
         type="text"
-        className="h-8 text-xs"
+        className="es-props-input"
         value={p.value}
         onChange={(e: ChangeEvent<HTMLInputElement>) => p.onChange(e.target.value)}
         data-testid={`${p.testIdPrefix}-input`}
@@ -187,16 +181,11 @@ interface EnumFieldProps {
 }
 
 function EnumField(p: EnumFieldProps) {
-  // No <Select> primitive in the project's UI kit — keeping the
-  // native <select> element gates accessibility/keyboard semantics
-  // for free, and is styled to match the Input primitive.
   return (
-    <div className="px-3 py-2 border-b border-border/20 flex flex-col gap-1">
-      <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">
-        {p.label}
-      </Label>
+    <div className="es-props-field">
+      <label className="es-props-label">{p.label}</label>
       <select
-        className="flex h-8 w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+        className="es-props-select"
         value={p.value}
         onChange={(e: ChangeEvent<HTMLSelectElement>) => p.onChange(e.target.value)}
         data-testid={`${p.testIdPrefix}-select`}
@@ -337,12 +326,10 @@ export function NodePropertiesPanel({ lensId }: NodePropertiesPanelProps) {
         data-testid="acw-studio-properties-panel"
         data-state="sealed"
         data-node-id={node.id}
-        className="w-[280px] border-l border-border/40 bg-card/30 flex flex-col"
+        className="es-props"
       >
         <PanelHeader onClose={() => setSelectedNodeId(lensId, null)} />
-        <p className="px-3 py-2 text-[11px] text-muted-foreground italic">
-          {SEALED_NOTICE}
-        </p>
+        <p className="es-props-sealed">{SEALED_NOTICE}</p>
       </aside>
     );
   }
@@ -416,7 +403,7 @@ export function NodePropertiesPanel({ lensId }: NodePropertiesPanelProps) {
       data-testid="acw-studio-properties-panel"
       data-state="editing"
       data-node-id={node.id}
-      className="w-[280px] border-l border-border/40 bg-card/30 flex flex-col overflow-y-auto"
+      className="es-props"
     >
       <PanelHeader onClose={() => setSelectedNodeId(lensId, null)} />
 
@@ -475,16 +462,31 @@ export function NodePropertiesPanel({ lensId }: NodePropertiesPanelProps) {
         testIdPrefix="acw-studio-properties-priority"
       />
 
-      <section className="px-3 py-2 border-t border-border/20 flex flex-col gap-1">
-        <h4 className="text-[10px] uppercase tracking-widest text-muted-foreground">
-          {INCIDENT_TITLE}
-        </h4>
+      <section className="es-props-section">
+        <h4>{INCIDENT_TITLE}</h4>
         {incidentEdges.length === 0 ? (
-          <p className="text-[11px] text-muted-foreground italic">{NO_EDGES}</p>
+          <p
+            className="es-mono"
+            style={{
+              fontSize: 10,
+              color: "var(--text2)",
+              fontStyle: "italic",
+              margin: 0,
+            }}
+          >
+            {NO_EDGES}
+          </p>
         ) : (
           <ul
-            className="flex flex-col gap-1"
             data-testid="acw-studio-properties-incident-edges"
+            style={{
+              listStyle: "none",
+              padding: 0,
+              margin: 0,
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+            }}
           >
             {incidentEdges.map((e) => {
               const otherId = e.fromId === node.id ? e.toId : e.fromId;
@@ -496,18 +498,19 @@ export function NodePropertiesPanel({ lensId }: NodePropertiesPanelProps) {
                 <li
                   key={e.id}
                   data-testid={`acw-studio-properties-incident-edge-${e.id}`}
-                  className="flex items-center justify-between gap-2 text-[11px] font-mono"
+                  className="es-props-edge"
                 >
-                  <span className="truncate">
-                    <span className="text-muted-foreground">{direction} </span>
-                    <span className="text-foreground">
+                  <span
+                    className="es-props-edge-other"
+                    style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}
+                  >
+                    <span className="es-props-edge-dir">{direction}</span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
                       {other?.label ?? otherId}
                     </span>
                   </span>
-                  <Button
+                  <button
                     type="button"
-                    variant="ghost"
-                    size="icon"
                     onClick={() => {
                       const r = deleteEdge(e.id);
                       if (!r.ok) publishRefusal(r.reason);
@@ -515,10 +518,11 @@ export function NodePropertiesPanel({ lensId }: NodePropertiesPanelProps) {
                     title={DELETE_LABEL}
                     aria-label={DELETE_LABEL}
                     data-testid={`acw-studio-properties-incident-edge-delete-${e.id}`}
-                    className="h-6 w-6 hover:text-destructive"
+                    className="es-cnode-btn"
+                    data-tone="danger"
                   >
                     <Trash2 className="w-3 h-3" />
-                  </Button>
+                  </button>
                 </li>
               );
             })}

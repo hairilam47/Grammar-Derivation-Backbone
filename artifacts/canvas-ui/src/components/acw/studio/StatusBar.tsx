@@ -1,15 +1,10 @@
-// EAStudio Phase 2 — bottom status bar.
+// EAStudio Phase 2 — bottom status bar (Task #99 visual alignment).
 //
 // Surfaces three pure read-outs the user needs while editing:
 //   1. Live counts: nodes, edges (CONNECTS only — the only edge
 //      kind EAStudio surfaces in Phase 2).
-//   2. Mode: idle / connect / pending-connect.
-//   3. A neutral "TOGAF / ArchiMate-aligned" badge. The badge is
-//      a label only — no judgement, no scoring, no compliance
-//      claim — and lives in the status bar so consumers can see
-//      that the four-domain layout follows TOGAF's domain set
-//      (Business, Data, Application, Technology) and ArchiMate's
-//      layered viewpoint without inventing per-node decoration.
+//   2. Mode: design / connect / pending-connect.
+//   3. A neutral "TOGAF / ArchiMate-aligned" badge.
 //
 // The bar reads its data from the live grammar hook + the
 // lens-keyed view-state slices; it never mutates anything.
@@ -33,11 +28,6 @@ import {
 const NODES_LABEL = "Nodes";
 const EDGES_LABEL = "Connections";
 const MODE_LABEL = "Mode";
-// EAStudio Phase 2 brief: status-bar mode read-out is "Design" or
-// "Connect", with an optional "(pending)" suffix when the user has
-// armed a source and the next click will fire createEdge. The
-// previous "Idle" / "Connect (pick source|destination)" wording was
-// replaced to match the brief verbatim.
 const MODE_IDLE = "Design";
 const MODE_CONNECT_IDLE = "Connect";
 const MODE_CONNECT_PENDING = "Connect (pending)";
@@ -64,15 +54,6 @@ export function StatusBar({ lensId }: StatusBarProps) {
   void tick;
 
   const nodeCount = ws.structureGraph.nodes.length;
-  // The "Connections" read-out counts CONNECTS edges only — i.e.
-  // the user-authored network. CONTAINS edges are sealed
-  // domain-container parentage that the user can neither author
-  // nor delete; surfacing them here would inflate the count by
-  // one per node and conflate two distinct edge semantics that
-  // EAStudio is careful to keep apart elsewhere (palette,
-  // properties panel, edge overlay). The label "Connections"
-  // refers to the user's first-class authoring artifact, so
-  // CONNECTS-only is the intended semantic.
   const connectsCount = ws.structureGraph.edges.filter(
     (e) => e.kind === "CONNECTS",
   ).length;
@@ -84,46 +65,33 @@ export function StatusBar({ lensId }: StatusBarProps) {
     : pending !== null
       ? MODE_CONNECT_PENDING
       : MODE_CONNECT_IDLE;
-  const modeIcon = !connectOn ? (
-    <MousePointer2 className="w-3 h-3" />
-  ) : (
-    <Plug className="w-3 h-3" />
-  );
+  const ModeIcon = !connectOn ? MousePointer2 : Plug;
 
   return (
     <footer
       data-testid="acw-studio-status-bar"
       data-mode={connectOn ? (pending !== null ? "pending" : "connect") : "idle"}
-      className="flex items-center justify-between gap-3 px-3 py-1.5 border-t border-border/30 text-[10px] font-mono text-muted-foreground"
+      className="es-status"
     >
-      <div className="flex items-center gap-3">
-        <span
-          className="flex items-center gap-1"
-          data-testid="acw-studio-status-bar-nodes"
-        >
+      <div className="es-status-group">
+        <span className="es-status-cell" data-testid="acw-studio-status-bar-nodes">
           <Network className="w-3 h-3" />
-          <span className="uppercase tracking-widest">{NODES_LABEL}</span>
-          <span className="text-foreground tabular-nums">{nodeCount}</span>
+          <span className="es-status-key">{NODES_LABEL}</span>
+          <span className="es-status-val">{nodeCount}</span>
         </span>
-        <span
-          className="flex items-center gap-1"
-          data-testid="acw-studio-status-bar-edges"
-        >
+        <span className="es-status-cell" data-testid="acw-studio-status-bar-edges">
           <Plug className="w-3 h-3" />
-          <span className="uppercase tracking-widest">{EDGES_LABEL}</span>
-          <span className="text-foreground tabular-nums">{connectsCount}</span>
+          <span className="es-status-key">{EDGES_LABEL}</span>
+          <span className="es-status-val">{connectsCount}</span>
         </span>
-        <span
-          className="flex items-center gap-1"
-          data-testid="acw-studio-status-bar-mode"
-        >
-          {modeIcon}
-          <span className="uppercase tracking-widest">{MODE_LABEL}</span>
-          <span className="text-foreground">{modeText}</span>
+        <span className="es-status-cell" data-testid="acw-studio-status-bar-mode">
+          <ModeIcon className="w-3 h-3" />
+          <span className="es-status-key">{MODE_LABEL}</span>
+          <span className="es-status-val">{modeText}</span>
         </span>
       </div>
       <span
-        className="flex items-center gap-1 text-[10px] uppercase tracking-widest"
+        className="es-status-badge"
         data-testid="acw-studio-status-bar-framework-badge"
       >
         <ShieldCheck className="w-3 h-3" />

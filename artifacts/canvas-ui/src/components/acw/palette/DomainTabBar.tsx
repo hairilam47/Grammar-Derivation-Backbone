@@ -1,10 +1,12 @@
-// EAStudio Phase 1 — domain tab bar.
+// EAStudio Phase 1 — domain tab bar (Task #99 visual alignment).
 //
 // Four-button switcher above the StudioCanvas grid. The active
 // domain comes from / writes back to the `acwViewState` slice via
 // `getCurrentDomain` / `setCurrentDomain`, so the choice is
 // per-lens and persisted alongside the existing collapse and
-// 2D/3D-mode preferences.
+// 2D/3D-mode preferences. The bar uses the prototype's bottom-
+// border accent styling (per-domain CSS variable picked up by
+// `[data-domain]`).
 //
 // Constitutional discipline:
 //   - Pure UI affordance. The bar mutates view-state only; the
@@ -17,7 +19,6 @@ import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 import { ACW_DOMAIN_TAGS, type AcwDomainTag } from "@/acw/acwGrammar";
 import {
   ACW_DOMAIN_LABEL,
-  ACW_DOMAIN_ACCENT,
   ACW_DOMAIN_ICON,
 } from "@/acw/palette/paletteRegistry";
 import {
@@ -26,9 +27,7 @@ import {
   subscribeViewState,
 } from "@/acw/acwViewState";
 
-const BAR_LABEL = "Domain";
-
-assertAllAcwPlaceholderLanguage([BAR_LABEL]);
+assertAllAcwPlaceholderLanguage([...Object.values(ACW_DOMAIN_LABEL)]);
 
 export interface DomainTabBarProps {
   readonly lensId: string;
@@ -37,44 +36,38 @@ export interface DomainTabBarProps {
 export function DomainTabBar({ lensId }: DomainTabBarProps) {
   const [tick, setTick] = useState(0);
   useEffect(() => subscribeViewState(() => setTick((t) => t + 1)), []);
-  // Re-read on every render so the bar stays in sync with external
-  // mutations (e.g. a different surface calling setCurrentDomain).
   void tick;
   const active = getCurrentDomain(lensId);
 
   return (
-    <div
+    <nav
       data-testid="acw-studio-domain-tab-bar"
       data-lens-id={lensId}
       data-active-domain={active}
-      className="flex items-center gap-2 px-3 py-2 border-b border-border/40 bg-card/40 backdrop-blur"
+      className="es-dtabs"
+      role="tablist"
     >
-      <span className="text-[10px] uppercase tracking-widest text-muted-foreground mr-1">
-        {BAR_LABEL}:
-      </span>
       {ACW_DOMAIN_TAGS.map((tag: AcwDomainTag) => {
         const Icon = ACW_DOMAIN_ICON[tag];
-        const accent = ACW_DOMAIN_ACCENT[tag];
         const isActive = active === tag;
         return (
           <button
             key={tag}
             type="button"
+            role="tab"
             onClick={() => setCurrentDomain(lensId, tag)}
             data-testid={`acw-studio-domain-tab-${tag}`}
             data-active={isActive ? "true" : "false"}
+            data-domain={tag}
             aria-pressed={isActive}
-            className={`flex items-center gap-1.5 px-2 py-1 rounded border text-xs font-mono transition-colors ${
-              isActive
-                ? accent
-                : "border-border/50 text-muted-foreground hover:border-primary/50 hover:text-primary"
-            }`}
+            aria-selected={isActive}
+            className="es-dtab"
           >
             <Icon className="w-3.5 h-3.5" />
             <span>{ACW_DOMAIN_LABEL[tag]}</span>
           </button>
         );
       })}
-    </div>
+    </nav>
   );
 }

@@ -12,6 +12,13 @@
 // matrix layout stable across renders and across user mutations
 // even when node ids are not lexicographically ordered.
 //
+// Visual styling notes (Task #99):
+//   - All chrome is rendered with the prototype-aligned
+//     `es-matrix-*` class set defined in `.eastudio-root` scoped
+//     CSS. No Tailwind colour utilities — the cascade resolves
+//     every surface to the prototype's `var(--bg* / --text* /
+//     --accent)` tokens.
+//
 // Constitutional discipline:
 //   - Lucide icons only.
 //   - Every static label asserted against ACW_PLACEHOLDER_FORBIDDEN
@@ -150,12 +157,18 @@ export function MatrixView(_props: MatrixViewProps) {
     return (
       <div
         data-testid="acw-studio-matrix-view"
-        className="flex flex-1 flex-col items-center justify-center min-h-[480px] gap-1 text-muted-foreground"
+        className="es-matrix-wrap es-matrix-empty"
       >
-        <p className="text-xs uppercase tracking-widest" data-testid="acw-studio-matrix-empty-title">
+        <p
+          className="es-mono"
+          data-testid="acw-studio-matrix-empty-title"
+        >
           {EMPTY_TITLE}
         </p>
-        <p className="text-[11px]" data-testid="acw-studio-matrix-empty-hint">
+        <p
+          className="es-mono"
+          data-testid="acw-studio-matrix-empty-hint"
+        >
           {EMPTY_HINT}
         </p>
       </div>
@@ -165,134 +178,126 @@ export function MatrixView(_props: MatrixViewProps) {
   return (
     <section
       data-testid="acw-studio-matrix-view"
-      className="flex flex-1 flex-col min-h-[480px] gap-2 px-3 py-3"
+      className="es-matrix-wrap"
     >
-      <header className="flex flex-col gap-0.5">
-        <h3
-          className="text-xs uppercase tracking-widest text-muted-foreground"
-          data-testid="acw-studio-matrix-title"
-        >
-          {PAGE_TITLE}
-        </h3>
-        <p className="text-[11px] text-muted-foreground" data-testid="acw-studio-matrix-hint">
-          {PAGE_HINT}
-        </p>
+      <header className="es-matrix-head">
+        <h3 data-testid="acw-studio-matrix-title">{PAGE_TITLE}</h3>
+        <p data-testid="acw-studio-matrix-hint">{PAGE_HINT}</p>
       </header>
 
-      <div className="overflow-auto border border-border/40 rounded">
-        <table
-          className="border-collapse text-[11px] font-mono"
-          data-testid="acw-studio-matrix-table"
-        >
-          <thead>
-            <tr>
+      <table
+        className="es-matrix-table"
+        data-testid="acw-studio-matrix-table"
+      >
+        <thead>
+          <tr>
+            <th
+              scope="col"
+              data-testid="acw-studio-matrix-corner"
+            >
+              {COLUMN_HEADER_LABEL}
+            </th>
+            {sortedNodes.map((col) => (
               <th
+                key={col.id}
                 scope="col"
-                className="sticky left-0 top-0 z-20 bg-card/90 backdrop-blur border-b border-r border-border/40 px-2 py-1 text-left text-[10px] uppercase tracking-widest text-muted-foreground"
-                data-testid="acw-studio-matrix-corner"
+                data-testid={`acw-studio-matrix-col-${col.id}`}
+                data-node-id={col.id}
+                data-domain-tag={col.domainTag ?? ""}
               >
-                {COLUMN_HEADER_LABEL}
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  <span>{col.label}</span>
+                  <span style={{ fontSize: 9, color: "var(--text2)" }}>
+                    {col.type}
+                  </span>
+                </div>
               </th>
-              {sortedNodes.map((col) => (
-                <th
-                  key={col.id}
-                  scope="col"
-                  className="sticky top-0 z-10 bg-card/90 backdrop-blur border-b border-border/40 px-2 py-1 text-left text-[10px] tracking-widest text-muted-foreground whitespace-nowrap"
-                  data-testid={`acw-studio-matrix-col-${col.id}`}
-                  data-node-id={col.id}
-                  data-domain-tag={col.domainTag ?? ""}
-                >
-                  <div className="flex flex-col">
-                    <span className="text-foreground">{col.label}</span>
-                    <span className="text-[9px] uppercase">{col.type}</span>
-                  </div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {sortedNodes.map((row) => (
-              <tr key={row.id} data-testid={`acw-studio-matrix-row-${row.id}`}>
-                <th
-                  scope="row"
-                  className="sticky left-0 z-10 bg-card/90 backdrop-blur border-r border-border/40 px-2 py-1 text-left text-[10px] tracking-widest text-muted-foreground whitespace-nowrap"
-                  data-node-id={row.id}
-                  data-domain-tag={row.domainTag ?? ""}
-                >
-                  <div className="flex flex-col">
-                    <span className="text-foreground">{row.label}</span>
-                    <span className="text-[9px] uppercase">{row.type}</span>
-                  </div>
-                </th>
-                {sortedNodes.map((col) => {
-                  const isDiagonal = row.id === col.id;
-                  const permitted =
-                    !isDiagonal &&
-                    isPermittedEdge(
-                      "CONNECTS",
-                      row.type as AcwElementType,
-                      col.type as AcwElementType,
-                    );
-                  const on =
-                    !isDiagonal &&
-                    connectsLookup.has(`${row.id}::${col.id}`);
-                  let title: string;
-                  let body: ReactNode;
-                  let cellState: string;
-                  if (isDiagonal) {
-                    title = DIAGONAL_LABEL;
-                    cellState = "diagonal";
-                    body = (
-                      <Minus className="w-3 h-3 text-muted-foreground/60" />
-                    );
-                  } else if (!permitted) {
-                    title = CELL_DISABLED_LABEL;
-                    cellState = "disabled";
-                    body = (
-                      <Slash className="w-3 h-3 text-muted-foreground/40" />
-                    );
-                  } else if (on) {
-                    title = CELL_ON_LABEL;
-                    cellState = "on";
-                    body = <Link2 className="w-3.5 h-3.5 text-primary" />;
-                  } else {
-                    title = CELL_OFF_LABEL;
-                    cellState = "off";
-                    body = (
-                      <span className="block w-3 h-3 rounded-sm border border-border/50" />
-                    );
-                  }
-                  const interactive = !isDiagonal && permitted;
-                  return (
-                    <td
-                      key={col.id}
-                      data-testid={`acw-studio-matrix-cell-${row.id}-${col.id}`}
-                      data-cell-state={cellState}
-                      className={`border border-border/30 p-0 align-middle text-center ${
-                        interactive
-                          ? "hover:bg-primary/10 cursor-pointer"
-                          : "bg-muted/10 cursor-not-allowed"
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        title={title}
-                        aria-label={title}
-                        aria-pressed={interactive ? on : undefined}
-                        disabled={!interactive}
-                        onClick={() => onCellClick(row, col)}
-                        className="flex items-center justify-center w-7 h-7 mx-auto"
-                      >
-                        {body}
-                      </button>
-                    </td>
-                  );
-                })}
-              </tr>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </tr>
+        </thead>
+        <tbody>
+          {sortedNodes.map((row) => (
+            <tr key={row.id} data-testid={`acw-studio-matrix-row-${row.id}`}>
+              <th
+                scope="row"
+                data-node-id={row.id}
+                data-domain-tag={row.domainTag ?? ""}
+              >
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  <span>{row.label}</span>
+                  <span style={{ fontSize: 9, color: "var(--text2)" }}>
+                    {row.type}
+                  </span>
+                </div>
+              </th>
+              {sortedNodes.map((col) => {
+                const isDiagonal = row.id === col.id;
+                const permitted =
+                  !isDiagonal &&
+                  isPermittedEdge(
+                    "CONNECTS",
+                    row.type as AcwElementType,
+                    col.type as AcwElementType,
+                  );
+                const on =
+                  !isDiagonal &&
+                  connectsLookup.has(`${row.id}::${col.id}`);
+                let title: string;
+                let body: ReactNode;
+                let cellState: string;
+                if (isDiagonal) {
+                  title = DIAGONAL_LABEL;
+                  cellState = "diagonal";
+                  body = <Minus className="w-3 h-3" />;
+                } else if (!permitted) {
+                  title = CELL_DISABLED_LABEL;
+                  cellState = "disabled";
+                  body = <Slash className="w-3 h-3" />;
+                } else if (on) {
+                  title = CELL_ON_LABEL;
+                  cellState = "on";
+                  body = <Link2 className="w-3.5 h-3.5" />;
+                } else {
+                  title = CELL_OFF_LABEL;
+                  cellState = "off";
+                  body = (
+                    <span
+                      style={{
+                        display: "block",
+                        width: 10,
+                        height: 10,
+                        borderRadius: 2,
+                        border: "1px solid var(--border2)",
+                      }}
+                    />
+                  );
+                }
+                const interactive = !isDiagonal && permitted;
+                return (
+                  <td
+                    key={col.id}
+                    data-testid={`acw-studio-matrix-cell-${row.id}-${col.id}`}
+                    data-cell-state={cellState}
+                  >
+                    <button
+                      type="button"
+                      title={title}
+                      aria-label={title}
+                      aria-pressed={interactive ? on : undefined}
+                      disabled={!interactive}
+                      onClick={() => onCellClick(row, col)}
+                      className="es-matrix-cell"
+                      data-state={cellState}
+                    >
+                      {body}
+                    </button>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </section>
   );
 }

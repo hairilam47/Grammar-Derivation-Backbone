@@ -1,52 +1,50 @@
-// EAStudio Phase 1 — domain grid (2x2 quadrant layout).
+// EAStudio Phase 1 — domain grid (Task #99 visual alignment).
 //
-// Renders one quadrant per immutable domain container. Each
-// quadrant embeds an `InteractiveCanvas2D` instance — the same
-// validator-gated 2D primitive used by the other ACW lenses — so
-// drag-to-move, drag-to-reparent, marquee-select, group, and
-// collapse / expand all work in EAStudio without re-implementing
-// any rendering primitive.
+// Renders a 2x2 layout of flat zones, one per immutable domain
+// container. Each zone:
+//   - accepts palette drops (`application/x-eastudio-palette-kind`)
+//     routed through the validator-gated `createNode` store API
+//     with `parentId` set to the domain container's stable id;
+//   - renders the container's child nodes as flat cards (`.es-cnode`)
+//     wrapping the prototype's icon + primary + secondary text
+//     layout. Each card carries `data-acw-node-id` so the unified
+//     `StudioEdgeOverlay` can pick up its bounding rect for edge
+//     drawing without reaching into the store.
 //
-// On top of `InteractiveCanvas2D`, a thin wrapping div provides:
-//   1. Palette drop intake. The wrapper accepts the
-//      `application/x-eastudio-palette-kind` dataTransfer payload
-//      and routes it through `createNode` with `parentId` set to
-//      the quadrant's *current focus* — i.e. the container the
-//      user has drilled down into. Two refusal layers run before
-//      the store call: (a) UI-level domain alignment (the dropped
-//      tile's `domain` must match the quadrant's `domain`); and
-//      (b) the strict Business chain (a Business Process tile is
-//      refused unless the current focus is an OrgUnit-tier Zone —
-//      i.e. a Zone whose parent is itself a Zone, mirroring the
-//      Department → OrgUnit → BusinessProcess hierarchy from the
-//      spec). Both refusals publish through `acwRefusalChannel`.
-//   2. A breadcrumb header showing the drill-down path. Clicking
-//      a crumb pops back to that depth. The breadcrumb never
-//      mutates the workspace; it only changes the per-quadrant
-//      focus state held in local React state.
+// Connect mode wiring: each card listens for clicks. With Connect
+// mode on, the first click arms the lens-keyed pending-source
+// slice; the second click on a *different* node fires the
+// validator-gated `createEdge` (CONNECTS). Same-node click clears
+// the pending source. Outside Connect mode a click simply selects
+// the node so the right-side properties panel binds to it.
 //
-// `InteractiveCanvas2D` itself owns the drag-to-reparent path
-// (which calls `updateNodeParent` and refuses through the same
-// channel), so cross-quadrant card moves do not need a separate
-// handler in this file — a Business OrgUnit dragged onto a
-// Technology compute-node is gated by the grammar inside the
-// existing 2D primitive.
+// Per-card `node-conn-btn` and `node-del` affordances mirror the
+// prototype: the connect button arms the source for a single
+// CONNECTS edge regardless of the current Connect-mode toggle, and
+// the delete button removes the card via the validator-gated
+// `deleteNode`. Both are surfaced on hover / selection only so the
+// resting state matches the prototype's clean card surface.
 //
 // Constitutional discipline:
 //   - Vector icons only (lucide-react). No emoji.
 //   - Every static label asserted against ACW_PLACEHOLDER_FORBIDDEN
 //     at module load.
-//   - Quadrant accent colours are pure UI styling — no traffic-
-//     light, no judgement, no animation.
+//   - All structural mutations route through the validator-gated
+//     store API; refusals publish through `acwRefusalChannel` so
+//     the lens's inline banner surfaces them verbatim.
+//   - Zone accent colours and card border-left tints are pure UI
+//     styling — no traffic-light, no judgement, no animation.
 import type { DragEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, Lock } from "lucide-react";
+import { Lock, X, Zap } from "lucide-react";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 import {
   ACW_DOMAIN_LABEL,
-  ACW_DOMAIN_ACCENT,
   ACW_DOMAIN_ICON,
+  ACW_PALETTE,
   paletteItemByKind,
+  paletteItemByLabel,
+  type PaletteItem,
 } from "@/acw/palette/paletteRegistry";
 import {
   ACW_DOMAIN_CONTAINERS,
@@ -59,7 +57,7 @@ import {
   createEdge,
   createNode,
   deleteEdge,
-  type AcwEdge,
+  deleteNode,
   type AcwNode,
 } from "@/acw/acwStore";
 import { publishRefusal } from "@/acw/acwRefusalChannel";
@@ -71,23 +69,22 @@ import {
   setSelectedNodeId,
   getSelectedEdgeId,
   setSelectedEdgeId,
-  getCurrentDomain,
   setCurrentDomain,
   subscribeViewState,
 } from "@/acw/acwViewState";
-import type { AcwDomainTag, AcwElementType } from "@/acw/acwGrammar";
-import { InteractiveCanvas2D } from "@/components/acw/InteractiveCanvas2D";
+import type { AcwDomainTag } from "@/acw/acwGrammar";
 
 const SEAL_LABEL = "Sealed";
-const ROOT_CRUMB_LABEL = "Root";
 const QUADRANT_HINT = "Drop a palette tile here.";
+const CONNECT_HINT = "Connect from this node";
+const DELETE_HINT = "Delete";
 
-assertAllAcwPlaceholderLanguage([SEAL_LABEL, ROOT_CRUMB_LABEL, QUADRANT_HINT]);
-
-// Per-quadrant studio lens-id prefix. Each quadrant's
-// `InteractiveCanvas2D` runs under its own lens id so the
-// collapse / view-state slices stay isolated per domain.
-const STUDIO_LENS_ID_PREFIX = "studio-";
+assertAllAcwPlaceholderLanguage([
+  SEAL_LABEL,
+  QUADRANT_HINT,
+  CONNECT_HINT,
+  DELETE_HINT,
+]);
 
 export interface DomainGridProps {
   readonly lensId: string;
@@ -100,36 +97,23 @@ export function DomainGrid({ lensId }: DomainGridProps) {
   const [tick, setTick] = useState(0);
   useEffect(() => subscribeViewState(() => setTick((t) => t + 1)), []);
   void tick;
-  const activeDomain = getCurrentDomain(lensId);
-  // Page-keyed selected edge id, lifted to the grid scope so the
-  // single SVG overlay can read it once and drive selection state
-  // for every edge regardless of which quadrant its endpoints are
-  // in. Quadrants no longer own this — they used to read it for
-  // their per-canvas pill, which has been retired.
   const selectedEdgeId = getSelectedEdgeId(lensId);
-  // Container ref for the unified edge overlay's coordinate system.
-  // The overlay queries `[data-acw-node-id]` inside this ref to
-  // discover where every rendered node lives in screen space, then
-  // translates into grid-local coordinates via the same element's
-  // bounding rect. See StudioEdgeOverlay for the full lifecycle.
+  const selectedNodeId = getSelectedNodeId(lensId);
+  const connectOn = getConnectMode(lensId);
+  const pendingSource = getConnectPendingSource(lensId);
   const gridRef = useRef<HTMLDivElement | null>(null);
 
-  // Build a single id→node lookup so each quadrant can resolve
-  // its container's descendants and so the drop wrappers can
-  // classify focus depth (Department-tier vs OrgUnit-tier) for
-  // the strict Business chain refusal.
   const nodeById = useMemo(() => {
     const m = new Map<string, AcwNode>();
     for (const node of workspace.structureGraph.nodes) m.set(node.id, node);
     return m;
   }, [workspace.structureGraph.nodes]);
 
-  // Edge selection / delete handlers, lifted from per-quadrant
-  // canvases to the grid scope so the single overlay drives them
-  // uniformly. Toggle semantics match the prior per-canvas pill:
-  // clicking the already-selected edge dismisses it; selecting an
-  // edge clears any standing node selection so only one of
-  // {node, edge} is "selected" at a time per page.
+  // Edge selection / delete handlers, lifted to grid scope so the
+  // single overlay drives them uniformly. Toggle semantics: clicking
+  // the already-selected edge dismisses it; selecting an edge clears
+  // any standing node selection so only one of {node, edge} is
+  // selected at a time per page.
   const onEdgeOverlayClick = (id: string) => {
     if (selectedEdgeId === id) {
       setSelectedEdgeId(lensId, null);
@@ -144,100 +128,112 @@ export function DomainGrid({ lensId }: DomainGridProps) {
     if (!r.ok) publishRefusal(r.reason);
   };
 
+  // Click on a node card. Connect mode + connect-button click both
+  // route through this so source-then-destination semantics live in
+  // one place.
+  const onNodeClick = (
+    id: string,
+    explicitConnect: boolean,
+  ) => {
+    if (explicitConnect || connectOn) {
+      if (pendingSource === null) {
+        setConnectPendingSource(lensId, id);
+        return;
+      }
+      if (pendingSource === id) {
+        setConnectPendingSource(lensId, null);
+        return;
+      }
+      const r = createEdge({
+        kind: "CONNECTS",
+        fromId: pendingSource,
+        toId: id,
+      });
+      setConnectPendingSource(lensId, null);
+      if (!r.ok) publishRefusal(r.reason);
+      return;
+    }
+    // Idle click: select the node so the right-side panel opens.
+    if (selectedNodeId === id) {
+      setSelectedNodeId(lensId, null);
+    } else {
+      setSelectedNodeId(lensId, id);
+      setSelectedEdgeId(lensId, null);
+    }
+  };
+
+  const onNodeDelete = (id: string) => {
+    if (selectedNodeId === id) setSelectedNodeId(lensId, null);
+    if (pendingSource === id) setConnectPendingSource(lensId, null);
+    const r = deleteNode(id);
+    if (!r.ok) publishRefusal(r.reason);
+  };
+
   return (
-    <div
-      ref={gridRef}
-      data-testid="acw-studio-domain-grid"
-      className="relative flex-1 grid grid-cols-1 md:grid-cols-2 gap-3 p-3 overflow-auto"
-    >
-      {ACW_DOMAIN_CONTAINERS.map((spec) => {
-        const container = findDomainContainerById(spec.id);
-        return (
-          <Quadrant
-            key={spec.id}
-            lensId={lensId}
-            domain={spec.domain}
-            containerId={spec.id}
-            containerNode={container}
-            nodeById={nodeById}
-            allNodes={workspace.structureGraph.nodes}
-            allEdges={workspace.structureGraph.edges}
-            isActive={activeDomain === spec.domain}
-            onActivate={() => setCurrentDomain(lensId, spec.domain)}
-          />
-        );
-      })}
-      <StudioEdgeOverlay
-        gridRef={gridRef}
-        edges={workspace.structureGraph.edges}
-        selectedEdgeId={selectedEdgeId}
-        onEdgeClick={onEdgeOverlayClick}
-        onEdgeDelete={onEdgeOverlayDelete}
-      />
+    <div className="es-canvas-wrap">
+      <div
+        ref={gridRef}
+        data-testid="acw-studio-domain-grid"
+        className="es-zones"
+        style={{ position: "relative" }}
+      >
+        {ACW_DOMAIN_CONTAINERS.map((spec) => {
+          const container = findDomainContainerById(spec.id);
+          const children = workspace.structureGraph.nodes.filter(
+            (n) => n.parentId === spec.id,
+          );
+          return (
+            <Zone
+              key={spec.id}
+              lensId={lensId}
+              domain={spec.domain}
+              containerId={spec.id}
+              containerNode={container}
+              children={children}
+              onNodeClick={onNodeClick}
+              onNodeDelete={onNodeDelete}
+              selectedNodeId={selectedNodeId}
+              pendingSource={pendingSource}
+            />
+          );
+        })}
+        <StudioEdgeOverlay
+          gridRef={gridRef}
+          edges={workspace.structureGraph.edges}
+          selectedEdgeId={selectedEdgeId}
+          onEdgeClick={onEdgeOverlayClick}
+          onEdgeDelete={onEdgeOverlayDelete}
+        />
+      </div>
     </div>
   );
 }
 
-interface QuadrantProps {
+interface ZoneProps {
   readonly lensId: string;
   readonly domain: AcwDomainTag;
   readonly containerId: string;
   readonly containerNode: AcwNode | undefined;
-  readonly nodeById: ReadonlyMap<string, AcwNode>;
-  readonly allNodes: readonly AcwNode[];
-  readonly allEdges: readonly AcwEdge[];
-  readonly isActive: boolean;
-  readonly onActivate: () => void;
+  readonly children: readonly AcwNode[];
+  readonly onNodeClick: (id: string, explicitConnect: boolean) => void;
+  readonly onNodeDelete: (id: string) => void;
+  readonly selectedNodeId: string | null;
+  readonly pendingSource: string | null;
 }
 
-function Quadrant(props: QuadrantProps) {
+function Zone(props: ZoneProps) {
   const {
     lensId,
     domain,
     containerId,
     containerNode,
-    nodeById,
-    allNodes,
-    allEdges,
-    isActive,
-    onActivate,
+    children,
+    onNodeClick,
+    onNodeDelete,
+    selectedNodeId,
+    pendingSource,
   } = props;
-  // EAStudio Phase 2 — re-read the page-keyed Connect mode and
-  // pending source slices so each quadrant's embedded canvas
-  // forwards them as props. The view-state singleton is the
-  // authority; this is a render-only read-back.
-  const connectOn = getConnectMode(lensId);
-  const pendingSource = getConnectPendingSource(lensId);
-  const selectedNodeId = getSelectedNodeId(lensId);
-  // EAStudio Phase 2 (post-validation) — edge selection lives at
-  // the grid level so the unified `StudioEdgeOverlay` is the single
-  // source for highlighting and the in-canvas confirm pill. Each
-  // per-quadrant canvas mounts with `suppressEdgeRendering={true}`
-  // and forwards no edge handlers; per-canvas edge UI was retired
-  // because cross-quadrant CONNECTS edges had no canvas willing to
-  // render them.
   const Icon = ACW_DOMAIN_ICON[domain];
-  const accent = ACW_DOMAIN_ACCENT[domain];
-
-  // Per-quadrant drill-down focus. Defaults to the sealed
-  // container; double-clicking a child node inside the embedded
-  // 2D canvas pushes that node onto the focus path.
-  const [focusPath, setFocusPath] = useState<readonly string[]>([
-    containerId,
-  ]);
-  const focusedParentId = focusPath[focusPath.length - 1] ?? containerId;
-  const focusedNode = nodeById.get(focusedParentId);
-
-  // If the focused node has been removed (e.g. because the user
-  // navigated away or a parent was collapsed), pop back to the
-  // sealed container so the canvas stays consistent with the
-  // store.
-  useEffect(() => {
-    if (focusedParentId !== containerId && !nodeById.has(focusedParentId)) {
-      setFocusPath([containerId]);
-    }
-  }, [containerId, focusedParentId, nodeById]);
-
   const [isOver, setIsOver] = useState(false);
 
   const onDragOver = (e: DragEvent<HTMLDivElement>) => {
@@ -262,80 +258,27 @@ function Quadrant(props: QuadrantProps) {
       );
       return;
     }
-    onActivate();
+    setCurrentDomain(lensId, domain);
 
     const item = paletteItemByKind(paletteKind);
     if (item === undefined) {
-      publishRefusal(
-        `The palette item "${paletteKind}" is not registered.`,
-      );
+      publishRefusal(`The palette item "${paletteKind}" is not registered.`);
       return;
     }
-    // (a) Domain alignment refusal — the tile's domain must match
-    // the quadrant's domain.
     if (item.domain !== domain) {
       publishRefusal(
         `The palette item "${item.label}" belongs to the ${item.domain} domain and is not permitted inside the ${domain} domain quadrant.`,
       );
       return;
     }
-    // (b) The strict Business chain (BusinessEntity → Department
-    // → Org unit → Business process) is enforced at the
-    // *validator* level for both palette drops and drag-to-
-    // reparent, so a duplicate UI-layer check is intentionally
-    // not performed here. The validator surfaces a refusal whose
-    // reason text references the chain literally when a System
-    // tile lands directly inside the Business container or a
-    // Department-tier Zone, and `createNode` routes it through
-    // the standard refusal channel below. Two historical concerns
-    // motivated routing the check through the validator instead:
-    //   - palette-drop and reparent paths used to diverge in
-    //     enforcement strength, letting a user move a Business
-    //     process out of an OrgUnit by drag. The validator now
-    //     gates `updateNodeParent` identically.
-    //   - the grammar's `permittedParents` table allows System
-    //     under any Zone, which is required for the Application
-    //     quadrant. The validator's contextual chain check kicks
-    //     in only when the parent Zone's top-most ancestor is a
-    //     `BusinessEntity`, so Application-in-Zone continues to
-    //     pass.
-
     const r = createNode({
       type: item.elementType,
-      parentId: focusedParentId,
+      parentId: containerId,
       label: item.label,
       domainTag: domain,
     });
     if (!r.ok) publishRefusal(r.reason);
   };
-
-  // Compose the breadcrumb labels by walking the focus path back
-  // through `nodeById`. The first entry is the sealed container
-  // (label "Root"); every subsequent entry is the node's label.
-  const breadcrumbs: ReadonlyArray<{
-    readonly id: string;
-    readonly label: string;
-  }> = focusPath.map((id, i) => {
-    if (i === 0) return { id, label: ROOT_CRUMB_LABEL };
-    const node = nodeById.get(id);
-    return { id, label: node?.label ?? id };
-  });
-
-  // The InteractiveCanvas2D primitive needs `nodes` to include
-  // every node it might surface or drill into. Passing
-  // `allNodes` keeps the lens generic — the canvas will filter
-  // to the focused-parent's children internally.
-  const headerAccent = isActive ? accent : "border-border/50 text-muted-foreground";
-
-  // Restrict the in-canvas Group affordance to container types
-  // that fit this quadrant's chain. Grammar still owns final
-  // legality; this just trims the UI menu.
-  const permitContainerType = (t: AcwElementType): boolean => {
-    if (domain === "technology") return t === "Zone" || t === "ComputeNode";
-    return t === "Zone";
-  };
-
-  const canvasLensId = `${STUDIO_LENS_ID_PREFIX}${domain}`;
 
   return (
     <section
@@ -344,164 +287,135 @@ function Quadrant(props: QuadrantProps) {
       data-testid={`acw-studio-quadrant-${domain}`}
       data-domain={domain}
       data-container-id={containerId}
-      data-active={isActive ? "true" : "false"}
       data-drop-active={isOver ? "true" : "false"}
-      data-focused-parent={focusedParentId}
-      onClick={onActivate}
-      className={`relative flex flex-col rounded border-2 border-dashed ${
-        isOver ? "border-primary/70 bg-primary/5" : "border-border/50 bg-card/30"
-      } min-h-[260px] transition-colors`}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      className="es-zone"
     >
-      <header
-        className={`flex items-center justify-between px-3 py-2 border-b border-border/30 rounded-t ${headerAccent}`}
-      >
-        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest">
-          <Icon className="w-4 h-4" />
+      <header className="es-zone-head">
+        <div className="es-zone-title">
+          <Icon className="w-3.5 h-3.5" />
           <span>{ACW_DOMAIN_LABEL[domain]}</span>
         </div>
-        <div
-          className="flex items-center gap-1 text-[9px] uppercase tracking-widest opacity-70"
-          title={SEAL_LABEL}
-        >
+        <span className="es-zone-meta" title={SEAL_LABEL}>
           <Lock className="w-3 h-3" />
           <span>{SEAL_LABEL}</span>
-        </div>
+        </span>
       </header>
-
-      {/* Breadcrumb — always rendered so the focus depth is
-          visible even when the path is just the sealed root. */}
-      <nav
-        className="flex items-center flex-wrap gap-1 px-3 py-1 border-b border-border/20 text-[10px] font-mono text-muted-foreground"
-        data-testid={`acw-studio-quadrant-crumbs-${domain}`}
-      >
-        {breadcrumbs.map((c, i) => {
-          const isLast = i === breadcrumbs.length - 1;
-          return (
-            <span key={c.id} className="flex items-center gap-1">
-              {i > 0 ? <ChevronRight className="w-3 h-3 opacity-50" /> : null}
-              {isLast ? (
-                <span
-                  data-testid={`acw-studio-crumb-current-${domain}`}
-                  className="text-foreground"
-                >
-                  {c.label}
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setFocusPath((p) => p.slice(0, i + 1));
-                  }}
-                  className="hover:text-foreground underline-offset-2 hover:underline"
-                >
-                  {c.label}
-                </button>
-              )}
-            </span>
-          );
-        })}
-      </nav>
-
-      {/* Embedded 2D canvas + palette drop wrapper. The wrapper
-          owns the palette drop intake; the canvas itself owns
-          drag-to-move / reparent / collapse / select. */}
       <div
-        className="flex-1"
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        onDrop={onDrop}
+        className="es-zone-nodes"
         data-testid={`acw-studio-quadrant-body-${domain}`}
       >
-        <InteractiveCanvas2D
-          lensId={canvasLensId}
-          nodes={allNodes}
-          edges={allEdges}
-          focusedParentId={focusedParentId}
-          connectMode={connectOn}
-          pendingSourceId={pendingSource}
-          // EAStudio Phase 2 (post-validation) — every per-quadrant
-          // canvas suppresses its own edge layer. The single
-          // `StudioEdgeOverlay` mounted at the grid level renders
-          // ALL CONNECTS edges (including cross-quadrant ones,
-          // which a per-canvas layer could not draw because each
-          // canvas's `visibleAt` map only contains its own visible
-          // nodes) and owns selection / delete UX.
-          suppressEdgeRendering
-          onNodeSelect={(id) => {
-            setSelectedNodeId(lensId, id);
-            // Selecting a node clears any standing edge selection
-            // so only one of {node, edge} is "selected" at a time
-            // per page. Same convention used by every other tool.
-            setSelectedEdgeId(lensId, null);
-          }}
-          onNodeConnectClick={(id) => {
-            // Source-then-destination dispatch. The first click
-            // arms a pending source; the second click on a
-            // *different* node fires the validator-gated
-            // createEdge for a CONNECTS edge. Clicking the same
-            // node twice clears the pending source (treated as a
-            // cancel — never as a self-loop, which the validator
-            // would refuse anyway).
-            //
-            // Sealed-container refusal is owned by the validator
-            // (`canCreateEdge` reads `view.isSealed`), so any
-            // sealed source or destination that reaches createEdge
-            // surfaces the verbatim validator string through the
-            // refusal channel below. No paraphrase or pre-check
-            // lives here, in the InteractiveCanvas2D pointer
-            // handler, or in the store — single source of truth.
-            const node = nodeById.get(id);
-            if (node === undefined) return;
-            if (pendingSource === null) {
-              setConnectPendingSource(lensId, id);
-              return;
-            }
-            if (pendingSource === id) {
-              setConnectPendingSource(lensId, null);
-              return;
-            }
-            const r = createEdge({
-              kind: "CONNECTS",
-              fromId: pendingSource,
-              toId: id,
-            });
-            // Always clear the pending source whether the
-            // mutation was permitted or refused; otherwise a
-            // subsequent click would silently re-fire against the
-            // stale source.
-            setConnectPendingSource(lensId, null);
-            if (!r.ok) publishRefusal(r.reason);
-          }}
-          onDrillDown={(nodeId) => {
-            // Push the drilled-into node onto the focus path,
-            // *only* if the node is a descendant of this
-            // quadrant's container; defensive in case the canvas
-            // somehow surfaces a node from elsewhere.
-            const target = nodeById.get(nodeId);
-            if (target === undefined) return;
-            // Walk ancestors until we hit either this quadrant's
-            // container (accept) or the workspace root (refuse).
-            let cursor: AcwNode | undefined = target;
-            let guard = 0;
-            while (cursor !== undefined && guard < 1024) {
-              if (cursor.parentId === containerId || cursor.id === containerId) {
-                setFocusPath((p) => [...p, nodeId]);
-                return;
-              }
-              if (cursor.parentId === null) return;
-              cursor = nodeById.get(cursor.parentId);
-              guard += 1;
-            }
-          }}
-          emptyHint={focusedNode === undefined || focusedParentId === containerId
-            ? QUADRANT_HINT
-            : undefined}
-          height="100%"
-          testId={`acw-studio-canvas-${domain}`}
-          permitContainerType={permitContainerType}
-        />
+        {children.length === 0 ? (
+          <p className="es-zone-empty">{QUADRANT_HINT}</p>
+        ) : (
+          children.map((node) => (
+            <NodeCard
+              key={node.id}
+              node={node}
+              domain={domain}
+              isSelected={selectedNodeId === node.id}
+              isPendingSource={pendingSource === node.id}
+              onClick={() => onNodeClick(node.id, false)}
+              onConnect={() => onNodeClick(node.id, true)}
+              onDelete={() => onNodeDelete(node.id)}
+            />
+          ))
+        )}
       </div>
     </section>
+  );
+}
+
+interface NodeCardProps {
+  readonly node: AcwNode;
+  readonly domain: AcwDomainTag;
+  readonly isSelected: boolean;
+  readonly isPendingSource: boolean;
+  readonly onClick: () => void;
+  readonly onConnect: () => void;
+  readonly onDelete: () => void;
+}
+
+// Resolve which palette tile (if any) was used to materialise this
+// node. Used for the icon and the secondary `subLabel` line; falls
+// back to the first tile of the same domain so a node materialised
+// outside the palette still gets a sensible icon and a domain-level
+// sub-line rather than rendering the literal element type token.
+function resolveTile(node: AcwNode, domain: AcwDomainTag): PaletteItem {
+  const byLabel = paletteItemByLabel(node.label);
+  if (byLabel !== undefined && byLabel.domain === domain) return byLabel;
+  const fallback = ACW_PALETTE.find((p) => p.domain === domain);
+  // ACW_PALETTE always contains at least one tile per domain; the
+  // module-load assertion in paletteRegistry guarantees this.
+  return fallback as PaletteItem;
+}
+
+function NodeCard(p: NodeCardProps) {
+  const tile = resolveTile(p.node, p.domain);
+  const { Icon } = tile;
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={(e) => {
+        e.stopPropagation();
+        p.onClick();
+      }}
+      onKeyDown={(e) => {
+        // role="button" elements must respond to Enter and Space
+        // the way a native <button> would. preventDefault on Space
+        // stops the page from scrolling when a card is focused.
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          e.stopPropagation();
+          p.onClick();
+        }
+      }}
+      data-testid={`acw-studio-node-${p.node.id}`}
+      data-acw-node-id={p.node.id}
+      data-domain={p.domain}
+      data-selected={p.isSelected ? "true" : "false"}
+      data-pending-source={p.isPendingSource ? "true" : "false"}
+      className="es-cnode"
+    >
+      <span className="es-cnode-icon" aria-hidden="true">
+        <Icon className="w-3 h-3" />
+      </span>
+      <span className="es-cnode-text">
+        <span className="es-cnode-label">{p.node.label}</span>
+        <span className="es-cnode-sub es-mono">{tile.subLabel}</span>
+      </span>
+      <span className="es-cnode-actions">
+        <button
+          type="button"
+          className="es-cnode-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            p.onConnect();
+          }}
+          aria-label={CONNECT_HINT}
+          title={CONNECT_HINT}
+          data-testid={`acw-studio-node-${p.node.id}-connect`}
+        >
+          <Zap className="w-3 h-3" />
+        </button>
+        <button
+          type="button"
+          className="es-cnode-btn"
+          data-tone="danger"
+          onClick={(e) => {
+            e.stopPropagation();
+            p.onDelete();
+          }}
+          aria-label={DELETE_HINT}
+          title={DELETE_HINT}
+          data-testid={`acw-studio-node-${p.node.id}-delete`}
+        >
+          <X className="w-3 h-3" />
+        </button>
+      </span>
+    </div>
   );
 }

@@ -1,4 +1,4 @@
-// EAStudio Phase 1 — palette registry.
+// EAStudio — palette registry.
 //
 // Single source of truth for the four-domain element palette
 // surfaced by the Studio canvas. Each palette item names:
@@ -11,8 +11,17 @@
 //     surface);
 //   - the human-readable label that becomes the node's `label`
 //     field at creation time;
+//   - the secondary label rendered as a small subtitle under each
+//     palette tile and node card (the "sub" line in the prototype);
 //   - the lucide-react icon class used to render the palette tile
 //     and the resulting card.
+//
+// EAStudio Phase 1–3 visual alignment (Task #99) — palette is now
+// 32 tiles (8 per domain). Every Business tile materialises as a
+// `Zone` element so the strict Business chain in the validator
+// (BusinessEntity → Zone children only, with System/Component
+// permitted only deeper) accepts every direct drop into the
+// Business container without cascading the user into a refusal.
 //
 // Constitutional discipline this module follows:
 //   - No emoji. The master prompt §11 vocabulary tier the ACW
@@ -20,36 +29,49 @@
 //     bearers; lucide-react's vector icons are the sanctioned
 //     iconography surface.
 //   - Every static label below is asserted against
-//     ACW_PLACEHOLDER_FORBIDDEN at module load.
+//     ACW_PLACEHOLDER_FORBIDDEN at module load. Sub-labels also
+//     run through the guard so a future copy-edit cannot smuggle
+//     a forbidden vocabulary token into the rendered surface.
 //   - The registry is a frozen module-load constant. The Studio
 //     canvas reads it; nothing in this module touches React, the
 //     store, or persistence.
-//
-// Phase 1 scope — deliberately narrow per the task brief:
-//   * Business: Department, Org unit, Business process, KPI card.
-//   * Data: Data domain, Dataset, Data product.
-//   * Application: Application, Service, Component module.
-//   * Technology: Compute node, Container, Database, Network zone.
-//
-// The four lists above are intentionally short and additive.
-// Extending the palette is a registry edit only; nothing in the
-// Studio surfaces hard-codes the items.
 import type { LucideIcon } from "lucide-react";
 import {
+  Activity,
+  Archive,
+  ArrowRightLeft,
   Briefcase,
-  Building2,
-  Cpu,
+  ClipboardList,
+  Cloud,
+  Cog,
   Database,
   Gauge,
+  GitBranch,
+  Globe,
+  Handshake,
+  HardDrive,
+  Key,
+  KeyRound,
+  Landmark,
   Layers,
+  Library,
+  Monitor,
   Network,
   Package,
+  Plug,
   Puzzle,
+  Radio,
+  Repeat,
+  Ruler,
   Server,
-  Settings,
+  Shield,
   ShieldCheck,
-  Table2,
+  Smartphone,
+  Target,
+  Users,
   Workflow,
+  Wrench,
+  Zap,
 } from "lucide-react";
 import { assertAllAcwPlaceholderLanguage } from "../../governance/staticTextGuard";
 import {
@@ -67,6 +89,8 @@ export interface PaletteItem {
   readonly elementType: AcwElementType;
   /** Visible label rendered on the tile and on the resulting card. */
   readonly label: string;
+  /** Small secondary label rendered beneath the primary label. */
+  readonly subLabel: string;
   /** Vector icon — lucide-react component, no emoji. */
   readonly Icon: LucideIcon;
 }
@@ -109,6 +133,18 @@ export const ACW_DOMAIN_ACCENT: Readonly<Record<AcwDomainTag, string>> =
     technology: "border-emerald-500/40 text-emerald-400",
   });
 
+// Short domain key used in the prototype CSS variables
+// (`--biz`, `--data`, `--app`, `--tech`). Used by render code to
+// read the right CSS custom property without re-implementing the
+// tag-to-shorthand mapping at every call site.
+export const ACW_DOMAIN_SHORTHAND: Readonly<Record<AcwDomainTag, string>> =
+  Object.freeze({
+    business: "biz",
+    data: "data",
+    application: "app",
+    technology: "tech",
+  });
+
 // ---------------------------------------------------------------------------
 // Palette items
 // ---------------------------------------------------------------------------
@@ -118,118 +154,268 @@ export const ACW_DOMAIN_ACCENT: Readonly<Record<AcwDomainTag, string>> =
 export const ACW_PALETTE: readonly PaletteItem[] = Object.freeze([
   // -------------------------- Business --------------------------
   Object.freeze({
-    paletteKind: "biz-department",
+    paletteKind: "biz-strategy-map",
     domain: "business",
     elementType: "Zone",
-    label: "Department",
-    Icon: Building2,
+    label: "Strategy Map",
+    subLabel: "Vision & goals",
+    Icon: Target,
+  }),
+  Object.freeze({
+    paletteKind: "biz-business-process",
+    domain: "business",
+    elementType: "Zone",
+    label: "Business Process",
+    subLabel: "Process model",
+    Icon: Workflow,
+  }),
+  Object.freeze({
+    paletteKind: "biz-governance-model",
+    domain: "business",
+    elementType: "Zone",
+    label: "Governance Model",
+    subLabel: "Policy & control",
+    Icon: Landmark,
+  }),
+  Object.freeze({
+    paletteKind: "biz-capability-map",
+    domain: "business",
+    elementType: "Zone",
+    label: "Capability Map",
+    subLabel: "Business capabilities",
+    Icon: ClipboardList,
+  }),
+  Object.freeze({
+    paletteKind: "biz-value-stream",
+    domain: "business",
+    elementType: "Zone",
+    label: "Value Stream",
+    subLabel: "End-to-end value",
+    Icon: Handshake,
   }),
   Object.freeze({
     paletteKind: "biz-org-unit",
     domain: "business",
     elementType: "Zone",
-    label: "Org unit",
-    Icon: Briefcase,
+    label: "Org Unit",
+    subLabel: "Business unit",
+    Icon: Users,
   }),
   Object.freeze({
-    paletteKind: "biz-business-process",
+    paletteKind: "biz-kpi-dashboard",
     domain: "business",
-    elementType: "System",
-    label: "Business process",
-    Icon: Workflow,
-  }),
-  Object.freeze({
-    paletteKind: "biz-kpi-card",
-    domain: "business",
-    elementType: "Component",
-    label: "KPI card",
+    elementType: "Zone",
+    label: "KPI Dashboard",
+    subLabel: "Metrics & OKRs",
     Icon: Gauge,
   }),
+  Object.freeze({
+    paletteKind: "biz-compliance",
+    domain: "business",
+    elementType: "Zone",
+    label: "Compliance",
+    subLabel: "Regulatory control",
+    Icon: ShieldCheck,
+  }),
+
   // ---------------------------- Data ----------------------------
   Object.freeze({
-    paletteKind: "data-domain",
+    paletteKind: "data-store",
     domain: "data",
     elementType: "Zone",
-    label: "Data domain",
+    label: "Data Store",
+    subLabel: "Logical entity",
     Icon: Database,
   }),
   Object.freeze({
-    paletteKind: "data-dataset",
+    paletteKind: "data-stream",
+    domain: "data",
+    elementType: "System",
+    label: "Data Stream",
+    subLabel: "Integration pipe",
+    Icon: ArrowRightLeft,
+  }),
+  Object.freeze({
+    paletteKind: "data-model",
     domain: "data",
     elementType: "Component",
-    label: "Dataset",
-    Icon: Table2,
+    label: "Data Model",
+    subLabel: "Schema & structure",
+    Icon: Ruler,
   }),
   Object.freeze({
     paletteKind: "data-product",
     domain: "data",
     elementType: "System",
-    label: "Data product",
+    label: "Data Product",
+    subLabel: "Consumable dataset",
     Icon: Package,
   }),
+  Object.freeze({
+    paletteKind: "data-master",
+    domain: "data",
+    elementType: "Component",
+    label: "Master Data",
+    subLabel: "Golden record",
+    Icon: Key,
+  }),
+  Object.freeze({
+    paletteKind: "data-catalog",
+    domain: "data",
+    elementType: "Component",
+    label: "Data Catalog",
+    subLabel: "Metadata registry",
+    Icon: Library,
+  }),
+  Object.freeze({
+    paletteKind: "data-policy",
+    domain: "data",
+    elementType: "Component",
+    label: "Data Policy",
+    subLabel: "Governance rules",
+    Icon: Shield,
+  }),
+  Object.freeze({
+    paletteKind: "data-etl",
+    domain: "data",
+    elementType: "System",
+    label: "ETL Pipeline",
+    subLabel: "Transform & load",
+    Icon: GitBranch,
+  }),
+
   // ------------------------ Application -------------------------
   Object.freeze({
     paletteKind: "app-application",
     domain: "application",
     elementType: "System",
     label: "Application",
-    Icon: Layers,
+    subLabel: "System component",
+    Icon: Monitor,
   }),
   Object.freeze({
-    paletteKind: "app-service",
+    paletteKind: "app-api-gateway",
     domain: "application",
     elementType: "System",
-    label: "Service",
-    Icon: Settings,
+    label: "API Gateway",
+    subLabel: "Integration point",
+    Icon: Plug,
+  }),
+  Object.freeze({
+    paletteKind: "app-microservice",
+    domain: "application",
+    elementType: "System",
+    label: "Microservice",
+    subLabel: "Bounded context",
+    Icon: Radio,
   }),
   Object.freeze({
     paletteKind: "app-module",
     domain: "application",
     elementType: "Component",
-    label: "Component module",
+    label: "Module",
+    subLabel: "App subsystem",
     Icon: Puzzle,
   }),
-  // ------------------------- Technology -------------------------
   Object.freeze({
-    paletteKind: "tech-compute-node",
-    domain: "technology",
-    elementType: "ComputeNode",
-    label: "Compute node",
-    Icon: Server,
+    paletteKind: "app-mobile",
+    domain: "application",
+    elementType: "System",
+    label: "Mobile App",
+    subLabel: "Client endpoint",
+    Icon: Smartphone,
   }),
   Object.freeze({
-    paletteKind: "tech-container",
-    domain: "technology",
+    paletteKind: "app-event-bus",
+    domain: "application",
+    elementType: "System",
+    label: "Event Bus",
+    subLabel: "Async messaging",
+    Icon: Zap,
+  }),
+  Object.freeze({
+    paletteKind: "app-web-portal",
+    domain: "application",
+    elementType: "System",
+    label: "Web Portal",
+    subLabel: "User interface",
+    Icon: Globe,
+  }),
+  Object.freeze({
+    paletteKind: "app-integration",
+    domain: "application",
     elementType: "Component",
-    label: "Container",
-    Icon: Cpu,
+    label: "Integration",
+    subLabel: "System connector",
+    Icon: Repeat,
+  }),
+
+  // ------------------------- Technology -------------------------
+  Object.freeze({
+    paletteKind: "tech-cloud-region",
+    domain: "technology",
+    elementType: "Zone",
+    label: "Cloud Region",
+    subLabel: "Compute zone",
+    Icon: Cloud,
+  }),
+  Object.freeze({
+    paletteKind: "tech-network",
+    domain: "technology",
+    elementType: "Zone",
+    label: "Network Layer",
+    subLabel: "Topology segment",
+    Icon: Network,
   }),
   Object.freeze({
     paletteKind: "tech-database",
     domain: "technology",
     elementType: "Component",
     label: "Database",
-    Icon: Database,
+    subLabel: "Persistent store",
+    Icon: HardDrive,
   }),
   Object.freeze({
-    paletteKind: "tech-network-zone",
+    paletteKind: "tech-runtime",
     domain: "technology",
-    elementType: "Zone",
-    label: "Network zone",
-    Icon: Network,
+    elementType: "ComputeNode",
+    label: "Runtime Engine",
+    subLabel: "Execution env",
+    Icon: Cog,
   }),
-  // ShieldCheck / Network exist on the import but only ShieldCheck
-  // is unused above — keep the import surface contained by holding
-  // a sentinel reference here. Removing the sentinel would
-  // re-introduce an unused-import warning under strict TS.
+  Object.freeze({
+    paletteKind: "tech-iam",
+    domain: "technology",
+    elementType: "Component",
+    label: "IAM Service",
+    subLabel: "Auth & identity",
+    Icon: KeyRound,
+  }),
+  Object.freeze({
+    paletteKind: "tech-monitoring",
+    domain: "technology",
+    elementType: "Component",
+    label: "Monitoring",
+    subLabel: "Observability",
+    Icon: Activity,
+  }),
+  Object.freeze({
+    paletteKind: "tech-object-storage",
+    domain: "technology",
+    elementType: "Component",
+    label: "Object Storage",
+    subLabel: "Blob tier",
+    Icon: Archive,
+  }),
+  Object.freeze({
+    paletteKind: "tech-cicd",
+    domain: "technology",
+    elementType: "Component",
+    label: "CI/CD Pipeline",
+    subLabel: "DevOps toolchain",
+    Icon: Wrench,
+  }),
 ] as const);
-
-// Sentinel touch — prevents the unused-import warning for
-// ShieldCheck without importing-and-discarding inside the body of
-// any rendering component.
-export const __PALETTE_ICON_SENTINEL: ReadonlyArray<LucideIcon> = Object.freeze([
-  ShieldCheck,
-]);
 
 export function paletteItemsByDomain(domain: AcwDomainTag): readonly PaletteItem[] {
   return ACW_PALETTE.filter((p) => p.domain === domain);
@@ -239,23 +425,33 @@ export function paletteItemByKind(kind: string): PaletteItem | undefined {
   return ACW_PALETTE.find((p) => p.paletteKind === kind);
 }
 
+// Resolve a palette item by its visible label. Used by the sample-
+// seed routine so the canonical sample list (which mirrors the
+// prototype's autoLayout) can target tiles by label without
+// hard-coding palette kinds.
+export function paletteItemByLabel(label: string): PaletteItem | undefined {
+  return ACW_PALETTE.find((p) => p.label === label);
+}
+
 // ---------------------------------------------------------------------------
 // Module-load assertions
 // ---------------------------------------------------------------------------
 //
-// Vocabulary tier — every label that can render into the DOM is
-// asserted against ACW_PLACEHOLDER_FORBIDDEN. A future drift fails
-// the bundle at module load.
+// Vocabulary tier — every label and sub-label that can render into
+// the DOM is asserted against ACW_PLACEHOLDER_FORBIDDEN. A future
+// drift fails the bundle at module load.
 assertAllAcwPlaceholderLanguage([
   ...Object.values(ACW_DOMAIN_LABEL),
   ...ACW_PALETTE.map((p) => p.label),
+  ...ACW_PALETTE.map((p) => p.subLabel),
 ]);
 
 // Structural integrity:
 //   - every palette item targets a known domain tag;
 //   - paletteKind values are unique;
 //   - the domain catalog covers exactly the tag set the grammar
-//     declares (no orphan tag, no silent extra tag).
+//     declares (no orphan tag, no silent extra tag);
+//   - the shorthand map covers exactly the same tag set.
 {
   const seen = new Set<string>();
   for (const item of ACW_PALETTE) {
@@ -276,6 +472,11 @@ assertAllAcwPlaceholderLanguage([
     if (!labelKeys.has(tag)) {
       throw new Error(
         `EAStudio palette registry: ACW_DOMAIN_LABEL is missing the "${tag}" entry.`,
+      );
+    }
+    if (!Object.prototype.hasOwnProperty.call(ACW_DOMAIN_SHORTHAND, tag)) {
+      throw new Error(
+        `EAStudio palette registry: ACW_DOMAIN_SHORTHAND is missing the "${tag}" entry.`,
       );
     }
   }

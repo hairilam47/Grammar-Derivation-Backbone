@@ -19,6 +19,12 @@
 // The brief explicitly calls this out so the export is
 // diff-friendly across runs and across users.
 //
+// Visual styling notes (Task #99):
+//   - All chrome is rendered with the prototype-aligned
+//     `es-export-*` class set defined in `.eastudio-root` scoped
+//     CSS plus the shared `es-btn` button class for the download
+//     actions. No Tailwind colour utilities.
+//
 // Constitutional discipline:
 //   - Lucide icons only.
 //   - Every static label asserted against ACW_PLACEHOLDER_FORBIDDEN
@@ -141,74 +147,88 @@ export function ExportView(_props: ExportViewProps) {
   return (
     <section
       data-testid="acw-studio-export-view"
-      className="flex flex-1 flex-col min-h-[480px] gap-3 px-3 py-3"
+      className="es-export-wrap"
     >
-      <header className="flex flex-col gap-0.5">
-        <h3
-          className="text-xs uppercase tracking-widest text-muted-foreground"
-          data-testid="acw-studio-export-title"
-        >
-          {PAGE_TITLE}
-        </h3>
-        <p
-          className="text-[11px] text-muted-foreground"
-          data-testid="acw-studio-export-hint"
-        >
-          {PAGE_HINT}
-        </p>
+      <header className="es-export-head">
+        <h3 data-testid="acw-studio-export-title">{PAGE_TITLE}</h3>
+        <p data-testid="acw-studio-export-hint">{PAGE_HINT}</p>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 flex-1 min-h-0">
-        <div
-          className="flex flex-col border border-border/40 rounded bg-card/30 min-h-0"
-          data-testid="acw-studio-export-json-panel"
-        >
-          <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/30">
-            <h4 className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-muted-foreground">
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr",
+          gap: 12,
+        }}
+      >
+        <div data-testid="acw-studio-export-json-panel">
+          <div className="es-export-toolbar">
+            <h4
+              style={{
+                margin: 0,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 11,
+                letterSpacing: "0.16em",
+                textTransform: "uppercase",
+                color: "var(--text2)",
+                marginRight: "auto",
+              }}
+            >
               <FileJson className="w-3.5 h-3.5" />
               <span>{JSON_PANEL_TITLE}</span>
             </h4>
             <button
               type="button"
+              className="es-btn"
               onClick={() =>
                 downloadBlob(JSON_FILENAME, "application/json", jsonText)
               }
               data-testid="acw-studio-export-json-download"
-              className="flex items-center gap-1.5 px-2 py-1 rounded border border-border/60 text-[10px] uppercase tracking-widest text-muted-foreground hover:text-foreground hover:border-border transition-colors"
             >
               <Download className="w-3 h-3" />
               <span>{DOWNLOAD_JSON_LABEL}</span>
             </button>
           </div>
           <pre
-            className="flex-1 overflow-auto px-3 py-2 text-[10px] leading-snug font-mono text-foreground/90 whitespace-pre min-h-0"
+            className="es-export-block"
             data-testid="acw-studio-export-json-preview"
           >
             {jsonText}
           </pre>
         </div>
 
-        <div
-          className="flex flex-col border border-border/40 rounded bg-card/30 min-h-0"
-          data-testid="acw-studio-export-csv-panel"
-        >
-          <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/30">
-            <h4 className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-muted-foreground">
+        <div data-testid="acw-studio-export-csv-panel">
+          <div className="es-export-toolbar">
+            <h4
+              style={{
+                margin: 0,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 11,
+                letterSpacing: "0.16em",
+                textTransform: "uppercase",
+                color: "var(--text2)",
+                marginRight: "auto",
+              }}
+            >
               <Sheet className="w-3.5 h-3.5" />
               <span>{CSV_PANEL_TITLE}</span>
             </h4>
             <button
               type="button"
+              className="es-btn"
               onClick={() => downloadBlob(CSV_FILENAME, "text/csv", csvText)}
               data-testid="acw-studio-export-csv-download"
-              className="flex items-center gap-1.5 px-2 py-1 rounded border border-border/60 text-[10px] uppercase tracking-widest text-muted-foreground hover:text-foreground hover:border-border transition-colors"
             >
               <Download className="w-3 h-3" />
               <span>{DOWNLOAD_CSV_LABEL}</span>
             </button>
           </div>
           <pre
-            className="flex-1 overflow-auto px-3 py-2 text-[10px] leading-snug font-mono text-foreground/90 whitespace-pre min-h-0"
+            className="es-export-block"
             data-testid="acw-studio-export-csv-preview"
           >
             {csvText}
