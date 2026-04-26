@@ -156,6 +156,17 @@ export interface InteractiveCanvas2DProps {
    *  canvas. The pill renders only for the currently-selected edge
    *  so unselected edges remain inert. */
   onEdgeDelete?: (edgeId: string) => void;
+  /** EAStudio Phase 2 (post-validation) — when true, this canvas
+   *  does NOT render its own edge layer or in-canvas confirm pill.
+   *  The host is then responsible for rendering edges in a single
+   *  unified overlay positioned above all canvases (necessary so
+   *  cross-quadrant CONNECTS edges, whose endpoints sit in
+   *  different `InteractiveCanvas2D` instances, are visible and
+   *  selectable). The host queries this canvas's rendered nodes by
+   *  the `data-acw-node-id` attribute on each node `<g>`. Default
+   *  false preserves single-canvas lens behaviour for every other
+   *  consumer. */
+  suppressEdgeRendering?: boolean;
 }
 
 interface DragState {
@@ -196,6 +207,7 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
     onNodeConnectClick,
     onEdgeClick,
     onEdgeDelete,
+    suppressEdgeRendering = false,
   } = props;
 
   const [view, setView] = useState<ViewState>(INITIAL_VIEW);
@@ -926,8 +938,16 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
             {/* Edges between visible siblings or visible children.
                 EAStudio Phase 2 — rendered as cubic Bezier curves
                 with an arrowhead at the destination. Click selects
-                the edge; the host owns the delete affordance. */}
-            {(() => {
+                the edge; the host owns the delete affordance.
+                EAStudio Phase 2 (post-validation) — when
+                `suppressEdgeRendering` is true, all edge rendering
+                is delegated to a host-level overlay so cross-canvas
+                edges (whose endpoints sit in different
+                InteractiveCanvas2D instances, e.g. across the four
+                EAStudio domain quadrants) remain visible and
+                selectable. Single-canvas lenses leave it false and
+                continue rendering edges in-canvas as before. */}
+            {!suppressEdgeRendering && (() => {
               // Resolve endpoints by their visible position. An edge
               // is drawn iff both endpoints are currently visible
               // (direct sibling at the focus level or visible child
@@ -1198,6 +1218,7 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
       <g
         key={n.id}
         data-testid={`${testId}-node-${n.id}`}
+        data-acw-node-id={n.id}
         style={{ cursor: "grab" }}
         onMouseDown={(e) => onNodeMouseDown(e, n)}
         onDoubleClick={(e) => {

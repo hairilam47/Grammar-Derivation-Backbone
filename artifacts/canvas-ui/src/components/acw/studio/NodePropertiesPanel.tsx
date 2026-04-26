@@ -59,6 +59,12 @@ import {
   ACW_NODE_PRIORITY_LABEL,
   ACW_NODE_STATUSES,
   ACW_NODE_STATUS_LABEL,
+  isAcwNodeMaturity,
+  isAcwNodePriority,
+  isAcwNodeStatus,
+  type AcwNodeMaturity,
+  type AcwNodePriority,
+  type AcwNodeStatus,
 } from "@/acw/acwNodeProperties";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -348,15 +354,63 @@ export function NodePropertiesPanel({ lensId }: NodePropertiesPanelProps) {
     );
   }
 
-  function setEnum(
-    field: "status" | "maturity" | "priority",
-    value: string,
-  ) {
+  // Per-field, fully-typed enum commit helpers. Each one builds a
+  // discriminated `UpdateNodePropertiesRequest` whose key is known
+  // statically, so the request literal type matches the store's
+  // signature with no `as` cast and no widening. The empty string
+  // sentinel from the native <select> maps to `null` (clear the
+  // field). Unknown / corrupt enum values from the DOM are refused
+  // locally — the predicate below is the same one the validator
+  // uses, so the failure mode (no-op + refusal) is consistent.
+  function commitStatus(value: string) {
     if (node === null) return;
-    const next = value === "" ? null : value;
-    const r = updateNodeProperties(node.id, {
-      [field]: next,
-    } as Parameters<typeof updateNodeProperties>[1]);
+    if (value === "") {
+      const r = updateNodeProperties(node.id, { status: null });
+      if (!r.ok) publishRefusal(r.reason);
+      return;
+    }
+    if (!isAcwNodeStatus(value)) {
+      publishRefusal(
+        `The status value "${value}" is not a permitted enum member.`,
+      );
+      return;
+    }
+    const next: AcwNodeStatus = value;
+    const r = updateNodeProperties(node.id, { status: next });
+    if (!r.ok) publishRefusal(r.reason);
+  }
+  function commitMaturity(value: string) {
+    if (node === null) return;
+    if (value === "") {
+      const r = updateNodeProperties(node.id, { maturity: null });
+      if (!r.ok) publishRefusal(r.reason);
+      return;
+    }
+    if (!isAcwNodeMaturity(value)) {
+      publishRefusal(
+        `The maturity value "${value}" is not a permitted enum member.`,
+      );
+      return;
+    }
+    const next: AcwNodeMaturity = value;
+    const r = updateNodeProperties(node.id, { maturity: next });
+    if (!r.ok) publishRefusal(r.reason);
+  }
+  function commitPriority(value: string) {
+    if (node === null) return;
+    if (value === "") {
+      const r = updateNodeProperties(node.id, { priority: null });
+      if (!r.ok) publishRefusal(r.reason);
+      return;
+    }
+    if (!isAcwNodePriority(value)) {
+      publishRefusal(
+        `The priority value "${value}" is not a permitted enum member.`,
+      );
+      return;
+    }
+    const next: AcwNodePriority = value;
+    const r = updateNodeProperties(node.id, { priority: next });
     if (!r.ok) publishRefusal(r.reason);
   }
 
@@ -404,7 +458,7 @@ export function NodePropertiesPanel({ lensId }: NodePropertiesPanelProps) {
           value: v,
           label: ACW_NODE_STATUS_LABEL[v],
         }))}
-        onChange={(v) => setEnum("status", v)}
+        onChange={commitStatus}
         testIdPrefix="acw-studio-properties-status"
       />
       <EnumField
@@ -414,7 +468,7 @@ export function NodePropertiesPanel({ lensId }: NodePropertiesPanelProps) {
           value: v,
           label: ACW_NODE_MATURITY_LABEL[v],
         }))}
-        onChange={(v) => setEnum("maturity", v)}
+        onChange={commitMaturity}
         testIdPrefix="acw-studio-properties-maturity"
       />
       <EnumField
@@ -424,7 +478,7 @@ export function NodePropertiesPanel({ lensId }: NodePropertiesPanelProps) {
           value: v,
           label: ACW_NODE_PRIORITY_LABEL[v],
         }))}
-        onChange={(v) => setEnum("priority", v)}
+        onChange={commitPriority}
         testIdPrefix="acw-studio-properties-priority"
       />
 

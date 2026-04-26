@@ -39,7 +39,7 @@
 //   - Quadrant accent colours are pure UI styling — no traffic-
 //     light, no judgement, no animation.
 import type { DragEvent } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, Lock } from "lucide-react";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 import {
@@ -53,6 +53,7 @@ import {
   findDomainContainerById,
 } from "@/acw/palette/domainContainerSeed";
 import { ACW_PALETTE_DATA_KEY } from "./PalettePanel";
+import { StudioEdgeOverlay } from "@/components/acw/studio/StudioEdgeOverlay";
 import { useAcwWorkspace } from "@/acw/acwGrammarHooks";
 import {
   createEdge,
@@ -95,11 +96,23 @@ export interface DomainGridProps {
 export function DomainGrid({ lensId }: DomainGridProps) {
   const workspace = useAcwWorkspace();
   // Re-read view-state on subscriber tick so highlighting tracks
-  // the active domain.
+  // the active domain and the unified-overlay's selected-edge slice.
   const [tick, setTick] = useState(0);
   useEffect(() => subscribeViewState(() => setTick((t) => t + 1)), []);
   void tick;
   const activeDomain = getCurrentDomain(lensId);
+  // Page-keyed selected edge id, lifted to the grid scope so the
+  // single SVG overlay can read it once and drive selection state
+  // for every edge regardless of which quadrant its endpoints are
+  // in. Quadrants no longer own this — they used to read it for
+  // their per-canvas pill, which has been retired.
+  const selectedEdgeId = getSelectedEdgeId(lensId);
+  // Container ref for the unified edge overlay's coordinate system.
+  // The overlay queries `[data-acw-node-id]` inside this ref to
+  // discover where every rendered node lives in screen space, then
+  // translates into grid-local coordinates via the same element's
+  // bounding rect. See StudioEdgeOverlay for the full lifecycle.
+  const gridRef = useRef<HTMLDivElement | null>(null);
 
   // Build a single id→node lookup so each quadrant can resolve
   // its container's descendants and so the drop wrappers can
@@ -111,10 +124,31 @@ export function DomainGrid({ lensId }: DomainGridProps) {
     return m;
   }, [workspace.structureGraph.nodes]);
 
+  // Edge selection / delete handlers, lifted from per-quadrant
+  // canvases to the grid scope so the single overlay drives them
+  // uniformly. Toggle semantics match the prior per-canvas pill:
+  // clicking the already-selected edge dismisses it; selecting an
+  // edge clears any standing node selection so only one of
+  // {node, edge} is "selected" at a time per page.
+  const onEdgeOverlayClick = (id: string) => {
+    if (selectedEdgeId === id) {
+      setSelectedEdgeId(lensId, null);
+    } else {
+      setSelectedEdgeId(lensId, id);
+      setSelectedNodeId(lensId, null);
+    }
+  };
+  const onEdgeOverlayDelete = (id: string) => {
+    const r = deleteEdge(id);
+    setSelectedEdgeId(lensId, null);
+    if (!r.ok) publishRefusal(r.reason);
+  };
+
   return (
     <div
+      ref={gridRef}
       data-testid="acw-studio-domain-grid"
-      className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3 p-3 overflow-auto"
+      className="relative flex-1 grid grid-cols-1 md:grid-cols-2 gap-3 p-3 overflow-auto"
     >
       {ACW_DOMAIN_CONTAINERS.map((spec) => {
         const container = findDomainContainerById(spec.id);
@@ -133,6 +167,13 @@ export function DomainGrid({ lensId }: DomainGridProps) {
           />
         );
       })}
+      <StudioEdgeOverlay
+        gridRef={gridRef}
+        edges={workspace.structureGraph.edges}
+        selectedEdgeId={selectedEdgeId}
+        onEdgeClick={onEdgeOverlayClick}
+        onEdgeDelete={onEdgeOverlayDelete}
+      />
     </div>
   );
 }
@@ -168,11 +209,13 @@ function Quadrant(props: QuadrantProps) {
   const connectOn = getConnectMode(lensId);
   const pendingSource = getConnectPendingSource(lensId);
   const selectedNodeId = getSelectedNodeId(lensId);
-  // EAStudio Phase 2 — selected edge for the in-canvas confirm pill.
-  // Page-keyed (the page lensId, not the per-quadrant canvas lensId)
-  // so a selection survives quadrant re-renders and the panel/header
-  // can read it. Only one edge may be selected at a time per page.
-  const selectedEdgeId = getSelectedEdgeId(lensId);
+  // EAStudio Phase 2 (post-validation) — edge selection lives at
+  // the grid level so the unified `StudioEdgeOverlay` is the single
+  // source for highlighting and the in-canvas confirm pill. Each
+  // per-quadrant canvas mounts with `suppressEdgeRendering={true}`
+  // and forwards no edge handlers; per-canvas edge UI was retired
+  // because cross-quadrant CONNECTS edges had no canvas willing to
+  // render them.
   const Icon = ACW_DOMAIN_ICON[domain];
   const accent = ACW_DOMAIN_ACCENT[domain];
 
@@ -377,36 +420,20 @@ function Quadrant(props: QuadrantProps) {
           focusedParentId={focusedParentId}
           connectMode={connectOn}
           pendingSourceId={pendingSource}
-          selectedEdgeId={selectedEdgeId}
+          // EAStudio Phase 2 (post-validation) — every per-quadrant
+          // canvas suppresses its own edge layer. The single
+          // `StudioEdgeOverlay` mounted at the grid level renders
+          // ALL CONNECTS edges (including cross-quadrant ones,
+          // which a per-canvas layer could not draw because each
+          // canvas's `visibleAt` map only contains its own visible
+          // nodes) and owns selection / delete UX.
+          suppressEdgeRendering
           onNodeSelect={(id) => {
             setSelectedNodeId(lensId, id);
             // Selecting a node clears any standing edge selection
             // so only one of {node, edge} is "selected" at a time
             // per page. Same convention used by every other tool.
             setSelectedEdgeId(lensId, null);
-          }}
-          onEdgeClick={(id) => {
-            // Toggle selection. Clicking the already-selected edge
-            // dismisses the confirm pill (matches the "click again
-            // to clear" semantics for nodes and pending Connect
-            // sources). Selecting an edge also clears any standing
-            // node selection so only one is active.
-            if (selectedEdgeId === id) {
-              setSelectedEdgeId(lensId, null);
-            } else {
-              setSelectedEdgeId(lensId, id);
-              setSelectedNodeId(lensId, null);
-            }
-          }}
-          onEdgeDelete={(id) => {
-            // Validator-gated. The store-level deleteEdge has no
-            // sealed-pair concern (sealed-to-sealed edges cannot
-            // exist in the first place because canCreateEdge
-            // refuses them), so any refusal here is propagated
-            // verbatim to the refusal channel.
-            const r = deleteEdge(id);
-            setSelectedEdgeId(lensId, null);
-            if (!r.ok) publishRefusal(r.reason);
           }}
           onNodeConnectClick={(id) => {
             // Source-then-destination dispatch. The first click
