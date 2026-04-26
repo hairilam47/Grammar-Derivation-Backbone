@@ -47,6 +47,7 @@ import { StatusBar } from "@/components/acw/studio/StatusBar";
 import { StudioTopBar } from "@/components/acw/studio/StudioTopBar";
 import { MatrixView } from "@/components/acw/studio/MatrixView";
 import { ExportView } from "@/components/acw/studio/ExportView";
+import { DecisionContractNav } from "@/components/acw/studio/DecisionContractNav";
 import { ensureDomainContainers } from "@/acw/palette/domainContainerSeed";
 import {
   getCurrentDomain,
@@ -129,46 +130,49 @@ export default function StudioCanvas() {
         data-testid="acw-studio-canvas"
         data-lens-id={lensId}
       >
-        <StudioTopBar lensId={lensId} />
+        <div className="es-shell">
+          <StudioTopBar lensId={lensId} />
 
-        {activeTab === "design" ? <DomainTabBar lensId={lensId} /> : null}
+          {activeTab === "design" ? <DomainTabBar lensId={lensId} /> : null}
 
-        {refusal !== null ? (
-          <div
-            data-testid="acw-studio-refusal-banner"
-            className="es-refusal"
-          >
-            <span>
-              <span className="es-refusal-prefix">{REFUSAL_PREFIX}</span>
-              <span data-testid="acw-studio-refusal-banner-message">
-                {refusal}
-              </span>
-            </span>
-            <button
-              type="button"
-              onClick={() => setRefusal(null)}
-              className="es-refusal-dismiss"
-              data-testid="acw-studio-refusal-banner-dismiss"
+          {refusal !== null ? (
+            <div
+              data-testid="acw-studio-refusal-banner"
+              className="es-refusal"
             >
-              {DISMISS_LABEL}
-            </button>
-          </div>
-        ) : null}
+              <span>
+                <span className="es-refusal-prefix">{REFUSAL_PREFIX}</span>
+                <span data-testid="acw-studio-refusal-banner-message">
+                  {refusal}
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setRefusal(null)}
+                className="es-refusal-dismiss"
+                data-testid="acw-studio-refusal-banner-dismiss"
+              >
+                {DISMISS_LABEL}
+              </button>
+            </div>
+          ) : null}
 
-        {activeTab === "design" ? (
-          <div
-            className="es-body"
-            data-properties={selectedNodeId !== null ? "shown" : "hidden"}
-          >
-            <PalettePanel activeDomain={activeDomain} />
-            <DomainGrid lensId={lensId} />
-            <NodePropertiesPanel lensId={lensId} />
-          </div>
-        ) : null}
-        {activeTab === "matrix" ? <MatrixView lensId={lensId} /> : null}
-        {activeTab === "export" ? <ExportView lensId={lensId} /> : null}
+          {activeTab === "design" ? (
+            <div
+              className="es-body"
+              data-properties={selectedNodeId !== null ? "shown" : "hidden"}
+            >
+              <PalettePanel activeDomain={activeDomain} />
+              <DomainGrid lensId={lensId} />
+              <NodePropertiesPanel lensId={lensId} />
+            </div>
+          ) : null}
+          {activeTab === "matrix" ? <MatrixView lensId={lensId} /> : null}
+          {activeTab === "export" ? <ExportView lensId={lensId} /> : null}
 
-        <StatusBar lensId={lensId} />
+          <StatusBar lensId={lensId} />
+        </div>
+        <DecisionContractNav />
       </div>
     </WorkspaceShell>
   );
