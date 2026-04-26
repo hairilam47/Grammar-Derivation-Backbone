@@ -33,9 +33,14 @@ import {
 const NODES_LABEL = "Nodes";
 const EDGES_LABEL = "Connections";
 const MODE_LABEL = "Mode";
-const MODE_IDLE = "Idle";
-const MODE_CONNECT_IDLE = "Connect (pick source)";
-const MODE_CONNECT_PENDING = "Connect (pick destination)";
+// EAStudio Phase 2 brief: status-bar mode read-out is "Design" or
+// "Connect", with an optional "(pending)" suffix when the user has
+// armed a source and the next click will fire createEdge. The
+// previous "Idle" / "Connect (pick source|destination)" wording was
+// replaced to match the brief verbatim.
+const MODE_IDLE = "Design";
+const MODE_CONNECT_IDLE = "Connect";
+const MODE_CONNECT_PENDING = "Connect (pending)";
 const FRAMEWORK_BADGE = "TOGAF / ArchiMate-aligned";
 
 assertAllAcwPlaceholderLanguage([

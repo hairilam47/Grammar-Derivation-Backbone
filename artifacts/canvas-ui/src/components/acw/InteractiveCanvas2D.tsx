@@ -150,6 +150,12 @@ export interface InteractiveCanvas2DProps {
   /** Edge click callback. The host decides what selection means;
    *  the canvas just surfaces the user's intent. */
   onEdgeClick?: (edgeId: string) => void;
+  /** Edge delete callback fired by the in-canvas confirm pill.
+   *  Hosts that wire `selectedEdgeId` should also wire this so the
+   *  user can complete the delete gesture without leaving the
+   *  canvas. The pill renders only for the currently-selected edge
+   *  so unselected edges remain inert. */
+  onEdgeDelete?: (edgeId: string) => void;
 }
 
 interface DragState {
@@ -189,6 +195,7 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
     onNodeSelect,
     onNodeConnectClick,
     onEdgeClick,
+    onEdgeDelete,
   } = props;
 
   const [view, setView] = useState<ViewState>(INITIAL_VIEW);
@@ -957,6 +964,12 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
                 const sy = a.y + uy * (NODE_H / 2 + 2);
                 const path = `M ${sx} ${sy} C ${sx + handle} ${sy} ${ex - handle} ${ey} ${ex} ${ey}`;
                 const isSelected = selectedEdgeId === e.id;
+                // Midpoint of the cubic Bezier evaluated at t=0.5
+                // gives a stable anchor for the in-canvas confirm
+                // pill. Approximation via segment midpoint is good
+                // enough for short orthogonal-ish CONNECTS edges.
+                const midX = (sx + ex) / 2;
+                const midY = (sy + ey) / 2;
                 return (
                   <g
                     key={e.id}
@@ -964,6 +977,15 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
                     style={{ cursor: "pointer" }}
                     onMouseDown={(ev) => ev.stopPropagation()}
                     onClick={(ev) => {
+                      ev.stopPropagation();
+                      onEdgeClick?.(e.id);
+                    }}
+                    onContextMenu={(ev) => {
+                      // Right-click also selects the edge so the
+                      // confirm pill appears. Hosts that ignore
+                      // `onEdgeClick` get the same behavior they
+                      // would have on a left click.
+                      ev.preventDefault();
                       ev.stopPropagation();
                       onEdgeClick?.(e.id);
                     }}
@@ -986,6 +1008,100 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
                       fill="none"
                       markerEnd={`url(#${testId}-arrowhead${isSelected ? "-selected" : ""})`}
                     />
+                    {isSelected ? (
+                      // EAStudio Phase 2 — in-canvas confirm pill.
+                      // Rendered only for the currently-selected
+                      // edge so the rest of the graph stays inert.
+                      // Click "Delete" fires `onEdgeDelete`; click
+                      // "Cancel" simply re-fires `onEdgeClick` on
+                      // the same edge, which the host treats as a
+                      // toggle-off (same convention as nodes and
+                      // pending Connect sources).
+                      <g
+                        data-testid={`${testId}-edge-${e.id}-confirm`}
+                        transform={`translate(${midX - 28}, ${midY - 9})`}
+                      >
+                        <rect
+                          x={0}
+                          y={0}
+                          width={56}
+                          height={18}
+                          rx={4}
+                          ry={4}
+                          fill="rgba(20,28,40,0.96)"
+                          stroke="rgba(120,200,255,0.95)"
+                          strokeWidth={0.6}
+                        />
+                        <g
+                          data-testid={`${testId}-edge-${e.id}-delete`}
+                          style={{ cursor: "pointer" }}
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            onEdgeDelete?.(e.id);
+                          }}
+                        >
+                          <rect
+                            x={1}
+                            y={1}
+                            width={36}
+                            height={16}
+                            rx={3}
+                            ry={3}
+                            fill="rgba(180,60,60,0.0)"
+                          />
+                          <text
+                            x={19}
+                            y={12}
+                            textAnchor="middle"
+                            fontSize={9}
+                            fill="rgba(255,180,180,0.95)"
+                            fontFamily="ui-sans-serif, system-ui, sans-serif"
+                          >
+                            Delete
+                          </text>
+                        </g>
+                        <line
+                          x1={38}
+                          y1={3}
+                          x2={38}
+                          y2={15}
+                          stroke="rgba(120,200,255,0.4)"
+                          strokeWidth={0.4}
+                        />
+                        <g
+                          data-testid={`${testId}-edge-${e.id}-cancel`}
+                          style={{ cursor: "pointer" }}
+                          onClick={(ev) => {
+                            // Cancel = toggle the selection off via
+                            // the host. Reuses `onEdgeClick`, which
+                            // hosts implement as a toggle, so we
+                            // need not add a third callback.
+                            ev.stopPropagation();
+                            onEdgeClick?.(e.id);
+                          }}
+                        >
+                          <rect
+                            x={39}
+                            y={1}
+                            width={16}
+                            height={16}
+                            rx={3}
+                            ry={3}
+                            fill="rgba(0,0,0,0)"
+                          />
+                          <text
+                            x={47}
+                            y={12}
+                            textAnchor="middle"
+                            fontSize={9}
+                            fill="rgba(220,220,220,0.85)"
+                            fontFamily="ui-sans-serif, system-ui, sans-serif"
+                          >
+                            ×
+                          </text>
+                        </g>
+                      </g>
+                    ) : null}
                   </g>
                 );
               });

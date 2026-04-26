@@ -76,6 +76,13 @@ export interface AcwViewState {
   readonly connectModeByLens?: Readonly<Record<string, boolean>>;
   readonly connectPendingSourceByLens?: Readonly<Record<string, string>>;
   readonly selectedNodeIdByLens?: Readonly<Record<string, string>>;
+  // EAStudio Phase 2 — selected CONNECTS edge per lens. Drives
+  // the in-canvas "Delete?" confirm pill so the user can remove
+  // a connection by clicking (or right-clicking) its path. Same
+  // visual-only discipline as the other Phase 2 slices: absent
+  // entries read as "no edge selected", and a selection never
+  // mutates the workspace until the user confirms the delete.
+  readonly selectedEdgeIdByLens?: Readonly<Record<string, string>>;
 }
 
 const ALLOWED_TOP = [
@@ -86,6 +93,7 @@ const ALLOWED_TOP = [
   "connectModeByLens",
   "connectPendingSourceByLens",
   "selectedNodeIdByLens",
+  "selectedEdgeIdByLens",
 ] as const;
 
 function emptyView(): AcwViewState {
@@ -97,6 +105,7 @@ function emptyView(): AcwViewState {
     connectModeByLens: Object.freeze({}),
     connectPendingSourceByLens: Object.freeze({}),
     selectedNodeIdByLens: Object.freeze({}),
+    selectedEdgeIdByLens: Object.freeze({}),
   });
 }
 
@@ -245,6 +254,29 @@ function assertValid(raw: unknown): asserts raw is AcwViewState {
       }
     }
   }
+  // EAStudio Phase 2 — selectedEdgeIdByLens. Optional. When present
+  // each value must be a non-empty string (an edge id). Identical
+  // shape to the node selection slice; absent entries mean "no edge
+  // selected on this lens".
+  if (r.selectedEdgeIdByLens !== undefined) {
+    if (
+      r.selectedEdgeIdByLens === null ||
+      typeof r.selectedEdgeIdByLens !== "object"
+    ) {
+      throw new Error("ACW view-state selectedEdgeIdByLens must be an object.");
+    }
+    const em = r.selectedEdgeIdByLens as Record<string, unknown>;
+    for (const [lensId, eid] of Object.entries(em)) {
+      if (typeof lensId !== "string" || lensId.length === 0) {
+        throw new Error("ACW view-state lens id must be a non-empty string.");
+      }
+      if (typeof eid !== "string" || eid.length === 0) {
+        throw new Error(
+          "ACW view-state selectedEdgeIdByLens values must be non-empty strings.",
+        );
+      }
+    }
+  }
 }
 
 function isValid(raw: unknown): raw is AcwViewState {
@@ -281,6 +313,7 @@ function normalize(raw: AcwViewState): AcwViewState {
     connectPendingSourceByLens:
       raw.connectPendingSourceByLens ?? Object.freeze({}),
     selectedNodeIdByLens: raw.selectedNodeIdByLens ?? Object.freeze({}),
+    selectedEdgeIdByLens: raw.selectedEdgeIdByLens ?? Object.freeze({}),
   });
 }
 
@@ -482,6 +515,41 @@ export function setSelectedNodeId(
     ...prev,
     schemaVersion: ACW_VIEW_SCHEMA_VERSION,
     selectedNodeIdByLens: Object.freeze(nextSel),
+  });
+  writeToStorage(next);
+  cache = next;
+  notify();
+}
+
+// EAStudio Phase 2 — selected CONNECTS edge for the in-canvas
+// "Delete?" confirm pill. Mirrors the node-selection slice exactly:
+// click an edge to set, click again or press Esc to clear, confirm
+// deletes via the validator-gated `deleteEdge` (no parallel store
+// guard for sealed pairs since edges between two sealed nodes
+// cannot exist in the first place).
+export function getSelectedEdgeId(lensId: string): string | null {
+  const map = getViewState().selectedEdgeIdByLens ?? {};
+  return map[lensId] ?? null;
+}
+
+export function setSelectedEdgeId(
+  lensId: string,
+  edgeId: string | null,
+): void {
+  if (edgeId !== null && (typeof edgeId !== "string" || edgeId.length === 0)) {
+    throw new Error(
+      "ACW view-state setSelectedEdgeId rejected an empty edge id.",
+    );
+  }
+  const prev = getViewState();
+  const prevSel = prev.selectedEdgeIdByLens ?? {};
+  const nextSel: Record<string, string> = { ...prevSel };
+  if (edgeId === null) delete nextSel[lensId];
+  else nextSel[lensId] = edgeId;
+  const next: AcwViewState = Object.freeze({
+    ...prev,
+    schemaVersion: ACW_VIEW_SCHEMA_VERSION,
+    selectedEdgeIdByLens: Object.freeze(nextSel),
   });
   writeToStorage(next);
   cache = next;

@@ -42,6 +42,9 @@ import { StatusBar } from "@/components/acw/studio/StatusBar";
 import { ensureDomainContainers } from "@/acw/palette/domainContainerSeed";
 import {
   getCurrentDomain,
+  setConnectMode,
+  setConnectPendingSource,
+  setSelectedEdgeId,
   subscribeViewState,
 } from "@/acw/acwViewState";
 import { subscribeRefusals } from "@/acw/acwRefusalChannel";
@@ -89,6 +92,36 @@ export default function StudioCanvas() {
   useEffect(() => subscribeViewState(() => setTick((t) => t + 1)), []);
   void tick;
   const activeDomain = getCurrentDomain(lensId);
+
+  // EAStudio Phase 2 — Escape cancels Connect mode (clearing any
+  // pending source) and dismisses any standing edge selection. The
+  // listener is suppressed when focus is in an editable field so
+  // typing Esc inside the Properties panel inputs does not blow
+  // away the user's pending selection. The page lensId scopes every
+  // mutation, mirroring the per-page slices used by ConnectToggle
+  // and DomainGrid.
+  useEffect(() => {
+    function onKeyDown(ev: KeyboardEvent): void {
+      if (ev.key !== "Escape") return;
+      const t = ev.target;
+      if (t instanceof HTMLElement) {
+        const tag = t.tagName;
+        if (
+          tag === "INPUT" ||
+          tag === "TEXTAREA" ||
+          tag === "SELECT" ||
+          t.isContentEditable
+        ) {
+          return;
+        }
+      }
+      setConnectPendingSource(lensId, null);
+      setConnectMode(lensId, false);
+      setSelectedEdgeId(lensId, null);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [lensId]);
 
   return (
     <WorkspaceShell hideShellChrome>

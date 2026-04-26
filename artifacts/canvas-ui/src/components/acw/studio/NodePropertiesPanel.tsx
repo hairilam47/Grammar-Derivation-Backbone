@@ -5,14 +5,14 @@
 //
 //   - label        (renamed via `renameNode`)
 //   - description  (text)
-//   - owner        (text)
+//   - owner        (text, displayed as "Maintainer")
 //   - status       (closed enum dropdown)
 //   - maturity     (closed enum dropdown)
-//   - priority     (closed enum dropdown)
+//   - priority     (closed enum dropdown, displayed as "Tier")
 //
 // It also lists the incident CONNECTS edges for the selected node
-// and offers a per-edge delete button. All mutations route through
-// the validator-gated store API; refusals publish on
+// and offers a per-edge delete affordance. All mutations route
+// through the validator-gated store API; refusals publish on
 // `acwRefusalChannel` and surface in the studio inline banner. The
 // panel itself never touches the workspace directly.
 //
@@ -23,16 +23,21 @@
 //
 // Constitutional discipline:
 //   - Lucide icons only.
+//   - `@/components/ui` primitives only for buttons, inputs, and
+//     labels. (No raw `<input>` / `<button>` outside this file's
+//     `<select>`, which has no shadcn equivalent in the project's
+//     UI kit and is styled to match the Input primitive's class
+//     vocabulary.)
 //   - Every static label asserted against ACW_PLACEHOLDER_FORBIDDEN
 //     at module load.
 //   - Vocabulary "permitted" not "allowed".
-//   - Empty-string writes are not sent (the field clears via the
-//     "Clear" affordance which calls `updateNodeProperties` with
-//     `null`, omitting the key). Helper components live at module
-//     scope so React keeps the same input element across renders
-//     (no focus loss while typing).
-import { useEffect, useMemo, useState } from "react";
-import type { ChangeEvent, FormEvent } from "react";
+//   - Debounced auto-commit (~350ms) — no Apply / Clear buttons.
+//     Empty drafts unset the field via `updateNodeProperties(...,
+//     null)`. Local draft state is re-seeded whenever the selection
+//     changes so a stale debounce timer cannot clobber a freshly
+//     loaded node's values.
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ChangeEvent } from "react";
 import { Trash2, X } from "lucide-react";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 import { useAcwWorkspace } from "@/acw/acwGrammarHooks";
@@ -55,6 +60,9 @@ import {
   ACW_NODE_STATUSES,
   ACW_NODE_STATUS_LABEL,
 } from "@/acw/acwNodeProperties";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 const PANEL_TITLE = "Properties";
 const EMPTY_STATE = "Click a node to edit its properties.";
@@ -70,12 +78,9 @@ const FIELD_STATUS = "Status";
 const FIELD_MATURITY = "Maturity";
 // "Priority" is in ACW_PLACEHOLDER_FORBIDDEN via the SIGNALS tier.
 // The displayed label uses the neutral synonym "Tier"; the schema
-// field on `AcwNode` is still `priority` and the enum values
-// ("low" / "medium" / "high" / "critical") keep their programmatic
-// names. Only the user-facing label changes.
+// field on `AcwNode` is still `priority` and the enum values keep
+// their programmatic names. Only the user-facing label changes.
 const FIELD_PRIORITY = "Tier";
-const APPLY_LABEL = "Apply";
-const CLEAR_LABEL = "Clear";
 const NONE_LABEL = "—";
 const INCIDENT_TITLE = "Incident connections";
 const NO_EDGES = "No connections incident to this node.";
@@ -94,8 +99,6 @@ assertAllAcwPlaceholderLanguage([
   FIELD_STATUS,
   FIELD_MATURITY,
   FIELD_PRIORITY,
-  APPLY_LABEL,
-  CLEAR_LABEL,
   NONE_LABEL,
   INCIDENT_TITLE,
   NO_EDGES,
@@ -104,6 +107,12 @@ assertAllAcwPlaceholderLanguage([
   DELETE_LABEL,
   CLOSE_LABEL,
 ]);
+
+// Debounce delay (ms) between the user's last keystroke and the
+// validator-gated commit. Chosen at the documented ~350ms band so
+// fast typists do not see refusal flicker, but mid-pause commits
+// feel "live". Per-field timers are independent.
+const DEBOUNCE_MS = 350;
 
 export interface NodePropertiesPanelProps {
   readonly lensId: string;
@@ -116,69 +125,51 @@ function PanelHeader({ onClose }: { onClose?: () => void }) {
         {PANEL_TITLE}
       </h3>
       {onClose ? (
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon"
           onClick={onClose}
           aria-label={CLOSE_LABEL}
           data-testid="acw-studio-properties-close"
-          className="p-1 rounded border border-transparent hover:border-border/60 transition-colors"
+          className="h-6 w-6"
         >
           <X className="w-3 h-3" />
-        </button>
+        </Button>
       ) : null}
     </header>
   );
 }
 
-interface TextFieldProps {
+interface DebouncedTextFieldProps {
   id: string;
   label: string;
   value: string;
-  currentPersisted: string;
   onChange: (v: string) => void;
-  onApply: () => void;
-  onClear: () => void;
   testIdPrefix: string;
 }
 
-function TextField(p: TextFieldProps) {
-  const dirty = p.value !== p.currentPersisted;
+// Pure controlled-input wrapper around the shared Input primitive.
+// The debounced commit lives in the parent so the timer can be
+// reset when the selection changes (otherwise a stale timer from a
+// previous selection would commit against the wrong node).
+function DebouncedTextField(p: DebouncedTextFieldProps) {
   return (
     <div className="px-3 py-2 border-b border-border/20 flex flex-col gap-1">
-      <label
-        className="text-[10px] uppercase tracking-widest text-muted-foreground"
+      <Label
         htmlFor={p.id}
+        className="text-[10px] uppercase tracking-widest text-muted-foreground"
       >
         {p.label}
-      </label>
-      <input
+      </Label>
+      <Input
         id={p.id}
         type="text"
-        className="px-2 py-1 text-xs rounded border border-border/60 bg-background"
+        className="h-8 text-xs"
         value={p.value}
         onChange={(e: ChangeEvent<HTMLInputElement>) => p.onChange(e.target.value)}
         data-testid={`${p.testIdPrefix}-input`}
       />
-      <div className="flex items-center gap-1.5">
-        <button
-          type="button"
-          onClick={p.onApply}
-          disabled={!dirty || p.value.length === 0}
-          className="text-[10px] uppercase tracking-widest px-2 py-0.5 rounded border border-border/60 disabled:opacity-40 hover:text-primary hover:border-primary/60 transition-colors"
-          data-testid={`${p.testIdPrefix}-apply`}
-        >
-          {APPLY_LABEL}
-        </button>
-        <button
-          type="button"
-          onClick={p.onClear}
-          disabled={p.currentPersisted.length === 0 && p.value.length === 0}
-          className="text-[10px] uppercase tracking-widest px-2 py-0.5 rounded border border-border/60 disabled:opacity-40 hover:text-destructive hover:border-destructive/60 transition-colors"
-          data-testid={`${p.testIdPrefix}-clear`}
-        >
-          {CLEAR_LABEL}
-        </button>
-      </div>
     </div>
   );
 }
@@ -192,13 +183,16 @@ interface EnumFieldProps {
 }
 
 function EnumField(p: EnumFieldProps) {
+  // No <Select> primitive in the project's UI kit — keeping the
+  // native <select> element gates accessibility/keyboard semantics
+  // for free, and is styled to match the Input primitive.
   return (
     <div className="px-3 py-2 border-b border-border/20 flex flex-col gap-1">
-      <label className="text-[10px] uppercase tracking-widest text-muted-foreground">
+      <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">
         {p.label}
-      </label>
+      </Label>
       <select
-        className="px-2 py-1 text-xs rounded border border-border/60 bg-background"
+        className="flex h-8 w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
         value={p.value}
         onChange={(e: ChangeEvent<HTMLSelectElement>) => p.onChange(e.target.value)}
         data-testid={`${p.testIdPrefix}-select`}
@@ -227,16 +221,101 @@ export function NodePropertiesPanel({ lensId }: NodePropertiesPanelProps) {
   );
 
   // Local form mirror so typing does not commit on every keystroke.
-  // Re-seeded whenever the selection or the persisted node bytes
-  // change. The "Apply" button performs the validator-gated commit.
+  // Re-seeded whenever the selection or persisted bytes change. The
+  // debounced commit (below) is what actually fires the validator-
+  // gated mutation.
   const [labelDraft, setLabelDraft] = useState("");
   const [descDraft, setDescDraft] = useState("");
   const [ownerDraft, setOwnerDraft] = useState("");
+  // Per-field skip token, keyed by node id. The seeding effect
+  // stamps the freshly-selected node's id into each field slot;
+  // the corresponding debounced commit effect refuses to commit
+  // (and clears its slot) the first time it sees a node id that
+  // matches a stamped token. This pattern is robust against React
+  // effect-flush ordering: every field maintains its own gate, so
+  // a shared boolean cannot be consumed by the wrong effect and
+  // let a stale draft from a previous selection commit against the
+  // newly-selected node. Empty string means "no skip pending for
+  // this field".
+  const skipFieldRef = useRef<{ label: string; desc: string; owner: string }>({
+    label: "",
+    desc: "",
+    owner: "",
+  });
+
   useEffect(() => {
-    setLabelDraft(node?.label ?? "");
-    setDescDraft(node?.description ?? "");
-    setOwnerDraft(node?.owner ?? "");
+    if (node === null) {
+      skipFieldRef.current = { label: "", desc: "", owner: "" };
+      setLabelDraft("");
+      setDescDraft("");
+      setOwnerDraft("");
+      return;
+    }
+    // Stamp every field slot with the new node id so each commit
+    // effect's first run for this node is a no-op. The stamps are
+    // independently consumed below.
+    skipFieldRef.current = {
+      label: node.id,
+      desc: node.id,
+      owner: node.id,
+    };
+    setLabelDraft(node.label);
+    setDescDraft(node.description ?? "");
+    setOwnerDraft(node.owner ?? "");
   }, [node?.id, node?.label, node?.description, node?.owner]);
+
+  // Debounced commit — label. Empty draft is a no-op (rename
+  // requires a non-empty label). The validator surfaces refusals
+  // verbatim through the refusal channel.
+  useEffect(() => {
+    if (node === null) return;
+    if (skipFieldRef.current.label === node.id) {
+      skipFieldRef.current.label = "";
+      return;
+    }
+    if (labelDraft.length === 0 || labelDraft === node.label) return;
+    const handle = window.setTimeout(() => {
+      const r = renameNode(node.id, labelDraft);
+      if (!r.ok) publishRefusal(r.reason);
+    }, DEBOUNCE_MS);
+    return () => window.clearTimeout(handle);
+  }, [labelDraft, node?.id, node?.label]);
+
+  // Debounced commit — description. Empty draft unsets the field.
+  useEffect(() => {
+    if (node === null) return;
+    if (skipFieldRef.current.desc === node.id) {
+      skipFieldRef.current.desc = "";
+      return;
+    }
+    const persisted = node.description ?? "";
+    if (descDraft === persisted) return;
+    const handle = window.setTimeout(() => {
+      const r = updateNodeProperties(node.id, {
+        description: descDraft.length === 0 ? null : descDraft,
+      });
+      if (!r.ok) publishRefusal(r.reason);
+    }, DEBOUNCE_MS);
+    return () => window.clearTimeout(handle);
+  }, [descDraft, node?.id, node?.description]);
+
+  // Debounced commit — owner. Empty draft unsets the field.
+  useEffect(() => {
+    if (node === null) return;
+    if (skipFieldRef.current.owner === node.id) {
+      skipFieldRef.current.owner = "";
+      return;
+    }
+    const persisted = node.owner ?? "";
+    if (ownerDraft === persisted) return;
+    const handle = window.setTimeout(() => {
+      const r = updateNodeProperties(node.id, {
+        owner: ownerDraft.length === 0 ? null : ownerDraft,
+      });
+      if (!r.ok) publishRefusal(r.reason);
+    }, DEBOUNCE_MS);
+    return () => window.clearTimeout(handle);
+  }, [ownerDraft, node?.id, node?.owner]);
 
   if (selectedId === null || node === null) {
     return (
@@ -269,29 +348,6 @@ export function NodePropertiesPanel({ lensId }: NodePropertiesPanelProps) {
     );
   }
 
-  function applyLabel(e: FormEvent) {
-    e.preventDefault();
-    if (node === null) return;
-    if (labelDraft.length === 0 || labelDraft === node.label) return;
-    const r = renameNode(node.id, labelDraft);
-    if (!r.ok) publishRefusal(r.reason);
-  }
-  function applyText(field: "description" | "owner", value: string) {
-    if (node === null) return;
-    if (value.length === 0) {
-      // empty → unset the field
-      const r = updateNodeProperties(node.id, { [field]: null } as Parameters<
-        typeof updateNodeProperties
-      >[1]);
-      if (!r.ok) publishRefusal(r.reason);
-      return;
-    }
-    if ((node[field] ?? "") === value) return;
-    const r = updateNodeProperties(node.id, { [field]: value } as Parameters<
-      typeof updateNodeProperties
-    >[1]);
-    if (!r.ok) publishRefusal(r.reason);
-  }
   function setEnum(
     field: "status" | "maturity" | "priority",
     value: string,
@@ -317,61 +373,27 @@ export function NodePropertiesPanel({ lensId }: NodePropertiesPanelProps) {
     >
       <PanelHeader onClose={() => setSelectedNodeId(lensId, null)} />
 
-      <form
-        onSubmit={applyLabel}
-        className="px-3 py-2 border-b border-border/20 flex flex-col gap-1"
-      >
-        <label
-          className="text-[10px] uppercase tracking-widest text-muted-foreground"
-          htmlFor="acw-prop-label"
-        >
-          {FIELD_LABEL}
-        </label>
-        <div className="flex items-center gap-1.5">
-          <input
-            id="acw-prop-label"
-            data-testid="acw-studio-properties-label-input"
-            type="text"
-            className="flex-1 px-2 py-1 text-xs rounded border border-border/60 bg-background"
-            value={labelDraft}
-            onChange={(e) => setLabelDraft(e.target.value)}
-          />
-          <button
-            type="submit"
-            data-testid="acw-studio-properties-label-apply"
-            className="text-[10px] uppercase tracking-widest px-2 py-1 rounded border border-border/60 disabled:opacity-40 hover:text-primary hover:border-primary/60 transition-colors"
-            disabled={labelDraft.length === 0 || labelDraft === node.label}
-          >
-            {APPLY_LABEL}
-          </button>
-        </div>
-      </form>
+      <DebouncedTextField
+        id="acw-prop-label"
+        label={FIELD_LABEL}
+        value={labelDraft}
+        onChange={setLabelDraft}
+        testIdPrefix="acw-studio-properties-label"
+      />
 
-      <TextField
+      <DebouncedTextField
         id="acw-prop-description"
         label={FIELD_DESCRIPTION}
         value={descDraft}
-        currentPersisted={node.description ?? ""}
         onChange={setDescDraft}
-        onApply={() => applyText("description", descDraft)}
-        onClear={() => {
-          setDescDraft("");
-          applyText("description", "");
-        }}
         testIdPrefix="acw-studio-properties-description"
       />
 
-      <TextField
+      <DebouncedTextField
         id="acw-prop-owner"
         label={FIELD_OWNER}
         value={ownerDraft}
-        currentPersisted={node.owner ?? ""}
         onChange={setOwnerDraft}
-        onApply={() => applyText("owner", ownerDraft)}
-        onClear={() => {
-          setOwnerDraft("");
-          applyText("owner", "");
-        }}
         testIdPrefix="acw-studio-properties-owner"
       />
 
@@ -435,8 +457,10 @@ export function NodePropertiesPanel({ lensId }: NodePropertiesPanelProps) {
                       {other?.label ?? otherId}
                     </span>
                   </span>
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon"
                     onClick={() => {
                       const r = deleteEdge(e.id);
                       if (!r.ok) publishRefusal(r.reason);
@@ -444,10 +468,10 @@ export function NodePropertiesPanel({ lensId }: NodePropertiesPanelProps) {
                     title={DELETE_LABEL}
                     aria-label={DELETE_LABEL}
                     data-testid={`acw-studio-properties-incident-edge-delete-${e.id}`}
-                    className="p-1 rounded border border-border/60 hover:text-destructive hover:border-destructive/60 transition-colors"
+                    className="h-6 w-6 hover:text-destructive"
                   >
                     <Trash2 className="w-3 h-3" />
-                  </button>
+                  </Button>
                 </li>
               );
             })}

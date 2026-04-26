@@ -416,6 +416,14 @@ function viewFor(workspace: AcwWorkspace): ValidatorWorkspaceView {
       if (n === undefined) return undefined;
       return n.parentId;
     },
+    // EAStudio Phase 2 (Task #91) — surface `isDomainContainer` to
+    // the validator so its sealed-endpoint refusal in `canCreateEdge`
+    // sees the live store. The store no longer carries a parallel
+    // pre-validator guard; the refusal text is single-source-of-
+    // truth at validator scope.
+    isSealed(nodeId: string) {
+      return byId.get(nodeId)?.isDomainContainer === true;
+    },
   };
 }
 
@@ -567,24 +575,11 @@ export function createNode(req: CreateNodeRequest): CreateNodeResult {
 
 export function createEdge(req: CreateEdgeRequest): StoreResult {
   const ws = getWorkspace();
-  // EAStudio Phase 2 (Task #91): sealed domain containers are not
-  // legal CONNECTS endpoints. The brief states "sealed domain
-  // containers exempt from delete/connect" and the four seeded
-  // containers must remain inert under every author flow. The
-  // canCreateEdge validator does not see the `isDomainContainer`
-  // flag (it only knows element types), so the guard lives at
-  // the store boundary alongside the parallel guards in
-  // updateNodeProperties / renameNode / deleteEdge. Refusal
-  // reasons are neutral and descriptive.
-  const fromNode = ws.structureGraph.nodes.find((n) => n.id === req.fromId);
-  const toNode = ws.structureGraph.nodes.find((n) => n.id === req.toId);
-  if (fromNode?.isDomainContainer === true || toNode?.isDomainContainer === true) {
-    return {
-      ok: false,
-      reason:
-        "Sealed domain containers cannot be used as connection endpoints.",
-    };
-  }
+  // EAStudio Phase 2 (Task #91): sealed-endpoint refusal lives in
+  // `canCreateEdge` itself — `viewFor` exposes `isSealed` so the
+  // validator surfaces a single-source-of-truth refusal string for
+  // sealed source, sealed destination, and sealed-to-sealed pairs.
+  // The store no longer carries a parallel pre-validator guard.
   const result: ValidationResult = validateOperation(
     { kind: "createEdge", edgeKind: req.kind, fromId: req.fromId, toId: req.toId },
     viewFor(ws),

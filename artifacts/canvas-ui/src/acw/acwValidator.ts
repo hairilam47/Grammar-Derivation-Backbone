@@ -34,6 +34,13 @@ const REASON_PARENT_MISSING = "The parent node referenced does not exist.";
 const REASON_NODE_MISSING = "One of the referenced nodes does not exist.";
 const REASON_EDGE_FORBIDDEN_PREFIX = "This relationship is not permitted between";
 const REASON_SELF_EDGE = "A relationship from a node to itself is not permitted.";
+// EAStudio Phase 2 (Task #91) — sealed domain containers may not
+// participate as either endpoint of an explicit edge. Authored at
+// validator scope so the refusal text surfaces verbatim through
+// every mutation path (`createEdge`, future bulk imports), with no
+// store- or UI-level paraphrase.
+export const REASON_SEALED_ENDPOINT =
+  "A sealed domain container is not permitted as a connection endpoint.";
 export const REASON_POSITION_NOT_FINITE =
   "Only finite numbers are permitted as position coordinates.";
 const REASON_PARENT_ROOT = "the workspace root";
@@ -53,6 +60,7 @@ assertAllAcwPlaceholderLanguage([
   REASON_NODE_MISSING,
   REASON_EDGE_FORBIDDEN_PREFIX,
   REASON_SELF_EDGE,
+  REASON_SEALED_ENDPOINT,
   REASON_PARENT_ROOT,
   REASON_POSITION_NOT_FINITE,
   REASON_BUSINESS_CHAIN_BREAK,
@@ -71,6 +79,13 @@ assertAllAcwPlaceholderLanguage([
 export interface ValidatorWorkspaceView {
   getNodeType(nodeId: string): AcwElementType | undefined;
   getNodeParentId?(nodeId: string): string | null | undefined;
+  // EAStudio Phase 2 (Task #91) — optional sealed-container probe.
+  // Views that omit this method (older tests, type-only fabrications)
+  // simply skip the sealed-endpoint refusal in `canCreateEdge`. The
+  // live store always provides it. Returning `true` for a node id
+  // means "this node is one of the four immutable EAStudio domain
+  // containers and may not participate as a connection endpoint."
+  isSealed?(nodeId: string): boolean | undefined;
 }
 
 // canCreateNode: may a node of `type` be created with the given
@@ -161,6 +176,13 @@ export function canCreateEdge(
   const toType = view.getNodeType(toId);
   if (fromType === undefined || toType === undefined) {
     return { ok: false, reason: REASON_NODE_MISSING };
+  }
+  // EAStudio Phase 2 (Task #91) — sealed-endpoint refusal lives at
+  // validator scope so refusal text is verbatim across every
+  // mutation surface. Source, destination, and sealed-to-sealed
+  // are all rejected with the same single-source-of-truth string.
+  if (view.isSealed?.(fromId) === true || view.isSealed?.(toId) === true) {
+    return { ok: false, reason: REASON_SEALED_ENDPOINT };
   }
   if (!isPermittedEdge(kind, fromType, toType)) {
     const kindLabel = ACW_EDGE_KIND_LABEL[kind];

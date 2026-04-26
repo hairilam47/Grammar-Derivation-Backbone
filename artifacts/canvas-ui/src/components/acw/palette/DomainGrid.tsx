@@ -57,6 +57,7 @@ import { useAcwWorkspace } from "@/acw/acwGrammarHooks";
 import {
   createEdge,
   createNode,
+  deleteEdge,
   type AcwEdge,
   type AcwNode,
 } from "@/acw/acwStore";
@@ -67,6 +68,8 @@ import {
   getSelectedNodeId,
   setConnectPendingSource,
   setSelectedNodeId,
+  getSelectedEdgeId,
+  setSelectedEdgeId,
   getCurrentDomain,
   setCurrentDomain,
   subscribeViewState,
@@ -165,6 +168,11 @@ function Quadrant(props: QuadrantProps) {
   const connectOn = getConnectMode(lensId);
   const pendingSource = getConnectPendingSource(lensId);
   const selectedNodeId = getSelectedNodeId(lensId);
+  // EAStudio Phase 2 — selected edge for the in-canvas confirm pill.
+  // Page-keyed (the page lensId, not the per-quadrant canvas lensId)
+  // so a selection survives quadrant re-renders and the panel/header
+  // can read it. Only one edge may be selected at a time per page.
+  const selectedEdgeId = getSelectedEdgeId(lensId);
   const Icon = ACW_DOMAIN_ICON[domain];
   const accent = ACW_DOMAIN_ACCENT[domain];
 
@@ -369,9 +377,36 @@ function Quadrant(props: QuadrantProps) {
           focusedParentId={focusedParentId}
           connectMode={connectOn}
           pendingSourceId={pendingSource}
-          selectedEdgeId={null}
+          selectedEdgeId={selectedEdgeId}
           onNodeSelect={(id) => {
             setSelectedNodeId(lensId, id);
+            // Selecting a node clears any standing edge selection
+            // so only one of {node, edge} is "selected" at a time
+            // per page. Same convention used by every other tool.
+            setSelectedEdgeId(lensId, null);
+          }}
+          onEdgeClick={(id) => {
+            // Toggle selection. Clicking the already-selected edge
+            // dismisses the confirm pill (matches the "click again
+            // to clear" semantics for nodes and pending Connect
+            // sources). Selecting an edge also clears any standing
+            // node selection so only one is active.
+            if (selectedEdgeId === id) {
+              setSelectedEdgeId(lensId, null);
+            } else {
+              setSelectedEdgeId(lensId, id);
+              setSelectedNodeId(lensId, null);
+            }
+          }}
+          onEdgeDelete={(id) => {
+            // Validator-gated. The store-level deleteEdge has no
+            // sealed-pair concern (sealed-to-sealed edges cannot
+            // exist in the first place because canCreateEdge
+            // refuses them), so any refusal here is propagated
+            // verbatim to the refusal channel.
+            const r = deleteEdge(id);
+            setSelectedEdgeId(lensId, null);
+            if (!r.ok) publishRefusal(r.reason);
           }}
           onNodeConnectClick={(id) => {
             // Source-then-destination dispatch. The first click
@@ -381,26 +416,16 @@ function Quadrant(props: QuadrantProps) {
             // node twice clears the pending source (treated as a
             // cancel — never as a self-loop, which the validator
             // would refuse anyway).
+            //
+            // Sealed-container refusal is owned by the validator
+            // (`canCreateEdge` reads `view.isSealed`), so any
+            // sealed source or destination that reaches createEdge
+            // surfaces the verbatim validator string through the
+            // refusal channel below. No paraphrase or pre-check
+            // lives here, in the InteractiveCanvas2D pointer
+            // handler, or in the store — single source of truth.
             const node = nodeById.get(id);
             if (node === undefined) return;
-            // Sealed-container guard. The InteractiveCanvas2D
-            // pointer handler already short-circuits domain
-            // containers before invoking this callback, but the
-            // header-strip Connect-target overlay (added in
-            // Phase 2) is also gated only by `!isDomainContainer`,
-            // so a hand-crafted call could still reach us. Per
-            // the brief, attempts to connect a sealed endpoint
-            // must be surfaced via the refusal channel — never
-            // silently swallowed — so downstream tooling and
-            // banners stay consistent with the validator's own
-            // refusals.
-            if (node.isDomainContainer === true) {
-              publishRefusal(
-                `${node.label} is a sealed domain container and cannot be a connection endpoint.`,
-              );
-              setConnectPendingSource(lensId, null);
-              return;
-            }
             if (pendingSource === null) {
               setConnectPendingSource(lensId, id);
               return;
