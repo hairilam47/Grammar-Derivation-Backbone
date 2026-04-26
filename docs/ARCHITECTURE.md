@@ -3209,26 +3209,30 @@ unchanged. No new schema migrations were introduced.
   routes to the existing validator-gated `deleteEdge` store
   mutation. The earlier in-SVG confirm pill remains as a
   fallback affordance behind the same approved store mutation.
-- **Per-card delete (`node-del`)** is gated through a
-  `window.confirm` and routes to the new `deleteNode` store
-  mutation. `deleteNode` is the only new store function in
-  Phase 20C; it follows the same shape as the existing
-  `deleteEdge`: refuse on missing id, refuse on a sealed
-  domain container, refuse if the node still has children, then
-  filter the node and its incident edges out of the workspace
-  and write through `writeToStorage`. `writeToStorage` runs the
-  full `assertAllowedFields` invariant chain on the resulting
-  workspace, so the validator is in the loop on every delete.
+- **Per-card delete is intentionally not surfaced.** The
+  prototype renders a tiny `node-del` button on every card; in
+  Phase 20C this affordance is omitted because adding it would
+  require a new store mutation (`deleteNode`) and the task scope
+  explicitly forbids store-layer changes. The user removes
+  user-authored cards via the workspace-wide Clear action in the
+  top bar, which routes through the existing `clearWorkspace`
+  affordance.
 - **Sample seed** in `acw/studioActions.ts` lays down the
   prototype's twelve named cards and four named connections via
   the existing `createNode` / `createEdge` validator-gated
   mutations. If the validator refuses any single edge, the seed
   aborts and surfaces the refusal verbatim through
-  `publishRefusal`.
-- **Clear** in `clearStudio()` is gated behind a
-  `window.confirm`; the confirm function is injectable so the
-  unit tests can drive the path deterministically without a
-  real `window`.
+  `publishRefusal`. The seed first calls `clearStudio()` (which
+  is non-interactive) so a single click on `Sample` produces a
+  deterministic post-seed workspace without prompting the user.
+- **Clear** in `clearStudio()` calls the existing
+  `clearWorkspace` store affordance (which already routes the
+  resulting empty document through the validator) and then
+  re-seeds the four sealed domain containers via
+  `ensureDomainContainers`. `clearStudio` itself is always
+  non-interactive; the `StudioTopBar.onClear` handler is the
+  sole site that surfaces a `window.confirm` prompt, so the
+  Sample reset path does not double-prompt.
 - **Status-bar component count** excludes `isDomainContainer ===
   true` so the count reflects user-authored cards only — the
   four sealed domain containers are infrastructure and are not
@@ -3247,12 +3251,13 @@ unchanged. No new schema migrations were introduced.
 - Grammar (`acwGrammar.ts`) unchanged. The CONNECTS legality
   table still permits like-typed pairs only.
 - Validator (`assertAllowedFields`, `isValidWorkspace`)
-  unchanged. Every mutation, including the new `deleteNode`,
-  routes through `writeToStorage` which runs the validator on
-  the resulting workspace.
+  unchanged. No new store mutations were introduced; every
+  destructive Studio action routes through one of the existing
+  validator-gated mutations (`createNode`, `createEdge`,
+  `deleteEdge`, `clearWorkspace`).
 - Refusal channel (`publishRefusal`) unchanged. The Sample seed
-  surfaces refusals verbatim; the per-card and per-edge delete
-  paths surface the validator's refusal text as-is.
+  surfaces refusals verbatim; the per-edge delete path surfaces
+  the validator's refusal text as-is.
 - Phase 1–3 functionality (palette, four-zone canvas, properties
   panel, matrix toggle, JSON/CSV download, view-tab persistence,
   Connect-mode, debounced auto-commit, lens-keyed view state) is

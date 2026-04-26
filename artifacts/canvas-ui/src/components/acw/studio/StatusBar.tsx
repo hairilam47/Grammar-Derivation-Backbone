@@ -4,7 +4,7 @@
 //   1. Live counts: nodes, edges (CONNECTS only — the only edge
 //      kind EAStudio surfaces in Phase 2).
 //   2. Mode: design / connect / pending-connect.
-//   3. A neutral "TOGAF / ArchiMate-aligned" badge.
+//   3. A neutral "TOGAF 10 · ArchiMate 3.2" badge.
 //
 // The bar reads its data from the live grammar hook + the
 // lens-keyed view-state slices; it never mutates anything.
@@ -31,7 +31,7 @@ const MODE_LABEL = "Mode";
 const MODE_IDLE = "Design";
 const MODE_CONNECT_IDLE = "Connect";
 const MODE_CONNECT_PENDING = "Connect (pending)";
-const FRAMEWORK_BADGE = "TOGAF / ArchiMate-aligned";
+const FRAMEWORK_BADGE = "TOGAF 10 · ArchiMate 3.2";
 
 assertAllAcwPlaceholderLanguage([
   NODES_LABEL,

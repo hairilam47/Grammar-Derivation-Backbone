@@ -18,12 +18,14 @@
 // the pending source. Outside Connect mode a click simply selects
 // the node so the right-side properties panel binds to it.
 //
-// Per-card `node-conn-btn` and `node-del` affordances mirror the
-// prototype: the connect button arms the source for a single
-// CONNECTS edge regardless of the current Connect-mode toggle, and
-// the delete button removes the card via the validator-gated
-// `deleteNode`. Both are surfaced on hover / selection only so the
-// resting state matches the prototype's clean card surface.
+// Per-card `node-conn-btn` affordance mirrors the prototype: the
+// connect button arms the source for a single CONNECTS edge
+// regardless of the current Connect-mode toggle. The prototype's
+// per-card delete button is intentionally omitted in this
+// alignment pass — node deletion would require a new store
+// mutation that the task scope explicitly forbids; the user
+// removes nodes via the workspace-wide Clear action in the top
+// bar instead.
 //
 // Constitutional discipline:
 //   - Vector icons only (lucide-react). No emoji.
@@ -36,7 +38,7 @@
 //     styling — no traffic-light, no judgement, no animation.
 import type { DragEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeftRight, Lock, X } from "lucide-react";
+import { ArrowLeftRight, Lock } from "lucide-react";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 import {
   ACW_DOMAIN_LABEL,
@@ -57,7 +59,6 @@ import {
   createEdge,
   createNode,
   deleteEdge,
-  deleteNode,
   type AcwNode,
 } from "@/acw/acwStore";
 import { publishRefusal } from "@/acw/acwRefusalChannel";
@@ -77,16 +78,12 @@ import type { AcwDomainTag } from "@/acw/acwGrammar";
 const SEAL_LABEL = "Sealed";
 const QUADRANT_HINT = "Drop a palette tile here.";
 const CONNECT_HINT = "Connect from this node";
-const DELETE_HINT = "Delete";
-const NODE_DELETE_CONFIRM = "Delete this node and any incident connections?";
 const EDGE_DELETE_CONFIRM = "Delete this connection?";
 
 assertAllAcwPlaceholderLanguage([
   SEAL_LABEL,
   QUADRANT_HINT,
   CONNECT_HINT,
-  DELETE_HINT,
-  NODE_DELETE_CONFIRM,
   EDGE_DELETE_CONFIRM,
 ]);
 
@@ -171,20 +168,6 @@ export function DomainGrid({ lensId }: DomainGridProps) {
     }
   };
 
-  const onNodeDelete = (id: string) => {
-    // Per Task #99 step 6 / step 9: destructive operations are
-    // gated behind an explicit confirm dialog so a stray click on
-    // the small `node-del` button cannot silently drop a card.
-    if (typeof window !== "undefined") {
-      const ok = window.confirm(NODE_DELETE_CONFIRM);
-      if (!ok) return;
-    }
-    if (selectedNodeId === id) setSelectedNodeId(lensId, null);
-    if (pendingSource === id) setConnectPendingSource(lensId, null);
-    const r = deleteNode(id);
-    if (!r.ok) publishRefusal(r.reason);
-  };
-
   return (
     <div className="es-canvas-wrap">
       <div
@@ -226,7 +209,6 @@ export function DomainGrid({ lensId }: DomainGridProps) {
               containerNode={container}
               children={descendants}
               onNodeClick={onNodeClick}
-              onNodeDelete={onNodeDelete}
               selectedNodeId={selectedNodeId}
               pendingSource={pendingSource}
             />
@@ -252,7 +234,6 @@ interface ZoneProps {
   readonly containerNode: AcwNode | undefined;
   readonly children: readonly AcwNode[];
   readonly onNodeClick: (id: string, explicitConnect: boolean) => void;
-  readonly onNodeDelete: (id: string) => void;
   readonly selectedNodeId: string | null;
   readonly pendingSource: string | null;
 }
@@ -265,7 +246,6 @@ function Zone(props: ZoneProps) {
     containerNode,
     children,
     onNodeClick,
-    onNodeDelete,
     selectedNodeId,
     pendingSource,
   } = props;
@@ -366,7 +346,6 @@ function Zone(props: ZoneProps) {
               isPendingSource={pendingSource === node.id}
               onClick={() => onNodeClick(node.id, false)}
               onConnect={() => onNodeClick(node.id, true)}
-              onDelete={() => onNodeDelete(node.id)}
             />
           ))
         )}
@@ -382,7 +361,6 @@ interface NodeCardProps {
   readonly isPendingSource: boolean;
   readonly onClick: () => void;
   readonly onConnect: () => void;
-  readonly onDelete: () => void;
 }
 
 // Resolve which palette tile (if any) was used to materialise this
@@ -447,20 +425,6 @@ function NodeCard(p: NodeCardProps) {
           data-testid={`acw-studio-node-${p.node.id}-connect`}
         >
           <ArrowLeftRight className="w-3 h-3" />
-        </button>
-        <button
-          type="button"
-          className="es-cnode-btn"
-          data-tone="danger"
-          onClick={(e) => {
-            e.stopPropagation();
-            p.onDelete();
-          }}
-          aria-label={DELETE_HINT}
-          title={DELETE_HINT}
-          data-testid={`acw-studio-node-${p.node.id}-delete`}
-        >
-          <X className="w-3 h-3" />
         </button>
       </span>
     </div>

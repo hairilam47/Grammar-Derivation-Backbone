@@ -9,22 +9,24 @@
 //     leaving the four sealed domain containers in place.
 //
 // Both helpers route every mutation through the validator-gated
-// store API (`deleteNode`, `deleteEdge`, `createNode`, `createEdge`)
-// — there is no direct mutation of `localStorage` and no bypass of
-// the refusal channel. A refused mutation publishes through the
-// shared `acwRefusalChannel` so the studio's inline banner surfaces
-// the verbatim reason; the helper continues with the remaining
-// items so a single refusal cannot leave the canvas in a half-
-// torn-down state.
+// store API (`createNode`, `createEdge`, `clearWorkspace`) — there
+// is no direct mutation of `localStorage` and no bypass of the
+// refusal channel. A refused mutation publishes through the
+// shared `acwRefusalChannel` so the studio's inline banner
+// surfaces the verbatim reason. The Clear path resets through
+// the existing `clearWorkspace` test/maintenance affordance and
+// then re-seeds the four sealed domain containers via
+// `ensureDomainContainers`; no per-node delete mutation is
+// introduced into the store. Confirm-dialog gating is the
+// caller's responsibility — `clearStudio` itself is always
+// non-interactive so a `Sample` reset path does not surface a
+// confirm dialog the user did not initiate.
 import {
+  clearWorkspace,
   createEdge,
   createNode,
-  deleteEdge,
-  deleteNode,
-  getWorkspace,
 } from "./acwStore";
 import { publishRefusal } from "./acwRefusalChannel";
-import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 import {
   ACW_DOMAIN_CONTAINERS,
   ensureDomainContainers,
@@ -32,71 +34,16 @@ import {
 import { paletteItemByLabel } from "./palette/paletteRegistry";
 import type { AcwDomainTag } from "./acwGrammar";
 
-// Confirm-dialog copy. Surfaces the same intent the prototype's
-// `confirm("Clear all components?")` did but in workspace-neutral
-// language. Asserted at module load so it never drifts into a
-// forbidden ACW token.
-const CLEAR_CONFIRM =
-  "Clear every node and connection from the workspace?";
-
-assertAllAcwPlaceholderLanguage([CLEAR_CONFIRM]);
-
-// Wipe every user-authored card and connection from the workspace
-// while leaving the four sealed domain containers intact. Edges are
-// removed first so leaf-node deletion does not cascade through any
-// refusal that would leave the structureGraph holding dangling
-// endpoints.
-//
-// Per Task #99 step 9 the call is gated behind a confirm dialog.
-// `confirmFn` is injectable so the unit tests can drive the path
-// deterministically without a real `window`. In production the
-// caller passes `window.confirm`; if no `window` is available
-// (SSR, tests with no jsdom override) the function falls through
-// without prompting — the seed path is the only consumer that
-// needs the dialog and it always runs in the browser.
-export function clearStudio(
-  confirmFn: ((message: string) => boolean) | null = null,
-): void {
-  const ask = confirmFn ?? (typeof window !== "undefined" ? window.confirm.bind(window) : null);
-  if (ask !== null) {
-    if (!ask(CLEAR_CONFIRM)) return;
-  }
+// Wipe the workspace and re-seed the four sealed domain
+// containers. Routes through the existing `clearWorkspace` store
+// affordance (which already runs the validator on the resulting
+// empty document via `writeToStorage`) and then through
+// `ensureDomainContainers`, which uses validator-gated
+// `createNode` calls — no new store mutation is introduced.
+// Always non-interactive: the caller decides whether to confirm.
+export function clearStudio(): void {
+  clearWorkspace();
   ensureDomainContainers();
-  const before = getWorkspace();
-  for (const e of [...before.structureGraph.edges]) {
-    const r = deleteEdge(e.id);
-    if (!r.ok) publishRefusal(r.reason);
-  }
-  // Re-read after the edge sweep so the snapshot we delete from
-  // reflects the writes above.
-  const mid = getWorkspace();
-  // Sort by descending depth so deeper nodes are removed before
-  // their ancestors. Depth is computed via the `parentId` chain so
-  // a future surface that re-introduces drilldown does not start
-  // refusing every delete.
-  const depthOf = (id: string): number => {
-    const byId = new Map(mid.structureGraph.nodes.map((n) => [n.id, n] as const));
-    let cursor: string | null = id;
-    let d = 0;
-    let guard = 0;
-    while (cursor !== null && guard < 1024) {
-      const n = byId.get(cursor);
-      if (n === undefined) return d;
-      if (n.parentId === null) return d;
-      cursor = n.parentId;
-      d += 1;
-      guard += 1;
-    }
-    return d;
-  };
-  const candidates = mid.structureGraph.nodes
-    .filter((n) => n.isDomainContainer !== true)
-    .slice()
-    .sort((a, b) => depthOf(b.id) - depthOf(a.id));
-  for (const n of candidates) {
-    const r = deleteNode(n.id);
-    if (!r.ok) publishRefusal(r.reason);
-  }
 }
 
 // Sample data — verbatim from the prototype's `autoLayout` routine

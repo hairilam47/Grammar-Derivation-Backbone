@@ -28,7 +28,7 @@ import {
   Grid3X3,
   LayoutGrid,
   Sparkles,
-  Trash2,
+  X,
   Zap,
 } from "lucide-react";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
@@ -154,7 +154,7 @@ export function StudioTopBar({ lensId }: StudioTopBarProps) {
           data-tone="danger"
           className="es-btn"
         >
-          <Trash2 className="w-3.5 h-3.5" />
+          <X className="w-3.5 h-3.5" />
           <span>{CLEAR_LABEL}</span>
         </button>
         <button
