@@ -21,9 +21,11 @@
 // re-render on workspace mutations without coupling to the storage
 // mechanism.
 import {
+  isAcwDomainTag,
   isAcwElementType,
   isAcwBoundParamShape,
   type AcwBoundParam,
+  type AcwDomainTag,
   type AcwElementType,
   type AcwExplicitEdgeKind,
 } from "./acwGrammar";
@@ -55,6 +57,16 @@ export interface AcwNode {
   // fields default to undefined.
   readonly boundParam?: AcwBoundParam;
   readonly boundTechnologyCategory?: string;
+  // EAStudio Phase 1 — optional domain markers. `domainTag` records
+  // which of the four EAStudio domains a node belongs to (UI
+  // categorisation only — the validator has no opinion). When
+  // `isDomainContainer` is true the node is one of the four
+  // immutable domain container nodes seeded at workspace
+  // initialisation; UI surfaces hide the delete affordance for it
+  // and the seed routine refuses to recreate it. Both fields are
+  // optional and absent on every pre-EAStudio document.
+  readonly isDomainContainer?: boolean;
+  readonly domainTag?: AcwDomainTag;
 }
 
 export interface AcwEdge {
@@ -87,6 +99,11 @@ const ALLOWED_NODE = [
   // pre-Phase-5 documents; their absence reads as undefined.
   "boundParam",
   "boundTechnologyCategory",
+  // EAStudio Phase 1 — optional domain markers. Both are absent on
+  // every pre-EAStudio document; the read-validator accepts both
+  // their absence and their well-formed presence.
+  "isDomainContainer",
+  "domainTag",
 ] as const;
 const ALLOWED_EDGE = ["id", "kind", "fromId", "toId"] as const;
 
@@ -171,6 +188,23 @@ function assertAllowedFields(workspace: unknown): void {
       ) {
         throw new Error(
           "ACW node.boundTechnologyCategory, when present, must be a non-empty string.",
+        );
+      }
+    }
+    // EAStudio Phase 1 — optional domain markers. Absent reads as
+    // undefined (pre-EAStudio default); present must match the
+    // declared shape exactly.
+    if (node.isDomainContainer !== undefined) {
+      if (typeof node.isDomainContainer !== "boolean") {
+        throw new Error(
+          "ACW node.isDomainContainer, when present, must be a boolean.",
+        );
+      }
+    }
+    if (node.domainTag !== undefined) {
+      if (!isAcwDomainTag(node.domainTag)) {
+        throw new Error(
+          "ACW node.domainTag, when present, must be one of: business, data, application, technology.",
         );
       }
     }
@@ -335,6 +369,20 @@ export interface CreateNodeRequest {
   // unbound and renders exactly as a pre-Phase-5 node.
   readonly boundParam?: AcwBoundParam;
   readonly boundTechnologyCategory?: string;
+  // EAStudio Phase 1 — optional domain markers. Used by the seed
+  // routine to materialise the four immutable domain containers
+  // and by the palette drop handler to mark the children of each
+  // domain. Both fields are absent on every pre-EAStudio code path.
+  readonly isDomainContainer?: boolean;
+  readonly domainTag?: AcwDomainTag;
+  // EAStudio Phase 1 — caller-supplied id. The seed routine needs
+  // stable, well-known ids (`domain-business`, `domain-data`,
+  // `domain-application`, `domain-technology`) so the EAStudio
+  // canvas can address each container deterministically and so a
+  // re-seed on a workspace that already contains them is a no-op
+  // (the id collision short-circuits before any structural change).
+  // Every other caller leaves this undefined and gets a freshId().
+  readonly id?: string;
 }
 
 export interface CreateEdgeRequest {
@@ -379,11 +427,47 @@ export function createNode(req: CreateNodeRequest): CreateNodeResult {
       reason: "boundTechnologyCategory, when supplied, must be a non-empty string.",
     };
   }
-  const id = freshId("node");
-  // Object.freeze with conditional spread keeps the optional Phase 5
-  // fields absent (undefined) rather than serialised as `null`, so a
-  // node created without a binding remains byte-identical to its
-  // pre-Phase-5 shape on disk.
+  // EAStudio Phase 1 — defensive shape checks for caller-supplied
+  // optional fields. The validator has no opinion about these so the
+  // store must reject malformed values directly.
+  if (
+    req.isDomainContainer !== undefined &&
+    typeof req.isDomainContainer !== "boolean"
+  ) {
+    return {
+      ok: false,
+      reason: "isDomainContainer, when supplied, must be a boolean.",
+    };
+  }
+  if (req.domainTag !== undefined && !isAcwDomainTag(req.domainTag)) {
+    return {
+      ok: false,
+      reason:
+        "domainTag, when supplied, must be one of: business, data, application, technology.",
+    };
+  }
+  if (req.id !== undefined) {
+    if (typeof req.id !== "string" || req.id.length === 0) {
+      return {
+        ok: false,
+        reason: "id, when supplied, must be a non-empty string.",
+      };
+    }
+    // Idempotent seed: if a node with the requested stable id already
+    // exists we return ok with that id and make no structural change.
+    // This lets `ensureDomainContainers` run on every workspace open
+    // without recreating containers or producing duplicate state.
+    for (const existing of ws.structureGraph.nodes) {
+      if (existing.id === req.id) {
+        return { ok: true, id: req.id };
+      }
+    }
+  }
+  const id = req.id ?? freshId("node");
+  // Object.freeze with conditional spread keeps every optional field
+  // absent (undefined) rather than serialised as `null`, so a node
+  // created without bindings or domain markers remains byte-identical
+  // to its pre-extension shape on disk.
   const node: AcwNode = Object.freeze({
     id,
     type: req.type,
@@ -395,6 +479,10 @@ export function createNode(req: CreateNodeRequest): CreateNodeResult {
     ...(req.boundTechnologyCategory !== undefined
       ? { boundTechnologyCategory: req.boundTechnologyCategory }
       : {}),
+    ...(req.isDomainContainer !== undefined
+      ? { isDomainContainer: req.isDomainContainer }
+      : {}),
+    ...(req.domainTag !== undefined ? { domainTag: req.domainTag } : {}),
   });
   const next: AcwWorkspace = Object.freeze({
     schemaVersion: ACW_SCHEMA_VERSION,

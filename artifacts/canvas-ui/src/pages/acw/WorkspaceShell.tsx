@@ -61,6 +61,11 @@ export const ACW_LENSES: readonly AcwLens[] = [
     label: "Operations & Continuity",
     togafLayer: "Cross-layer",
   },
+  {
+    path: "/workspace/studio",
+    label: "EAStudio canvas",
+    togafLayer: "Cross-layer",
+  },
 ];
 
 assertAllAcwPlaceholderLanguage([

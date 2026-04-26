@@ -24,6 +24,7 @@
 // returns the default ("2d"). No "acw-view-2.0" version is
 // introduced; per the task brief, v3 introduces no new schema.
 import { assertAllAcwPlaceholderLanguage } from "../governance/staticTextGuard";
+import { isAcwDomainTag, type AcwDomainTag } from "./acwGrammar";
 
 export const ACW_VIEW_SCHEMA_VERSION = "acw-view-1.0" as const;
 const STORAGE_KEY = "acw.workspace.view.v1";
@@ -32,24 +33,41 @@ export type AcwLensViewMode = "2d" | "3d";
 const ALLOWED_VIEW_MODES: readonly AcwLensViewMode[] = ["2d", "3d"];
 const DEFAULT_VIEW_MODE: AcwLensViewMode = "2d";
 
+// EAStudio Phase 1 — default active domain when a lens has no
+// previously-recorded selection. Pure UI default; the validator and
+// the workspace document have no opinion about it.
+const DEFAULT_DOMAIN: AcwDomainTag = "business";
+
 // Per-lens view-state. Lens identity = the lens path (e.g.
 // "/workspace/landscape").
 //   - collapseByLens: which container ids are collapsed in this lens.
 //   - viewModeByLens: which canvas mode (2D or 3D) the lens displays.
-// Both are visual-only; neither references workspace content.
+//   - currentDomainByLens (EAStudio Phase 1): which of the four
+//     EAStudio domains is active in this lens (controls the palette
+//     contents and the highlighted domain container). Optional and
+//     absent on every pre-EAStudio document; absence reads as the
+//     DEFAULT_DOMAIN.
+// All three are visual-only; none references workspace content.
 export interface AcwViewState {
   readonly schemaVersion: typeof ACW_VIEW_SCHEMA_VERSION;
   readonly collapseByLens: Readonly<Record<string, readonly string[]>>;
   readonly viewModeByLens: Readonly<Record<string, AcwLensViewMode>>;
+  readonly currentDomainByLens: Readonly<Record<string, AcwDomainTag>>;
 }
 
-const ALLOWED_TOP = ["schemaVersion", "collapseByLens", "viewModeByLens"] as const;
+const ALLOWED_TOP = [
+  "schemaVersion",
+  "collapseByLens",
+  "viewModeByLens",
+  "currentDomainByLens",
+] as const;
 
 function emptyView(): AcwViewState {
   return Object.freeze({
     schemaVersion: ACW_VIEW_SCHEMA_VERSION,
     collapseByLens: Object.freeze({}),
     viewModeByLens: Object.freeze({}),
+    currentDomainByLens: Object.freeze({}),
   });
 }
 
@@ -114,6 +132,28 @@ function assertValid(raw: unknown): asserts raw is AcwViewState {
       }
     }
   }
+  // EAStudio Phase 1 — currentDomainByLens. Optional for backward
+  // compat with v2/v3-persisted documents. When present it must be
+  // an object with string lens ids and AcwDomainTag values.
+  if (r.currentDomainByLens !== undefined) {
+    if (
+      r.currentDomainByLens === null ||
+      typeof r.currentDomainByLens !== "object"
+    ) {
+      throw new Error("ACW view-state currentDomainByLens must be an object.");
+    }
+    const dm = r.currentDomainByLens as Record<string, unknown>;
+    for (const [lensId, tag] of Object.entries(dm)) {
+      if (typeof lensId !== "string" || lensId.length === 0) {
+        throw new Error("ACW view-state lens id must be a non-empty string.");
+      }
+      if (!isAcwDomainTag(tag)) {
+        throw new Error(
+          "ACW view-state currentDomainByLens value must be one of: business, data, application, technology.",
+        );
+      }
+    }
+  }
 }
 
 function isValid(raw: unknown): raw is AcwViewState {
@@ -139,13 +179,18 @@ function notify(): void {
 }
 
 function normalize(raw: AcwViewState): AcwViewState {
-  // Backfill optional v3 field for v2-persisted documents so callers
-  // never have to null-check.
-  if (raw.viewModeByLens !== undefined) return raw;
+  // Backfill optional v3 / EAStudio Phase 1 fields for older
+  // persisted documents so callers never have to null-check.
+  const needsViewMode = raw.viewModeByLens === undefined;
+  const needsDomain = raw.currentDomainByLens === undefined;
+  if (!needsViewMode && !needsDomain) return raw;
   return Object.freeze({
     schemaVersion: raw.schemaVersion,
     collapseByLens: raw.collapseByLens,
-    viewModeByLens: Object.freeze({}),
+    viewModeByLens: needsViewMode ? Object.freeze({}) : raw.viewModeByLens,
+    currentDomainByLens: needsDomain
+      ? Object.freeze({})
+      : raw.currentDomainByLens,
   });
 }
 
@@ -202,6 +247,7 @@ export function toggleCollapsed(lensId: string, nodeId: string): void {
       [lensId]: Object.freeze(nextIds),
     }),
     viewModeByLens: prev.viewModeByLens,
+    currentDomainByLens: prev.currentDomainByLens,
   });
   writeToStorage(next);
   cache = next;
@@ -227,6 +273,34 @@ export function setViewMode(lensId: string, mode: AcwLensViewMode): void {
     viewModeByLens: Object.freeze({
       ...prev.viewModeByLens,
       [lensId]: mode,
+    }),
+    currentDomainByLens: prev.currentDomainByLens,
+  });
+  writeToStorage(next);
+  cache = next;
+  notify();
+}
+
+// EAStudio Phase 1 — per-lens active domain. Pure UI state.
+export function getCurrentDomain(lensId: string): AcwDomainTag {
+  const map = getViewState().currentDomainByLens;
+  return map[lensId] ?? DEFAULT_DOMAIN;
+}
+
+export function setCurrentDomain(lensId: string, tag: AcwDomainTag): void {
+  if (!isAcwDomainTag(tag)) {
+    throw new Error(
+      `ACW view-state setCurrentDomain rejected tag "${String(tag)}". Permitted: business | data | application | technology.`,
+    );
+  }
+  const prev = getViewState();
+  const next: AcwViewState = Object.freeze({
+    schemaVersion: ACW_VIEW_SCHEMA_VERSION,
+    collapseByLens: prev.collapseByLens,
+    viewModeByLens: prev.viewModeByLens,
+    currentDomainByLens: Object.freeze({
+      ...prev.currentDomainByLens,
+      [lensId]: tag,
     }),
   });
   writeToStorage(next);

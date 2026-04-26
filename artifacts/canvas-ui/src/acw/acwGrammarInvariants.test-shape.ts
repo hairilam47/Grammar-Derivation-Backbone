@@ -165,15 +165,19 @@ expectRefusal(
   "workspace root",
 );
 
-// 4c. Component cannot be the child of a Zone → parent-type mismatch.
+// 4c. Component cannot be the child of a ComputeNode → parent-type
+// mismatch. (Pre-EAStudio this probe used Zone as the illegal parent;
+// EAStudio Phase 1 widens Component to permit Zone / BusinessEntity
+// parents, so the probe was retargeted to ComputeNode — which the
+// containment rule continues to refuse.)
 {
   const fakeView: ValidatorWorkspaceView = {
     getNodeType: (id: string) =>
-      id === "fake-zone" ? ("Zone" as AcwElementType) : undefined,
+      id === "fake-cn" ? ("ComputeNode" as AcwElementType) : undefined,
   };
   expectRefusal(
-    "Component as child of Zone",
-    canCreateNode("Component", "fake-zone", fakeView),
+    "Component as child of ComputeNode",
+    canCreateNode("Component", "fake-cn", fakeView),
     "permitted inside",
   );
 }
@@ -254,6 +258,67 @@ expectRefusal(
       `${PREFIX}: validator unexpectedly refused a Zone at the workspace root: ${r.ok === false ? r.reason : "unknown reason"}.`,
     );
   }
+}
+
+// (6) EAStudio Phase 1 — positive widening probes. These guard the
+// new containment rules introduced for the four-domain canvas:
+//   - BusinessEntity is a root-only element type.
+//   - Zone may live inside BusinessEntity (Department-in-Business).
+//   - Zone may live inside Zone (OrgUnit-in-Department).
+//   - System may live inside Zone (BusinessProcess-in-OrgUnit, or
+//     Application-in-domain-Zone).
+//   - Component may live inside Zone (e.g. Database-in-Technology)
+//     and inside BusinessEntity (e.g. KPI-in-Business).
+// Each probe checks the validator returns ok:true for a structurally
+// well-formed creation against a fabricated view.
+{
+  const r = canCreateNode("BusinessEntity", null, emptyView);
+  if (r.ok !== true) {
+    throw new Error(
+      `${PREFIX}: BusinessEntity at the workspace root refused: ${r.ok === false ? r.reason : "unknown reason"}.`,
+    );
+  }
+}
+{
+  const view: ValidatorWorkspaceView = {
+    getNodeType: (id: string) =>
+      id === "be" ? ("BusinessEntity" as AcwElementType) : undefined,
+  };
+  for (const child of ["Zone", "System", "Component"] as const) {
+    const r = canCreateNode(child, "be", view);
+    if (r.ok !== true) {
+      throw new Error(
+        `${PREFIX}: EAStudio widening — ${child} as child of BusinessEntity refused: ${r.ok === false ? r.reason : "unknown reason"}.`,
+      );
+    }
+  }
+}
+{
+  const view: ValidatorWorkspaceView = {
+    getNodeType: (id: string) =>
+      id === "z" ? ("Zone" as AcwElementType) : undefined,
+  };
+  for (const child of ["Zone", "System", "Component"] as const) {
+    const r = canCreateNode(child, "z", view);
+    if (r.ok !== true) {
+      throw new Error(
+        `${PREFIX}: EAStudio widening — ${child} as child of Zone refused: ${r.ok === false ? r.reason : "unknown reason"}.`,
+      );
+    }
+  }
+}
+// BusinessEntity remains root-only — it must not be permitted inside
+// another container. Widening did not nest BusinessEntity nodes.
+{
+  const view: ValidatorWorkspaceView = {
+    getNodeType: (id: string) =>
+      id === "be" ? ("BusinessEntity" as AcwElementType) : undefined,
+  };
+  expectRefusal(
+    "BusinessEntity as child of BusinessEntity",
+    canCreateNode("BusinessEntity", "be", view),
+    "permitted inside",
+  );
 }
 
 // Exported predicate so future callers (or a follow-up test

@@ -15,6 +15,7 @@ import SystemLandscape from "@/pages/acw/views/SystemLandscape";
 import IntegrationView from "@/pages/acw/views/Integration";
 import Deployment from "@/pages/acw/views/Deployment";
 import OperationsContinuity from "@/pages/acw/views/OperationsContinuity";
+import StudioCanvas from "@/pages/acw/views/StudioCanvas";
 import CtadEntry from "@/pages/ctad/CtadEntry";
 import CtadShell from "@/pages/ctad/CtadShell";
 import CtadArchitectureShell from "@/pages/ctad/CtadArchitectureShell";
@@ -106,6 +107,7 @@ function Router() {
       <Route path="/workspace/integration" component={IntegrationView} />
       <Route path="/workspace/deployment" component={Deployment} />
       <Route path="/workspace/operations" component={OperationsContinuity} />
+      <Route path="/workspace/studio" component={StudioCanvas} />
       <Route path="/ctad" component={CtadEntry} />
       <Route path="/ctad/arch/:architectureId" component={CtadArchitectureShell} />
       <Route path="/ctad/:adsId/:adsVersion" component={CtadShell} />

@@ -37,8 +37,37 @@ export const ACW_ELEMENT_TYPES = [
   "ComputeNode",
   "System",
   "Component",
+  // EAStudio Phase 1 — additive widening. `BusinessEntity` is the
+  // type of the immutable Business domain container at the workspace
+  // root. Modelling it as its own type (rather than reusing `Zone`)
+  // lets the grammar enforce that the Business domain hierarchy
+  // (Department → OrgUnit → BusinessProcess) is rooted at a
+  // BusinessEntity, while the other three domain containers
+  // (data / application / technology) remain plain `Zone` nodes.
+  "BusinessEntity",
 ] as const;
 export type AcwElementType = (typeof ACW_ELEMENT_TYPES)[number];
+
+// EAStudio Phase 1 — domain markers carried as optional metadata on
+// every node. Pure UI categorisation; the validator has no opinion
+// about a node's `domainTag`. The four-domain partition (Business /
+// Data / Application / Technology) mirrors the four immutable
+// domain container nodes the EAStudio canvas seeds at workspace
+// initialisation.
+export const ACW_DOMAIN_TAGS = [
+  "business",
+  "data",
+  "application",
+  "technology",
+] as const;
+export type AcwDomainTag = (typeof ACW_DOMAIN_TAGS)[number];
+
+export function isAcwDomainTag(value: unknown): value is AcwDomainTag {
+  return (
+    typeof value === "string" &&
+    (ACW_DOMAIN_TAGS as readonly string[]).includes(value)
+  );
+}
 
 export function isAcwElementType(value: unknown): value is AcwElementType {
   return (
@@ -101,6 +130,7 @@ export const ACW_ELEMENT_TYPE_LABEL: Readonly<Record<AcwElementType, string>> =
     ComputeNode: "Compute node",
     System: "System",
     Component: "Component",
+    BusinessEntity: "Business entity",
   });
 
 export const ACW_EDGE_KIND_LABEL: Readonly<Record<AcwEdgeKind, string>> =
@@ -134,7 +164,14 @@ export interface ContainmentRule {
 export const ACW_CONTAINMENT_RULES: readonly ContainmentRule[] = Object.freeze([
   Object.freeze({
     child: "Zone",
-    permittedParents: Object.freeze([null] as const),
+    // EAStudio Phase 1 widening: a Zone may sit at the workspace root
+    // (the three non-Business domain containers and any pre-Phase-1
+    // top-level Zone), inside a `BusinessEntity` (e.g. a Department
+    // Zone inside the Business domain container), or inside another
+    // Zone (e.g. an OrgUnit Zone inside a Department Zone, or a
+    // Network Layer Zone inside a Cloud Region Zone). The root option
+    // remains permitted, so every pre-widening graph stays valid.
+    permittedParents: Object.freeze([null, "BusinessEntity", "Zone"] as const),
   }),
   Object.freeze({
     child: "ComputeNode",
@@ -150,13 +187,33 @@ export const ACW_CONTAINMENT_RULES: readonly ContainmentRule[] = Object.freeze([
   }),
   Object.freeze({
     child: "System",
-    // System is permitted at the workspace root OR inside a
-    // ComputeNode. Both are structurally well-formed.
-    permittedParents: Object.freeze([null, "ComputeNode"] as const),
+    // EAStudio Phase 1 widening: a System may also live inside a
+    // Zone (e.g. an Application System inside the Application domain
+    // Zone, or a BusinessProcess System inside an OrgUnit Zone) or
+    // inside a `BusinessEntity` (e.g. a Strategy Map System directly
+    // under the Business domain container). Root and ComputeNode
+    // remain permitted.
+    permittedParents: Object.freeze(
+      [null, "ComputeNode", "Zone", "BusinessEntity"] as const,
+    ),
   }),
   Object.freeze({
     child: "Component",
-    permittedParents: Object.freeze(["System"] as const),
+    // EAStudio Phase 1 widening: a Component may also live inside a
+    // Zone (e.g. a Database Component inside the Technology domain
+    // Zone) or inside a `BusinessEntity` (e.g. a KPI Dashboard
+    // Component directly under the Business domain container). The
+    // legacy `System` parent is preserved.
+    permittedParents: Object.freeze(
+      ["System", "Zone", "BusinessEntity"] as const,
+    ),
+  }),
+  Object.freeze({
+    child: "BusinessEntity",
+    // BusinessEntity is reserved for the immutable Business domain
+    // container. It is rooted at the workspace root and never nested
+    // inside another container.
+    permittedParents: Object.freeze([null] as const),
   }),
 ]);
 
@@ -189,15 +246,24 @@ export interface EdgeRule {
 export const ACW_EDGE_RULES: readonly EdgeRule[] = Object.freeze([
   Object.freeze({
     kind: "CONTAINS",
-    // CONTAINS is the v3 zoom-through chain stated as an edge: each
-    // pair below mirrors the containment rule for the child type.
-    // Edges are direction-agnostic at the rule level; the store
-    // records the authored direction (fromId → toId) so v2 can render
-    // it visually without changing the grammar.
+    // CONTAINS is the structural-containment chain stated as an edge:
+    // each pair below mirrors the containment rule for the child
+    // type, including the EAStudio Phase 1 widening (Zone-in-Zone,
+    // System-in-Zone, Component-in-Zone, and BusinessEntity →
+    // Zone / System / Component). Edges are direction-agnostic at
+    // the rule level; the store records the authored direction
+    // (fromId → toId) so v2 can render it visually without changing
+    // the grammar.
     permittedPairs: Object.freeze([
       Object.freeze(["Zone", "ComputeNode"] as const),
       Object.freeze(["ComputeNode", "System"] as const),
       Object.freeze(["System", "Component"] as const),
+      Object.freeze(["Zone", "Zone"] as const),
+      Object.freeze(["Zone", "System"] as const),
+      Object.freeze(["Zone", "Component"] as const),
+      Object.freeze(["BusinessEntity", "Zone"] as const),
+      Object.freeze(["BusinessEntity", "System"] as const),
+      Object.freeze(["BusinessEntity", "Component"] as const),
     ] as const),
   }),
   Object.freeze({

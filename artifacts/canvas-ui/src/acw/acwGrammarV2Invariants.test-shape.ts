@@ -143,12 +143,18 @@ try {
   if (!comp.ok) throw new Error(`${PREFIX}: fixture refused: ${comp.reason}`);
   const compId = comp.id;
 
-  // (3) Validator-gated reparent: Component cannot live in a Zone.
+  // (3) Validator-gated reparent: Component cannot live inside a
+  // ComputeNode. (Pre-EAStudio this probe used Zone as the illegal
+  // parent; EAStudio Phase 1 widens Component to permit Zone /
+  // BusinessEntity parents, so the probe was retargeted to
+  // ComputeNode — which the containment rule continues to refuse.)
   {
     const before = __acwStoreInternals.serializeForTest();
-    const r = updateNodeParent(compId, zoneId);
+    const r = updateNodeParent(compId, cnId);
     if (r.ok !== false) {
-      throw new Error(`${PREFIX}: updateNodeParent did not refuse Component into Zone.`);
+      throw new Error(
+        `${PREFIX}: updateNodeParent did not refuse Component into ComputeNode.`,
+      );
     }
     if (typeof r.reason !== "string" || r.reason.length === 0) {
       throw new Error(`${PREFIX}: refused reparent produced no neutral reason string.`);
@@ -316,6 +322,124 @@ if (ACW_SCHEMA_VERSION !== "acw-1.0") {
   if (__acwStoreInternals.isValidWorkspace(bad3)) {
     throw new Error(
       `${PREFIX}: read-validator accepted an empty-string boundTechnologyCategory.`,
+    );
+  }
+}
+
+// (8) EAStudio Phase 1 — read-validator accepts the optional
+// `isDomainContainer` and `domainTag` fields on a node, and rejects
+// malformed shapes for both. Pre-EAStudio documents (without either
+// field) remain valid; that case is exercised by every other probe.
+//
+// Probes:
+//   - well-formed isDomainContainer (boolean) + domainTag (string
+//     enum value) on a Zone           → ACCEPT
+//   - well-formed BusinessEntity at the workspace root with both
+//     markers set                     → ACCEPT
+//   - isDomainContainer of wrong type → REJECT
+//   - unknown domainTag string        → REJECT
+{
+  const baseGood = (nodes: ReadonlyArray<Record<string, unknown>>) => ({
+    schemaVersion: ACW_SCHEMA_VERSION,
+    structureGraph: { nodes, edges: [] },
+  });
+  // Well-formed Zone with both EAStudio markers: must ACCEPT.
+  const ok1 = baseGood([
+    {
+      id: "domain-data",
+      type: "Zone",
+      parentId: null,
+      label: "Data",
+      x: 0,
+      y: 0,
+      isDomainContainer: true,
+      domainTag: "data",
+    },
+  ]);
+  if (!__acwStoreInternals.isValidWorkspace(ok1)) {
+    throw new Error(
+      `${PREFIX}: read-validator refused a well-formed Zone carrying isDomainContainer + domainTag.`,
+    );
+  }
+  // Well-formed BusinessEntity domain container: must ACCEPT.
+  const ok2 = baseGood([
+    {
+      id: "domain-business",
+      type: "BusinessEntity",
+      parentId: null,
+      label: "Business",
+      x: 0,
+      y: 0,
+      isDomainContainer: true,
+      domainTag: "business",
+    },
+  ]);
+  if (!__acwStoreInternals.isValidWorkspace(ok2)) {
+    throw new Error(
+      `${PREFIX}: read-validator refused a well-formed BusinessEntity domain container.`,
+    );
+  }
+  // isDomainContainer of wrong type: must REJECT.
+  const bad1 = baseGood([
+    {
+      id: "n",
+      type: "Zone",
+      parentId: null,
+      label: "z",
+      x: 0,
+      y: 0,
+      isDomainContainer: "yes",
+    },
+  ]);
+  if (__acwStoreInternals.isValidWorkspace(bad1)) {
+    throw new Error(
+      `${PREFIX}: read-validator accepted a non-boolean isDomainContainer.`,
+    );
+  }
+  // Unknown domainTag: must REJECT.
+  const bad2 = baseGood([
+    {
+      id: "n",
+      type: "Zone",
+      parentId: null,
+      label: "z",
+      x: 0,
+      y: 0,
+      domainTag: "infrastructure",
+    },
+  ]);
+  if (__acwStoreInternals.isValidWorkspace(bad2)) {
+    throw new Error(
+      `${PREFIX}: read-validator accepted an unknown domainTag value.`,
+    );
+  }
+}
+
+// (9) EAStudio Phase 1 — view-state read-validator accepts the
+// optional `currentDomainByLens` field and rejects unknown tag
+// values. Mirrors the (2) graph-field smuggle probe but for the
+// new EAStudio-specific field.
+{
+  const ok = {
+    schemaVersion: ACW_VIEW_SCHEMA_VERSION,
+    collapseByLens: {},
+    viewModeByLens: {},
+    currentDomainByLens: { "/workspace/studio": "data" },
+  };
+  if (!__acwViewStateInternals.isValid(ok)) {
+    throw new Error(
+      `${PREFIX}: view-state read-validator refused a well-formed currentDomainByLens map.`,
+    );
+  }
+  const bad = {
+    schemaVersion: ACW_VIEW_SCHEMA_VERSION,
+    collapseByLens: {},
+    viewModeByLens: {},
+    currentDomainByLens: { "/workspace/studio": "infrastructure" },
+  };
+  if (__acwViewStateInternals.isValid(bad)) {
+    throw new Error(
+      `${PREFIX}: view-state read-validator accepted an unknown currentDomainByLens value.`,
     );
   }
 }
