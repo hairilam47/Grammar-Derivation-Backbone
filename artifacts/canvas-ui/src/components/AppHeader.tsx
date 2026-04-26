@@ -1,20 +1,9 @@
-/**
- * Shared sticky header used by Landing, the decision canvas, the
- * portfolio, and every read-only governance / signals surface.
- *
- * Centralising the header here means future visual polish only has
- * to be applied in one place, and that the brand-mark + title +
- * GlobalNav layout cannot drift between routes. All `data-testid`s
- * exposed by GlobalNav are preserved untouched.
- */
 import type { LucideIcon } from "lucide-react";
 import { Layout } from "lucide-react";
 import { GlobalNav } from "@/components/governance/GlobalNav";
 
 interface AppHeaderProps {
-  /** Lucide icon to render inside the gradient brand-mark. */
   icon?: LucideIcon;
-  /** Header title — defaults to the product name. */
   title?: string;
 }
 
