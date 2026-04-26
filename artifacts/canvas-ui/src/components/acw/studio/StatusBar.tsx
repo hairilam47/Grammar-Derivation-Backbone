@@ -64,6 +64,15 @@ export function StatusBar({ lensId }: StatusBarProps) {
   void tick;
 
   const nodeCount = ws.structureGraph.nodes.length;
+  // The "Connections" read-out counts CONNECTS edges only — i.e.
+  // the user-authored network. CONTAINS edges are sealed
+  // domain-container parentage that the user can neither author
+  // nor delete; surfacing them here would inflate the count by
+  // one per node and conflate two distinct edge semantics that
+  // EAStudio is careful to keep apart elsewhere (palette,
+  // properties panel, edge overlay). The label "Connections"
+  // refers to the user's first-class authoring artifact, so
+  // CONNECTS-only is the intended semantic.
   const connectsCount = ws.structureGraph.edges.filter(
     (e) => e.kind === "CONNECTS",
   ).length;
