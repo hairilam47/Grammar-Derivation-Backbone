@@ -457,7 +457,7 @@ export function AppShell({ children }: AppShellProps) {
 
   const onTopbarToggle = () => {
     if (isMobile) {
-      setMobileOpen(true);
+      setMobileOpen((v) => !v);
     } else {
       setCollapsed((c) => !c);
     }
@@ -489,7 +489,9 @@ export function AppShell({ children }: AppShellProps) {
               onClick={onTopbarToggle}
               aria-label={
                 isMobile
-                  ? OPEN_NAV_LABEL
+                  ? mobileOpen
+                    ? CLOSE_LABEL
+                    : OPEN_NAV_LABEL
                   : collapsed
                     ? EXPAND_LABEL
                     : COLLAPSE_LABEL
