@@ -55,11 +55,18 @@ import {
 import { ACW_PALETTE_DATA_KEY } from "./PalettePanel";
 import { useAcwWorkspace } from "@/acw/acwGrammarHooks";
 import {
+  createEdge,
   createNode,
+  type AcwEdge,
   type AcwNode,
 } from "@/acw/acwStore";
 import { publishRefusal } from "@/acw/acwRefusalChannel";
 import {
+  getConnectMode,
+  getConnectPendingSource,
+  getSelectedNodeId,
+  setConnectPendingSource,
+  setSelectedNodeId,
   getCurrentDomain,
   setCurrentDomain,
   subscribeViewState,
@@ -117,6 +124,7 @@ export function DomainGrid({ lensId }: DomainGridProps) {
             containerNode={container}
             nodeById={nodeById}
             allNodes={workspace.structureGraph.nodes}
+            allEdges={workspace.structureGraph.edges}
             isActive={activeDomain === spec.domain}
             onActivate={() => setCurrentDomain(lensId, spec.domain)}
           />
@@ -133,6 +141,7 @@ interface QuadrantProps {
   readonly containerNode: AcwNode | undefined;
   readonly nodeById: ReadonlyMap<string, AcwNode>;
   readonly allNodes: readonly AcwNode[];
+  readonly allEdges: readonly AcwEdge[];
   readonly isActive: boolean;
   readonly onActivate: () => void;
 }
@@ -145,9 +154,17 @@ function Quadrant(props: QuadrantProps) {
     containerNode,
     nodeById,
     allNodes,
+    allEdges,
     isActive,
     onActivate,
   } = props;
+  // EAStudio Phase 2 — re-read the page-keyed Connect mode and
+  // pending source slices so each quadrant's embedded canvas
+  // forwards them as props. The view-state singleton is the
+  // authority; this is a render-only read-back.
+  const connectOn = getConnectMode(lensId);
+  const pendingSource = getConnectPendingSource(lensId);
+  const selectedNodeId = getSelectedNodeId(lensId);
   const Icon = ACW_DOMAIN_ICON[domain];
   const accent = ACW_DOMAIN_ACCENT[domain];
 
@@ -348,8 +365,62 @@ function Quadrant(props: QuadrantProps) {
         <InteractiveCanvas2D
           lensId={canvasLensId}
           nodes={allNodes}
-          edges={[]}
+          edges={allEdges}
           focusedParentId={focusedParentId}
+          connectMode={connectOn}
+          pendingSourceId={pendingSource}
+          selectedEdgeId={null}
+          onNodeSelect={(id) => {
+            setSelectedNodeId(lensId, id);
+          }}
+          onNodeConnectClick={(id) => {
+            // Source-then-destination dispatch. The first click
+            // arms a pending source; the second click on a
+            // *different* node fires the validator-gated
+            // createEdge for a CONNECTS edge. Clicking the same
+            // node twice clears the pending source (treated as a
+            // cancel — never as a self-loop, which the validator
+            // would refuse anyway).
+            const node = nodeById.get(id);
+            if (node === undefined) return;
+            // Sealed-container guard. The InteractiveCanvas2D
+            // pointer handler already short-circuits domain
+            // containers before invoking this callback, but the
+            // header-strip Connect-target overlay (added in
+            // Phase 2) is also gated only by `!isDomainContainer`,
+            // so a hand-crafted call could still reach us. Per
+            // the brief, attempts to connect a sealed endpoint
+            // must be surfaced via the refusal channel — never
+            // silently swallowed — so downstream tooling and
+            // banners stay consistent with the validator's own
+            // refusals.
+            if (node.isDomainContainer === true) {
+              publishRefusal(
+                `${node.label} is a sealed domain container and cannot be a connection endpoint.`,
+              );
+              setConnectPendingSource(lensId, null);
+              return;
+            }
+            if (pendingSource === null) {
+              setConnectPendingSource(lensId, id);
+              return;
+            }
+            if (pendingSource === id) {
+              setConnectPendingSource(lensId, null);
+              return;
+            }
+            const r = createEdge({
+              kind: "CONNECTS",
+              fromId: pendingSource,
+              toId: id,
+            });
+            // Always clear the pending source whether the
+            // mutation was permitted or refused; otherwise a
+            // subsequent click would silently re-fire against the
+            // stale source.
+            setConnectPendingSource(lensId, null);
+            if (!r.ok) publishRefusal(r.reason);
+          }}
           onDrillDown={(nodeId) => {
             // Push the drilled-into node onto the focus path,
             // *only* if the node is a descendant of this

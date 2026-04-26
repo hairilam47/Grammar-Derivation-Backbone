@@ -274,10 +274,24 @@ export const ACW_EDGE_RULES: readonly EdgeRule[] = Object.freeze([
   }),
   Object.freeze({
     kind: "CONNECTS",
-    // Peer connectivity at the infrastructure / application layer.
+    // Peer connectivity. EAStudio Phase 2 (Task #91) widens this set
+    // additively so the Studio author can draw peer relationships in
+    // every domain quadrant — Business uses Zone-typed nodes
+    // (Department / OrgUnit) end-to-end, Application / Technology mix
+    // System and Component, and the legacy ComputeNode ↔ ComputeNode
+    // pair is preserved for the original infrastructure-tier flow.
+    // BusinessEntity is intentionally excluded: the four sealed
+    // domain containers are not legal CONNECTS endpoints (the store
+    // refuses them anyway via the sealed-container guard, but
+    // omitting them at the grammar level documents the contract).
+    // CONTAINS-typed cross-tier pairs (e.g., Zone ↔ System) remain
+    // intentionally absent so containment never aliases as
+    // connectivity.
     permittedPairs: Object.freeze([
       Object.freeze(["ComputeNode", "ComputeNode"] as const),
       Object.freeze(["System", "System"] as const),
+      Object.freeze(["Zone", "Zone"] as const),
+      Object.freeze(["Component", "Component"] as const),
     ] as const),
   }),
   Object.freeze({

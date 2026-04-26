@@ -30,6 +30,14 @@ import {
   type AcwExplicitEdgeKind,
 } from "./acwGrammar";
 import {
+  isAcwNodeStatus,
+  isAcwNodeMaturity,
+  isAcwNodePriority,
+  type AcwNodeStatus,
+  type AcwNodeMaturity,
+  type AcwNodePriority,
+} from "./acwNodeProperties";
+import {
   canCreateEdge,
   canCreateNode,
   validateOperation,
@@ -67,6 +75,18 @@ export interface AcwNode {
   // optional and absent on every pre-EAStudio document.
   readonly isDomainContainer?: boolean;
   readonly domainTag?: AcwDomainTag;
+  // EAStudio Phase 2 — descriptive properties surfaced by the
+  // Properties panel. Each field is optional and additive on the
+  // v1 node shape; absence reads identically to a pre-Phase-2
+  // document. None of these values affect validator legality, but
+  // the read-validator still rejects malformed values (empty
+  // strings, unknown enum values, wrong types) so a future caller
+  // cannot smuggle bad data past the storage boundary.
+  readonly description?: string;
+  readonly owner?: string;
+  readonly status?: AcwNodeStatus;
+  readonly maturity?: AcwNodeMaturity;
+  readonly priority?: AcwNodePriority;
 }
 
 export interface AcwEdge {
@@ -104,6 +124,14 @@ const ALLOWED_NODE = [
   // their absence and their well-formed presence.
   "isDomainContainer",
   "domainTag",
+  // EAStudio Phase 2 — optional descriptive properties. All five
+  // are absent on pre-Phase-2 documents; the read-validator
+  // accepts both absence and well-formed presence.
+  "description",
+  "owner",
+  "status",
+  "maturity",
+  "priority",
 ] as const;
 const ALLOWED_EDGE = ["id", "kind", "fromId", "toId"] as const;
 
@@ -207,6 +235,41 @@ function assertAllowedFields(workspace: unknown): void {
           "ACW node.domainTag, when present, must be one of: business, data, application, technology.",
         );
       }
+    }
+    // EAStudio Phase 2 — descriptive property shape checks.
+    // Strings (description, owner) reject the empty string so the
+    // Properties panel must clear an unset field by omitting the
+    // key, not by writing "". Enums (status, maturity, priority)
+    // are gated against their closed value sets via the predicates
+    // exported from `acwNodeProperties`.
+    if (node.description !== undefined) {
+      if (typeof node.description !== "string" || node.description.length === 0) {
+        throw new Error(
+          "ACW node.description, when present, must be a non-empty string.",
+        );
+      }
+    }
+    if (node.owner !== undefined) {
+      if (typeof node.owner !== "string" || node.owner.length === 0) {
+        throw new Error(
+          "ACW node.owner, when present, must be a non-empty string.",
+        );
+      }
+    }
+    if (node.status !== undefined && !isAcwNodeStatus(node.status)) {
+      throw new Error(
+        "ACW node.status, when present, must be one of: planned, active, deprecated.",
+      );
+    }
+    if (node.maturity !== undefined && !isAcwNodeMaturity(node.maturity)) {
+      throw new Error(
+        "ACW node.maturity, when present, must be one of: initial, managed, defined, quantitatively-managed, optimizing.",
+      );
+    }
+    if (node.priority !== undefined && !isAcwNodePriority(node.priority)) {
+      throw new Error(
+        "ACW node.priority, when present, must be one of: low, medium, high, critical.",
+      );
     }
     nodeIds.add(node.id);
   }
@@ -504,6 +567,24 @@ export function createNode(req: CreateNodeRequest): CreateNodeResult {
 
 export function createEdge(req: CreateEdgeRequest): StoreResult {
   const ws = getWorkspace();
+  // EAStudio Phase 2 (Task #91): sealed domain containers are not
+  // legal CONNECTS endpoints. The brief states "sealed domain
+  // containers exempt from delete/connect" and the four seeded
+  // containers must remain inert under every author flow. The
+  // canCreateEdge validator does not see the `isDomainContainer`
+  // flag (it only knows element types), so the guard lives at
+  // the store boundary alongside the parallel guards in
+  // updateNodeProperties / renameNode / deleteEdge. Refusal
+  // reasons are neutral and descriptive.
+  const fromNode = ws.structureGraph.nodes.find((n) => n.id === req.fromId);
+  const toNode = ws.structureGraph.nodes.find((n) => n.id === req.toId);
+  if (fromNode?.isDomainContainer === true || toNode?.isDomainContainer === true) {
+    return {
+      ok: false,
+      reason:
+        "Sealed domain containers cannot be used as connection endpoints.",
+    };
+  }
   const result: ValidationResult = validateOperation(
     { kind: "createEdge", edgeKind: req.kind, fromId: req.fromId, toId: req.toId },
     viewFor(ws),
@@ -693,13 +774,25 @@ export function updateNodeBinding(
     req.boundTechnologyCategory === undefined
       ? prev.boundTechnologyCategory
       : req.boundTechnologyCategory ?? undefined;
+  // EAStudio Phase 2 hardening — preserve every additive optional
+  // field already on `prev` (`isDomainContainer`, `domainTag`,
+  // `description`, `owner`, `status`, `maturity`, `priority`).
+  // Earlier revisions of this routine reconstructed the node from
+  // a hard-coded subset (id/type/parentId/label/x/y + binding
+  // fields), which silently dropped Phase 1/2 metadata if a sealed
+  // container or property-bearing node was ever rebound. The fix:
+  // start from `prev` minus the two binding fields (so a `null`
+  // clear still removes them from the resulting object), then
+  // overlay any new bound values.
+  const {
+    boundParam: _droppedBoundParam,
+    boundTechnologyCategory: _droppedBoundCategory,
+    ...preservedRest
+  } = prev;
+  void _droppedBoundParam;
+  void _droppedBoundCategory;
   const updated: AcwNode = Object.freeze({
-    id: prev.id,
-    type: prev.type,
-    parentId: prev.parentId,
-    label: prev.label,
-    x: prev.x,
-    y: prev.y,
+    ...preservedRest,
     ...(nextBoundParam !== undefined ? { boundParam: nextBoundParam } : {}),
     ...(nextBoundCategory !== undefined
       ? { boundTechnologyCategory: nextBoundCategory }
@@ -712,6 +805,216 @@ export function updateNodeBinding(
     structureGraph: Object.freeze({
       nodes: Object.freeze(nodes),
       edges: ws.structureGraph.edges,
+    }),
+  });
+  writeToStorage(next);
+  cache = next;
+  notify();
+  return { ok: true };
+}
+
+// EAStudio Phase 2 — descriptive-property mutation.
+//
+// Updates the optional `description`, `owner`, `status`, `maturity`,
+// and `priority` fields on an existing node. Pass `undefined` for an
+// argument to leave that field unchanged; pass `null` to clear it
+// (the resulting node will not carry the field at all). Structural
+// fields (id, type, parentId, label, x, y) and Phase 1 / Phase 5
+// optionals are never modified by this path.
+//
+// All five fields are validator-inert (they have no effect on
+// grammar legality), but the mutation still re-runs the full read-
+// validation on the resulting workspace via `writeToStorage`. That
+// re-validation is what rejects empty strings and unknown enum
+// values at the storage boundary, so a future caller who skips the
+// in-line predicate checks below is still refused.
+//
+// Sealed domain containers (`isDomainContainer === true`) are
+// refused at this entry point. The Properties panel hides for
+// those nodes; this guard is the defence in depth.
+export interface UpdateNodePropertiesRequest {
+  readonly description?: string | null;
+  readonly owner?: string | null;
+  readonly status?: AcwNodeStatus | null;
+  readonly maturity?: AcwNodeMaturity | null;
+  readonly priority?: AcwNodePriority | null;
+}
+
+export function updateNodeProperties(
+  nodeId: string,
+  req: UpdateNodePropertiesRequest,
+): StoreResult {
+  const ws = getWorkspace();
+  const idx = ws.structureGraph.nodes.findIndex((n) => n.id === nodeId);
+  if (idx === -1) {
+    return { ok: false, reason: "The node referenced does not exist." };
+  }
+  const prev = ws.structureGraph.nodes[idx];
+  if (prev.isDomainContainer === true) {
+    return {
+      ok: false,
+      reason:
+        "The four sealed domain containers do not accept descriptive property edits.",
+    };
+  }
+  if (req.description !== undefined && req.description !== null) {
+    if (typeof req.description !== "string" || req.description.length === 0) {
+      return {
+        ok: false,
+        reason: "description, when supplied, must be a non-empty string.",
+      };
+    }
+  }
+  if (req.owner !== undefined && req.owner !== null) {
+    if (typeof req.owner !== "string" || req.owner.length === 0) {
+      return {
+        ok: false,
+        reason: "owner, when supplied, must be a non-empty string.",
+      };
+    }
+  }
+  if (
+    req.status !== undefined &&
+    req.status !== null &&
+    !isAcwNodeStatus(req.status)
+  ) {
+    return {
+      ok: false,
+      reason:
+        "status, when supplied, must be one of: planned, active, deprecated.",
+    };
+  }
+  if (
+    req.maturity !== undefined &&
+    req.maturity !== null &&
+    !isAcwNodeMaturity(req.maturity)
+  ) {
+    return {
+      ok: false,
+      reason:
+        "maturity, when supplied, must be one of: initial, managed, defined, quantitatively-managed, optimizing.",
+    };
+  }
+  if (
+    req.priority !== undefined &&
+    req.priority !== null &&
+    !isAcwNodePriority(req.priority)
+  ) {
+    return {
+      ok: false,
+      reason:
+        "priority, when supplied, must be one of: low, medium, high, critical.",
+    };
+  }
+  const nextDescription =
+    req.description === undefined ? prev.description : req.description ?? undefined;
+  const nextOwner =
+    req.owner === undefined ? prev.owner : req.owner ?? undefined;
+  const nextStatus =
+    req.status === undefined ? prev.status : req.status ?? undefined;
+  const nextMaturity =
+    req.maturity === undefined ? prev.maturity : req.maturity ?? undefined;
+  const nextPriority =
+    req.priority === undefined ? prev.priority : req.priority ?? undefined;
+  const updated: AcwNode = Object.freeze({
+    id: prev.id,
+    type: prev.type,
+    parentId: prev.parentId,
+    label: prev.label,
+    x: prev.x,
+    y: prev.y,
+    ...(prev.boundParam !== undefined ? { boundParam: prev.boundParam } : {}),
+    ...(prev.boundTechnologyCategory !== undefined
+      ? { boundTechnologyCategory: prev.boundTechnologyCategory }
+      : {}),
+    ...(prev.isDomainContainer !== undefined
+      ? { isDomainContainer: prev.isDomainContainer }
+      : {}),
+    ...(prev.domainTag !== undefined ? { domainTag: prev.domainTag } : {}),
+    ...(nextDescription !== undefined ? { description: nextDescription } : {}),
+    ...(nextOwner !== undefined ? { owner: nextOwner } : {}),
+    ...(nextStatus !== undefined ? { status: nextStatus } : {}),
+    ...(nextMaturity !== undefined ? { maturity: nextMaturity } : {}),
+    ...(nextPriority !== undefined ? { priority: nextPriority } : {}),
+  });
+  const nodes = ws.structureGraph.nodes.slice();
+  nodes[idx] = updated;
+  const next: AcwWorkspace = Object.freeze({
+    schemaVersion: ACW_SCHEMA_VERSION,
+    structureGraph: Object.freeze({
+      nodes: Object.freeze(nodes),
+      edges: ws.structureGraph.edges,
+    }),
+  });
+  writeToStorage(next);
+  cache = next;
+  notify();
+  return { ok: true };
+}
+
+// EAStudio Phase 2 — node label rename. Same isolation discipline
+// as `updateNodeProperties`: structural fields untouched, sealed
+// domain containers refused, full read-validation re-run via
+// `writeToStorage`. Empty labels are rejected because the v1 read
+// validator already requires `label` to be a string and the
+// Properties panel must not be able to silently make a card
+// captionless.
+export function renameNode(nodeId: string, label: string): StoreResult {
+  const ws = getWorkspace();
+  const idx = ws.structureGraph.nodes.findIndex((n) => n.id === nodeId);
+  if (idx === -1) {
+    return { ok: false, reason: "The node referenced does not exist." };
+  }
+  const prev = ws.structureGraph.nodes[idx];
+  if (prev.isDomainContainer === true) {
+    return {
+      ok: false,
+      reason: "The four sealed domain containers cannot be renamed.",
+    };
+  }
+  if (typeof label !== "string" || label.length === 0) {
+    return {
+      ok: false,
+      reason: "Label must be a non-empty string.",
+    };
+  }
+  if (prev.label === label) return { ok: true };
+  const updated: AcwNode = Object.freeze({ ...prev, label });
+  const nodes = ws.structureGraph.nodes.slice();
+  nodes[idx] = updated;
+  const next: AcwWorkspace = Object.freeze({
+    schemaVersion: ACW_SCHEMA_VERSION,
+    structureGraph: Object.freeze({
+      nodes: Object.freeze(nodes),
+      edges: ws.structureGraph.edges,
+    }),
+  });
+  writeToStorage(next);
+  cache = next;
+  notify();
+  return { ok: true };
+}
+
+// EAStudio Phase 2 — edge deletion.
+//
+// Removes a single edge by id. Edges in the v1 grammar carry no
+// dependent state (no edge-anchored UI selection persists in the
+// view-state), so removal is a pure list-filter. The full
+// read-validator still runs on the resulting workspace via
+// `writeToStorage` so a corruption regression in the filter path
+// would be refused at the storage boundary.
+export function deleteEdge(edgeId: string): StoreResult {
+  const ws = getWorkspace();
+  const idx = ws.structureGraph.edges.findIndex((e) => e.id === edgeId);
+  if (idx === -1) {
+    return { ok: false, reason: "The connection referenced does not exist." };
+  }
+  const edges = ws.structureGraph.edges.filter((e) => e.id !== edgeId);
+  const next: AcwWorkspace = Object.freeze({
+    schemaVersion: ACW_SCHEMA_VERSION,
+    structureGraph: Object.freeze({
+      nodes: ws.structureGraph.nodes,
+      edges: Object.freeze(edges),
     }),
   });
   writeToStorage(next);

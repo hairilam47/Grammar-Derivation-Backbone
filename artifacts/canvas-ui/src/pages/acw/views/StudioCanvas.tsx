@@ -36,6 +36,9 @@ import { WorkspaceShell } from "@/pages/acw/WorkspaceShell";
 import { DomainTabBar } from "@/components/acw/palette/DomainTabBar";
 import { PalettePanel } from "@/components/acw/palette/PalettePanel";
 import { DomainGrid } from "@/components/acw/palette/DomainGrid";
+import { ConnectToggle } from "@/components/acw/studio/ConnectToggle";
+import { NodePropertiesPanel } from "@/components/acw/studio/NodePropertiesPanel";
+import { StatusBar } from "@/components/acw/studio/StatusBar";
 import { ensureDomainContainers } from "@/acw/palette/domainContainerSeed";
 import {
   getCurrentDomain,
@@ -94,11 +97,14 @@ export default function StudioCanvas() {
         data-lens-id={lensId}
         className="flex flex-col border border-border/40 rounded bg-card/30"
       >
-        <header className="px-3 py-2 border-b border-border/30">
-          <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">
-            {PAGE_TITLE}
-          </h2>
-          <p className="text-[10px] text-muted-foreground">{PAGE_HINT}</p>
+        <header className="flex items-start justify-between gap-3 px-3 py-2 border-b border-border/30">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">
+              {PAGE_TITLE}
+            </h2>
+            <p className="text-[10px] text-muted-foreground">{PAGE_HINT}</p>
+          </div>
+          <ConnectToggle lensId={lensId} />
         </header>
 
         <DomainTabBar lensId={lensId} />
@@ -128,7 +134,10 @@ export default function StudioCanvas() {
         <div className="flex flex-1 min-h-[480px]">
           <PalettePanel activeDomain={activeDomain} />
           <DomainGrid lensId={lensId} />
+          <NodePropertiesPanel lensId={lensId} />
         </div>
+
+        <StatusBar lensId={lensId} />
       </div>
     </WorkspaceShell>
   );

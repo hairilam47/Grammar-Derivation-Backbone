@@ -38,8 +38,13 @@ import {
   __acwStoreInternals,
   ACW_SCHEMA_VERSION,
   createNode,
+  createEdge,
+  deleteEdge,
+  renameNode,
+  updateNodeBinding,
   updateNodeParent,
   updateNodePosition,
+  updateNodeProperties,
 } from "./acwStore";
 
 const STORE_KEY = "acw.workspace.v1";
@@ -442,6 +447,507 @@ if (ACW_SCHEMA_VERSION !== "acw-1.0") {
       `${PREFIX}: view-state read-validator accepted an unknown currentDomainByLens value.`,
     );
   }
+}
+
+// (10) EAStudio Phase 2 — read-validator accepts the optional
+// descriptive properties (description, owner, status, maturity,
+// priority) on a node, and rejects malformed shapes for each.
+// Pre-Phase-2 documents (without any of these fields) remain
+// valid; absence is exercised by every prior probe.
+{
+  const baseGood = (extra: Record<string, unknown>) => ({
+    schemaVersion: ACW_SCHEMA_VERSION,
+    structureGraph: {
+      nodes: [
+        { id: "p1", type: "Zone", parentId: null, label: "z", x: 0, y: 0, ...extra },
+      ],
+      edges: [],
+    },
+  });
+  // Well-formed: ACCEPT.
+  const ok1 = baseGood({
+    description: "Authoritative system of record",
+    owner: "Platform team",
+    status: "active",
+    maturity: "managed",
+    priority: "high",
+  });
+  if (!__acwStoreInternals.isValidWorkspace(ok1)) {
+    throw new Error(
+      `${PREFIX}: read-validator refused a well-formed Phase 2 node carrying description / owner / status / maturity / priority.`,
+    );
+  }
+  // Each enum at every legal value: ACCEPT.
+  for (const status of ["planned", "active", "deprecated"] as const) {
+    if (!__acwStoreInternals.isValidWorkspace(baseGood({ status }))) {
+      throw new Error(
+        `${PREFIX}: read-validator refused a well-formed status "${status}".`,
+      );
+    }
+  }
+  for (const maturity of [
+    "initial",
+    "managed",
+    "defined",
+    "quantitatively-managed",
+    "optimizing",
+  ] as const) {
+    if (!__acwStoreInternals.isValidWorkspace(baseGood({ maturity }))) {
+      throw new Error(
+        `${PREFIX}: read-validator refused a well-formed maturity "${maturity}".`,
+      );
+    }
+  }
+  for (const priority of ["low", "medium", "high", "critical"] as const) {
+    if (!__acwStoreInternals.isValidWorkspace(baseGood({ priority }))) {
+      throw new Error(
+        `${PREFIX}: read-validator refused a well-formed priority "${priority}".`,
+      );
+    }
+  }
+  // Unknown enum values: REJECT.
+  if (__acwStoreInternals.isValidWorkspace(baseGood({ status: "unknown" }))) {
+    throw new Error(`${PREFIX}: read-validator accepted an unknown status value.`);
+  }
+  if (__acwStoreInternals.isValidWorkspace(baseGood({ maturity: "expert" }))) {
+    throw new Error(`${PREFIX}: read-validator accepted an unknown maturity value.`);
+  }
+  if (__acwStoreInternals.isValidWorkspace(baseGood({ priority: "urgent" }))) {
+    throw new Error(`${PREFIX}: read-validator accepted an unknown priority value.`);
+  }
+  // Empty-string text fields: REJECT.
+  if (__acwStoreInternals.isValidWorkspace(baseGood({ owner: "" }))) {
+    throw new Error(`${PREFIX}: read-validator accepted an empty-string owner.`);
+  }
+  if (__acwStoreInternals.isValidWorkspace(baseGood({ description: "" }))) {
+    throw new Error(
+      `${PREFIX}: read-validator accepted an empty-string description.`,
+    );
+  }
+  // Wrong types: REJECT.
+  if (__acwStoreInternals.isValidWorkspace(baseGood({ status: 1 }))) {
+    throw new Error(`${PREFIX}: read-validator accepted a non-string status.`);
+  }
+  if (__acwStoreInternals.isValidWorkspace(baseGood({ owner: 42 }))) {
+    throw new Error(`${PREFIX}: read-validator accepted a non-string owner.`);
+  }
+}
+
+// (11) EAStudio Phase 2 — view-state read-validator accepts the
+// new connectModeByLens / connectPendingSourceByLens /
+// selectedNodeIdByLens fields and rejects malformed values.
+{
+  const ok = {
+    schemaVersion: ACW_VIEW_SCHEMA_VERSION,
+    collapseByLens: {},
+    viewModeByLens: {},
+    currentDomainByLens: {},
+    connectModeByLens: { "/workspace/studio": true },
+    connectPendingSourceByLens: { "/workspace/studio": "node-1" },
+    selectedNodeIdByLens: { "/workspace/studio": "node-2" },
+  };
+  if (!__acwViewStateInternals.isValid(ok)) {
+    throw new Error(
+      `${PREFIX}: view-state read-validator refused well-formed Phase 2 slices.`,
+    );
+  }
+  const badMode = {
+    schemaVersion: ACW_VIEW_SCHEMA_VERSION,
+    collapseByLens: {},
+    connectModeByLens: { "/workspace/studio": "yes" },
+  };
+  if (__acwViewStateInternals.isValid(badMode)) {
+    throw new Error(
+      `${PREFIX}: view-state read-validator accepted a non-boolean connectModeByLens value.`,
+    );
+  }
+  const badPending = {
+    schemaVersion: ACW_VIEW_SCHEMA_VERSION,
+    collapseByLens: {},
+    connectPendingSourceByLens: { "/workspace/studio": "" },
+  };
+  if (__acwViewStateInternals.isValid(badPending)) {
+    throw new Error(
+      `${PREFIX}: view-state read-validator accepted an empty connectPendingSourceByLens value.`,
+    );
+  }
+  const badSel = {
+    schemaVersion: ACW_VIEW_SCHEMA_VERSION,
+    collapseByLens: {},
+    selectedNodeIdByLens: { "/workspace/studio": 7 },
+  };
+  if (__acwViewStateInternals.isValid(badSel)) {
+    throw new Error(
+      `${PREFIX}: view-state read-validator accepted a non-string selectedNodeIdByLens value.`,
+    );
+  }
+}
+
+// (12) EAStudio Phase 2 — live-store probes for updateNodeProperties,
+// renameNode, and deleteEdge. Same snapshot-and-restore discipline
+// as the (3..6) probes; we mutate the live singleton briefly under
+// a clean fixture and restore the user's bytes in finally.
+const phase2Snapshot = snapshotLocalStorage();
+try {
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(STORE_KEY);
+    __acwStoreInternals.reloadFromStorageForTest();
+  }
+  // Fixture: Zone container A → System; sealed domain Zone D.
+  const a = createNode({ type: "Zone", parentId: null, label: "a" });
+  if (!a.ok) throw new Error(`${PREFIX}: phase 2 fixture refused: ${a.reason}`);
+  const aId = a.id;
+  const sys = createNode({ type: "System", parentId: aId, label: "s" });
+  if (!sys.ok)
+    throw new Error(`${PREFIX}: phase 2 fixture refused: ${sys.reason}`);
+  const sysId = sys.id;
+  const sys2 = createNode({ type: "System", parentId: aId, label: "s2" });
+  if (!sys2.ok)
+    throw new Error(`${PREFIX}: phase 2 fixture refused: ${sys2.reason}`);
+  const sys2Id = sys2.id;
+  const sealed = createNode({
+    type: "Zone",
+    parentId: null,
+    label: "sealed",
+    isDomainContainer: true,
+    domainTag: "data",
+    id: "domain-data",
+  });
+  if (!sealed.ok)
+    throw new Error(`${PREFIX}: phase 2 fixture refused: ${sealed.reason}`);
+  const sealedId = sealed.id;
+
+  // (12a) updateNodeProperties accepts a well-formed call.
+  {
+    const r = updateNodeProperties(sysId, {
+      description: "Edge ingress",
+      owner: "Platform",
+      status: "active",
+      maturity: "defined",
+      priority: "high",
+    });
+    if (r.ok !== true) {
+      throw new Error(
+        `${PREFIX}: updateNodeProperties refused a well-formed call: ${r.reason}`,
+      );
+    }
+  }
+  // (12b) updateNodeProperties refuses an unknown enum and leaves
+  // the workspace unchanged.
+  {
+    const before = __acwStoreInternals.serializeForTest();
+    const r = updateNodeProperties(sysId, {
+      status: "shipping" as never,
+    });
+    if (r.ok !== false) {
+      throw new Error(
+        `${PREFIX}: updateNodeProperties accepted an unknown status enum.`,
+      );
+    }
+    const after = __acwStoreInternals.serializeForTest();
+    if (before !== after) {
+      throw new Error(
+        `${PREFIX}: refused updateNodeProperties mutated the persisted workspace.`,
+      );
+    }
+  }
+  // (12c) updateNodeProperties refuses an empty-string owner.
+  {
+    const before = __acwStoreInternals.serializeForTest();
+    const r = updateNodeProperties(sysId, { owner: "" });
+    if (r.ok !== false) {
+      throw new Error(
+        `${PREFIX}: updateNodeProperties accepted an empty-string owner.`,
+      );
+    }
+    const after = __acwStoreInternals.serializeForTest();
+    if (before !== after) {
+      throw new Error(
+        `${PREFIX}: refused empty-string owner mutated the persisted workspace.`,
+      );
+    }
+  }
+  // (12d) updateNodeProperties refuses sealed domain containers.
+  {
+    const before = __acwStoreInternals.serializeForTest();
+    const r = updateNodeProperties(sealedId, { description: "x" });
+    if (r.ok !== false) {
+      throw new Error(
+        `${PREFIX}: updateNodeProperties accepted an edit on a sealed domain container.`,
+      );
+    }
+    const after = __acwStoreInternals.serializeForTest();
+    if (before !== after) {
+      throw new Error(
+        `${PREFIX}: refused sealed-container edit mutated the persisted workspace.`,
+      );
+    }
+  }
+  // (12e) renameNode refuses sealed domain containers and empty
+  // strings; accepts a non-empty rename on a regular node.
+  {
+    const before = __acwStoreInternals.serializeForTest();
+    const r1 = renameNode(sealedId, "x");
+    if (r1.ok !== false) {
+      throw new Error(
+        `${PREFIX}: renameNode accepted a rename on a sealed domain container.`,
+      );
+    }
+    const r2 = renameNode(sysId, "");
+    if (r2.ok !== false) {
+      throw new Error(`${PREFIX}: renameNode accepted an empty label.`);
+    }
+    const afterRefused = __acwStoreInternals.serializeForTest();
+    if (before !== afterRefused) {
+      throw new Error(
+        `${PREFIX}: refused renameNode mutated the persisted workspace.`,
+      );
+    }
+    const r3 = renameNode(sysId, "renamed");
+    if (r3.ok !== true) {
+      throw new Error(
+        `${PREFIX}: renameNode refused a well-formed rename: ${r3.reason}`,
+      );
+    }
+  }
+  // (12f) deleteEdge removes the named edge byte-identically; the
+  // node set is unchanged.
+  {
+    const ce = createEdge({ kind: "CONNECTS", fromId: sysId, toId: sys2Id });
+    if (ce.ok !== true) {
+      throw new Error(
+        `${PREFIX}: phase 2 fixture refused createEdge: ${ce.reason}`,
+      );
+    }
+    const wsBefore = parseSnapshot(__acwStoreInternals.serializeForTest());
+    const targetEdge = wsBefore.edges.find(
+      (e) => e.fromId === sysId && e.toId === sys2Id,
+    );
+    if (targetEdge === undefined) {
+      throw new Error(`${PREFIX}: deleteEdge fixture missing target edge.`);
+    }
+    const r = deleteEdge(targetEdge.id);
+    if (r.ok !== true) {
+      throw new Error(`${PREFIX}: deleteEdge refused a real edge: ${r.reason}`);
+    }
+    const wsAfter = parseSnapshot(__acwStoreInternals.serializeForTest());
+    if (wsAfter.edges.length !== wsBefore.edges.length - 1) {
+      throw new Error(`${PREFIX}: deleteEdge changed edge count by an unexpected delta.`);
+    }
+    if (wsAfter.edges.some((e) => e.id === targetEdge.id)) {
+      throw new Error(`${PREFIX}: deleteEdge left the deleted edge in the graph.`);
+    }
+    if (wsAfter.nodes.length !== wsBefore.nodes.length) {
+      throw new Error(`${PREFIX}: deleteEdge changed the node count.`);
+    }
+  }
+  // (12g) deleteEdge on an unknown id refuses with a neutral
+  // reason and leaves the workspace unchanged.
+  {
+    const before = __acwStoreInternals.serializeForTest();
+    const r = deleteEdge("edge-does-not-exist");
+    if (r.ok !== false) {
+      throw new Error(`${PREFIX}: deleteEdge accepted an unknown id.`);
+    }
+    if (typeof r.reason !== "string" || r.reason.length === 0) {
+      throw new Error(`${PREFIX}: deleteEdge unknown-id refusal had no neutral reason.`);
+    }
+    const after = __acwStoreInternals.serializeForTest();
+    if (before !== after) {
+      throw new Error(`${PREFIX}: refused deleteEdge mutated the persisted workspace.`);
+    }
+  }
+  // (12h) EAStudio Phase 2 CONNECTS widening: peer connectivity is
+  // permitted between two Zone nodes (so the Business / Technology
+  // domains, which use Zone-typed sub-containers, can author peer
+  // edges) and between two Component nodes (peers within a System).
+  // The legacy ComputeNode ↔ ComputeNode and System ↔ System pairs
+  // continue to work; sealed domain containers and BusinessEntity
+  // nodes are still refused as endpoints.
+  {
+    const za = createNode({ type: "Zone", parentId: aId, label: "za" });
+    if (!za.ok) {
+      throw new Error(`${PREFIX}: phase 2 CONNECTS fixture refused createNode (Zone): ${za.reason}`);
+    }
+    const zb = createNode({ type: "Zone", parentId: aId, label: "zb" });
+    if (!zb.ok) {
+      throw new Error(`${PREFIX}: phase 2 CONNECTS fixture refused createNode (Zone): ${zb.reason}`);
+    }
+    const ezz = createEdge({ kind: "CONNECTS", fromId: za.id, toId: zb.id });
+    if (ezz.ok !== true) {
+      throw new Error(
+        `${PREFIX}: createEdge refused a Zone↔Zone CONNECTS pair after Phase 2 widening: ${ezz.reason}`,
+      );
+    }
+    const ca = createNode({ type: "Component", parentId: sysId, label: "ca" });
+    if (!ca.ok) {
+      throw new Error(`${PREFIX}: phase 2 CONNECTS fixture refused createNode (Component): ${ca.reason}`);
+    }
+    const cb = createNode({ type: "Component", parentId: sysId, label: "cb" });
+    if (!cb.ok) {
+      throw new Error(`${PREFIX}: phase 2 CONNECTS fixture refused createNode (Component): ${cb.reason}`);
+    }
+    const ecc = createEdge({ kind: "CONNECTS", fromId: ca.id, toId: cb.id });
+    if (ecc.ok !== true) {
+      throw new Error(
+        `${PREFIX}: createEdge refused a Component↔Component CONNECTS pair after Phase 2 widening: ${ecc.reason}`,
+      );
+    }
+    // Negative: sealed domain containers must still be refused as
+    // CONNECTS endpoints — exhaustively in BOTH the source and
+    // destination roles. The DomainGrid host's connect-target
+    // overlay is gated only on `!isDomainContainer` at the UI
+    // level, so the store-side guard is the load-bearing safety
+    // net for sealed-endpoint CONNECTS attempts that arrive via
+    // any other path (programmatic dispatch, future surfaces,
+    // etc.). Both directions must refuse and leave the workspace
+    // bytes unchanged.
+    const beforeSealed = __acwStoreInternals.serializeForTest();
+    const ezSealedFrom = createEdge({
+      kind: "CONNECTS",
+      fromId: sealedId,
+      toId: za.id,
+    });
+    if (ezSealedFrom.ok !== false) {
+      throw new Error(
+        `${PREFIX}: createEdge accepted a sealed domain container as a CONNECTS source.`,
+      );
+    }
+    const ezSealedTo = createEdge({
+      kind: "CONNECTS",
+      fromId: za.id,
+      toId: sealedId,
+    });
+    if (ezSealedTo.ok !== false) {
+      throw new Error(
+        `${PREFIX}: createEdge accepted a sealed domain container as a CONNECTS destination.`,
+      );
+    }
+    const ezSealedBoth = createEdge({
+      kind: "CONNECTS",
+      fromId: sealedId,
+      toId: sealedId,
+    });
+    if (ezSealedBoth.ok !== false) {
+      throw new Error(
+        `${PREFIX}: createEdge accepted a sealed-to-sealed CONNECTS pair.`,
+      );
+    }
+    const afterSealed = __acwStoreInternals.serializeForTest();
+    if (beforeSealed !== afterSealed) {
+      throw new Error(
+        `${PREFIX}: refused sealed-CONNECTS mutated the persisted workspace.`,
+      );
+    }
+  }
+  // (12i) EAStudio Phase 2 — `updateNodeBinding` must preserve every
+  // additive optional field on the target node. An earlier
+  // implementation rebuilt the node from a hard-coded subset
+  // (`id/type/parentId/label/x/y` + binding fields), silently
+  // dropping `domainTag`, `description`, `owner`, `status`,
+  // `maturity`, `priority`, and — most dangerously — the
+  // `isDomainContainer` seal flag. This probe writes the full set
+  // of additive fields, then runs a binding update, then asserts
+  // that every additive field round-tripped intact.
+  {
+    const propPrep = updateNodeProperties(sys2Id, {
+      description: "preserved-desc",
+      owner: "preserved-owner",
+      status: "active",
+      maturity: "managed",
+      priority: "high",
+    });
+    if (propPrep.ok !== true) {
+      throw new Error(
+        `${PREFIX}: phase 2 binding-preservation fixture failed at updateNodeProperties: ${propPrep.reason}`,
+      );
+    }
+    const before = parseSnapshot(__acwStoreInternals.serializeForTest());
+    const beforeNode = before.nodes.find((n) => n.id === sys2Id) as
+      | (Record<string, unknown> & { id: string })
+      | undefined;
+    if (beforeNode === undefined) {
+      throw new Error(`${PREFIX}: phase 2 binding-preservation fixture missing target node.`);
+    }
+    if (
+      beforeNode["description"] !== "preserved-desc" ||
+      beforeNode["owner"] !== "preserved-owner" ||
+      beforeNode["status"] !== "active" ||
+      beforeNode["maturity"] !== "managed" ||
+      beforeNode["priority"] !== "high"
+    ) {
+      throw new Error(
+        `${PREFIX}: phase 2 binding-preservation fixture: properties did not persist before binding update.`,
+      );
+    }
+    const r = updateNodeBinding(sys2Id, {
+      boundTechnologyCategory: "container-runtime",
+    });
+    if (r.ok !== true) {
+      throw new Error(
+        `${PREFIX}: updateNodeBinding refused a well-formed binding write: ${r.reason}`,
+      );
+    }
+    const after = parseSnapshot(__acwStoreInternals.serializeForTest());
+    const afterNode = after.nodes.find((n) => n.id === sys2Id) as
+      | (Record<string, unknown> & { id: string })
+      | undefined;
+    if (afterNode === undefined) {
+      throw new Error(`${PREFIX}: updateNodeBinding removed the target node.`);
+    }
+    if (afterNode["boundTechnologyCategory"] !== "container-runtime") {
+      throw new Error(`${PREFIX}: updateNodeBinding did not write the new binding.`);
+    }
+    for (const k of [
+      "description",
+      "owner",
+      "status",
+      "maturity",
+      "priority",
+    ] as const) {
+      if (afterNode[k] !== beforeNode[k]) {
+        throw new Error(
+          `${PREFIX}: updateNodeBinding dropped additive field "${k}" (had "${String(beforeNode[k])}", now "${String(afterNode[k])}").`,
+        );
+      }
+    }
+    // The `domainTag` additive field must also round-trip. We use
+    // a fresh node tagged into the application domain so this
+    // probe is independent of the rest of the fixture.
+    const tagged = createNode({
+      type: "Component",
+      parentId: sysId,
+      label: "tagged",
+      domainTag: "application",
+    });
+    if (!tagged.ok) {
+      throw new Error(
+        `${PREFIX}: phase 2 binding-preservation domainTag fixture refused: ${tagged.reason}`,
+      );
+    }
+    const rt = updateNodeBinding(tagged.id, {
+      boundTechnologyCategory: "library",
+    });
+    if (rt.ok !== true) {
+      throw new Error(
+        `${PREFIX}: updateNodeBinding refused a domainTag-bearing binding write: ${rt.reason}`,
+      );
+    }
+    const after2 = parseSnapshot(__acwStoreInternals.serializeForTest());
+    const taggedAfter = after2.nodes.find((n) => n.id === tagged.id) as
+      | (Record<string, unknown> & { id: string })
+      | undefined;
+    if (taggedAfter === undefined) {
+      throw new Error(`${PREFIX}: updateNodeBinding removed the domainTag-bearing node.`);
+    }
+    if (taggedAfter["domainTag"] !== "application") {
+      throw new Error(
+        `${PREFIX}: updateNodeBinding dropped the domainTag field (had "application", now "${String(taggedAfter["domainTag"])}").`,
+      );
+    }
+  }
+} finally {
+  restoreLocalStorage(phase2Snapshot);
 }
 
 function parseSnapshot(s: string): {

@@ -124,6 +124,32 @@ export interface InteractiveCanvas2DProps {
    * every grammar-permitted container is offered.
    */
   permitContainerType?: (type: AcwElementType) => boolean;
+  // -------------------- EAStudio Phase 2 (additive) --------------
+  /**
+   * When true, single-click on a leaf node fires
+   * `onNodeConnectClick` instead of starting a drag or replacing
+   * the marquee selection. The canvas itself stores no mutable
+   * connect state; the host page owns the source / pending lens
+   * slice and drives this prop.
+   */
+  connectMode?: boolean;
+  /** Pending source node id when the host is mid-Connect. The
+   *  canvas highlights this node with a distinct stroke. */
+  pendingSourceId?: string | null;
+  /** Currently externally-selected edge id; rendered with thicker
+   *  stroke so the host's properties / delete affordance has a
+   *  visible target. */
+  selectedEdgeId?: string | null;
+  /** Single-node selection callback (fires after a non-drag click).
+   *  The host should mirror this to its own lens-keyed slice so the
+   *  Properties panel can re-read it. */
+  onNodeSelect?: (nodeId: string) => void;
+  /** Connect-mode click callback. Fired in place of drag/select
+   *  whenever `connectMode === true`. */
+  onNodeConnectClick?: (nodeId: string) => void;
+  /** Edge click callback. The host decides what selection means;
+   *  the canvas just surfaces the user's intent. */
+  onEdgeClick?: (edgeId: string) => void;
 }
 
 interface DragState {
@@ -157,6 +183,12 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
     height = 460,
     testId = "acw-canvas-2d",
     permitContainerType,
+    connectMode = false,
+    pendingSourceId = null,
+    selectedEdgeId = null,
+    onNodeSelect,
+    onNodeConnectClick,
+    onEdgeClick,
   } = props;
 
   const [view, setView] = useState<ViewState>(INITIAL_VIEW);
@@ -379,6 +411,17 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
   // ---- Drag a node ----------------------------------------------
   function onNodeMouseDown(e: MouseEvent, node: AcwNode) {
     e.stopPropagation();
+    // EAStudio Phase 2 — Connect mode short-circuits drag and
+    // marquee selection so the click reads as "connect intent" only.
+    // Sealed domain containers are still skipped here; the host
+    // refuses sealed-container connect attempts at the validator
+    // level, but suppressing the click locally avoids a no-op
+    // refusal banner. Containers in general fall through to the
+    // standard drag path because Connect targets leaves only.
+    if (connectMode && !node.isDomainContainer) {
+      onNodeConnectClick?.(node.id);
+      return;
+    }
     const { x, y } = clientToCanvas(e.clientX, e.clientY);
     setDrag({
       nodeId: node.id,
@@ -393,6 +436,11 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
     });
     // Also select on mousedown (overwriting selection unless shift)
     setSelection(e.shiftKey ? Array.from(new Set([...selection, node.id])) : [node.id]);
+    // EAStudio Phase 2 — broadcast the single-node primary
+    // selection so the host's Properties panel can re-read.
+    // Domain containers are excluded because they are sealed and
+    // the panel refuses to display them.
+    if (!node.isDomainContainer) onNodeSelect?.(node.id);
   }
   function onWindowMouseMove(e: globalThis.MouseEvent) {
     if (!drag) return;
@@ -775,6 +823,32 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
                     {/* Collapse toggle: explicitly enabled for
                         pointer events so it wins against any
                         ancestor that turned them off. */}
+                    {/* EAStudio Phase 2 — Connect-mode click overlay
+                        over the container header strip. Only mounted
+                        while connectMode is armed AND the container
+                        is not a sealed domain root, so the affordance
+                        does not exist outside the connect flow and
+                        cannot be used to author an edge with a
+                        sealed endpoint. The overlay is transparent
+                        and sits above the decorative header rect
+                        (which has pointerEvents="none"); leaf
+                        children render on a higher z and remain
+                        clickable on top of it. */}
+                    {connectMode && d.node.isDomainContainer !== true && (
+                      <rect
+                        x={box.x}
+                        y={box.y}
+                        width={box.w - 64}
+                        height={18}
+                        fill="transparent"
+                        style={{ cursor: "pointer", pointerEvents: "all" }}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          onNodeConnectClick?.(d.node.id);
+                        }}
+                        data-testid={`${testId}-connect-target-${d.node.id}`}
+                      />
+                    )}
                     <g
                       style={{ cursor: "pointer", pointerEvents: "all" }}
                       onMouseDown={(e) => e.stopPropagation()}
@@ -809,8 +883,44 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
                 );
               })}
 
-            {/* Edges between visible siblings or visible children */}
-            {edges.map((e) => {
+            {/* Arrowhead marker — declared once per canvas. The
+                triangle is sized to the leaf-node footprint so it
+                reads at the same visual weight regardless of zoom. */}
+            <defs>
+              <marker
+                id={`${testId}-arrowhead`}
+                viewBox="0 0 10 10"
+                refX="9"
+                refY="5"
+                markerWidth="6"
+                markerHeight="6"
+                orient="auto-start-reverse"
+              >
+                <path
+                  d="M 0 0 L 10 5 L 0 10 z"
+                  fill="rgba(255,255,255,0.55)"
+                />
+              </marker>
+              <marker
+                id={`${testId}-arrowhead-selected`}
+                viewBox="0 0 10 10"
+                refX="9"
+                refY="5"
+                markerWidth="6"
+                markerHeight="6"
+                orient="auto-start-reverse"
+              >
+                <path
+                  d="M 0 0 L 10 5 L 0 10 z"
+                  fill="rgba(120,200,255,0.95)"
+                />
+              </marker>
+            </defs>
+            {/* Edges between visible siblings or visible children.
+                EAStudio Phase 2 — rendered as cubic Bezier curves
+                with an arrowhead at the destination. Click selects
+                the edge; the host owns the delete affordance. */}
+            {(() => {
               // Resolve endpoints by their visible position. An edge
               // is drawn iff both endpoints are currently visible
               // (direct sibling at the focus level or visible child
@@ -822,22 +932,64 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
                   visibleAt.set(c.id, { x: c.x, y: c.y });
                 }
               }
-              const a = visibleAt.get(e.fromId);
-              const b = visibleAt.get(e.toId);
-              if (!a || !b) return null;
-              return (
-                <line
-                  key={e.id}
-                  x1={a.x}
-                  y1={a.y}
-                  x2={b.x}
-                  y2={b.y}
-                  stroke="rgba(255,255,255,0.35)"
-                  strokeWidth={1}
-                  data-testid={`${testId}-edge-${e.id}`}
-                />
-              );
-            })}
+              return edges.map((e) => {
+                const a = visibleAt.get(e.fromId);
+                const b = visibleAt.get(e.toId);
+                if (!a || !b) return null;
+                // Cubic Bezier with horizontal-leaning control
+                // points. The handle distance scales with the
+                // straight-line gap so short edges stay tight and
+                // long edges arc gently.
+                const dx = b.x - a.x;
+                const dy = b.y - a.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const handle = Math.max(20, Math.min(120, dist * 0.4));
+                // Stop the curve at the edge of the destination
+                // rectangle so the arrowhead does not punch into
+                // the node card. We retract along the unit vector.
+                const len = Math.max(dist, 1);
+                const ux = dx / len;
+                const uy = dy / len;
+                const RETRACT = NODE_W / 2 + 2;
+                const ex = b.x - ux * RETRACT;
+                const ey = b.y - uy * RETRACT;
+                const sx = a.x + ux * (NODE_W / 2 + 2);
+                const sy = a.y + uy * (NODE_H / 2 + 2);
+                const path = `M ${sx} ${sy} C ${sx + handle} ${sy} ${ex - handle} ${ey} ${ex} ${ey}`;
+                const isSelected = selectedEdgeId === e.id;
+                return (
+                  <g
+                    key={e.id}
+                    data-testid={`${testId}-edge-${e.id}`}
+                    style={{ cursor: "pointer" }}
+                    onMouseDown={(ev) => ev.stopPropagation()}
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      onEdgeClick?.(e.id);
+                    }}
+                  >
+                    {/* Invisible fat hit-line for easier picking. */}
+                    <path
+                      d={path}
+                      stroke="rgba(0,0,0,0)"
+                      strokeWidth={10}
+                      fill="none"
+                    />
+                    <path
+                      d={path}
+                      stroke={
+                        isSelected
+                          ? "rgba(120,200,255,0.95)"
+                          : "rgba(255,255,255,0.55)"
+                      }
+                      strokeWidth={isSelected ? 1.6 : 1}
+                      fill="none"
+                      markerEnd={`url(#${testId}-arrowhead${isSelected ? "-selected" : ""})`}
+                    />
+                  </g>
+                );
+              });
+            })()}
 
             {/* Children inside non-collapsed containers, then leaf
                 siblings on top */}
@@ -916,6 +1068,9 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
     const y = overrideY ?? n.y;
     const isDragging = drag?.nodeId === n.id;
     const isSelected = selection.includes(n.id);
+    // EAStudio Phase 2 — pending Connect source gets a distinct
+    // accent so the user knows where the destination click lands.
+    const isPendingSource = pendingSourceId === n.id;
     // Phase 5 — bound-binding visuals. The icon (when the node has
     // a recognised `boundTechnologyCategory`) is rendered as a
     // nested <svg> in the top-left corner; the lower line of text
@@ -942,11 +1097,14 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
           rx={4}
           fill={isDragging ? "rgba(120,200,255,0.12)" : "rgba(255,255,255,0.06)"}
           stroke={
-            isSelected || selected
-              ? "rgba(120,200,255,0.85)"
-              : "rgba(255,255,255,0.45)"
+            isPendingSource
+              ? "rgba(255,200,80,0.95)"
+              : isSelected || selected
+                ? "rgba(120,200,255,0.85)"
+                : "rgba(255,255,255,0.45)"
           }
-          strokeWidth={isSelected || selected ? 1.5 : 1}
+          strokeWidth={isPendingSource || isSelected || selected ? 1.5 : 1}
+          strokeDasharray={isPendingSource ? "3 2" : undefined}
         />
         {iconEntry ? (
           <g

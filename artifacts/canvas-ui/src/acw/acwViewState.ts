@@ -53,6 +53,29 @@ export interface AcwViewState {
   readonly collapseByLens: Readonly<Record<string, readonly string[]>>;
   readonly viewModeByLens: Readonly<Record<string, AcwLensViewMode>>;
   readonly currentDomainByLens: Readonly<Record<string, AcwDomainTag>>;
+  // EAStudio Phase 2 — visual-only interactive editing slices.
+  // Three additive optional fields, all keyed by lens id:
+  //   - connectModeByLens: which lenses currently have Connect-mode
+  //     toggled on. A lens not present in the map is in Design mode
+  //     (the default). Connect-mode is purely a UI affordance —
+  //     mutations still flow through `createEdge`, which the
+  //     validator gates.
+  //   - connectPendingSourceByLens: while the user is composing a
+  //     CONNECTS edge, the id of the source node they clicked
+  //     first. Cleared on completion or cancel. Storing this in
+  //     view-state lets the click-source / click-destination
+  //     interaction survive a re-render without losing the
+  //     in-flight pick.
+  //   - selectedNodeIdByLens: which node the Properties panel is
+  //     currently editing in this lens. Selection is per-lens so
+  //     two lenses can edit different nodes simultaneously without
+  //     clobbering each other.
+  // All three are absent on every pre-Phase-2 document; absence
+  // reads as the documented default (Design mode, no pending
+  // source, no selection).
+  readonly connectModeByLens?: Readonly<Record<string, boolean>>;
+  readonly connectPendingSourceByLens?: Readonly<Record<string, string>>;
+  readonly selectedNodeIdByLens?: Readonly<Record<string, string>>;
 }
 
 const ALLOWED_TOP = [
@@ -60,6 +83,9 @@ const ALLOWED_TOP = [
   "collapseByLens",
   "viewModeByLens",
   "currentDomainByLens",
+  "connectModeByLens",
+  "connectPendingSourceByLens",
+  "selectedNodeIdByLens",
 ] as const;
 
 function emptyView(): AcwViewState {
@@ -68,6 +94,9 @@ function emptyView(): AcwViewState {
     collapseByLens: Object.freeze({}),
     viewModeByLens: Object.freeze({}),
     currentDomainByLens: Object.freeze({}),
+    connectModeByLens: Object.freeze({}),
+    connectPendingSourceByLens: Object.freeze({}),
+    selectedNodeIdByLens: Object.freeze({}),
   });
 }
 
@@ -154,6 +183,68 @@ function assertValid(raw: unknown): asserts raw is AcwViewState {
       }
     }
   }
+  // EAStudio Phase 2 — connectModeByLens. Optional. When present
+  // each value must be a strict boolean.
+  if (r.connectModeByLens !== undefined) {
+    if (r.connectModeByLens === null || typeof r.connectModeByLens !== "object") {
+      throw new Error("ACW view-state connectModeByLens must be an object.");
+    }
+    const cm = r.connectModeByLens as Record<string, unknown>;
+    for (const [lensId, on] of Object.entries(cm)) {
+      if (typeof lensId !== "string" || lensId.length === 0) {
+        throw new Error("ACW view-state lens id must be a non-empty string.");
+      }
+      if (typeof on !== "boolean") {
+        throw new Error(
+          "ACW view-state connectModeByLens values must be booleans.",
+        );
+      }
+    }
+  }
+  // EAStudio Phase 2 — connectPendingSourceByLens. Optional. When
+  // present each value must be a non-empty string (a node id).
+  if (r.connectPendingSourceByLens !== undefined) {
+    if (
+      r.connectPendingSourceByLens === null ||
+      typeof r.connectPendingSourceByLens !== "object"
+    ) {
+      throw new Error(
+        "ACW view-state connectPendingSourceByLens must be an object.",
+      );
+    }
+    const ps = r.connectPendingSourceByLens as Record<string, unknown>;
+    for (const [lensId, sid] of Object.entries(ps)) {
+      if (typeof lensId !== "string" || lensId.length === 0) {
+        throw new Error("ACW view-state lens id must be a non-empty string.");
+      }
+      if (typeof sid !== "string" || sid.length === 0) {
+        throw new Error(
+          "ACW view-state connectPendingSourceByLens values must be non-empty strings.",
+        );
+      }
+    }
+  }
+  // EAStudio Phase 2 — selectedNodeIdByLens. Optional. When present
+  // each value must be a non-empty string (a node id).
+  if (r.selectedNodeIdByLens !== undefined) {
+    if (
+      r.selectedNodeIdByLens === null ||
+      typeof r.selectedNodeIdByLens !== "object"
+    ) {
+      throw new Error("ACW view-state selectedNodeIdByLens must be an object.");
+    }
+    const sm = r.selectedNodeIdByLens as Record<string, unknown>;
+    for (const [lensId, nid] of Object.entries(sm)) {
+      if (typeof lensId !== "string" || lensId.length === 0) {
+        throw new Error("ACW view-state lens id must be a non-empty string.");
+      }
+      if (typeof nid !== "string" || nid.length === 0) {
+        throw new Error(
+          "ACW view-state selectedNodeIdByLens values must be non-empty strings.",
+        );
+      }
+    }
+  }
 }
 
 function isValid(raw: unknown): raw is AcwViewState {
@@ -179,18 +270,17 @@ function notify(): void {
 }
 
 function normalize(raw: AcwViewState): AcwViewState {
-  // Backfill optional v3 / EAStudio Phase 1 fields for older
-  // persisted documents so callers never have to null-check.
-  const needsViewMode = raw.viewModeByLens === undefined;
-  const needsDomain = raw.currentDomainByLens === undefined;
-  if (!needsViewMode && !needsDomain) return raw;
+  // Backfill optional fields added by v3 / EAStudio Phase 1 / Phase 2
+  // for older persisted documents so callers never have to null-check.
   return Object.freeze({
     schemaVersion: raw.schemaVersion,
     collapseByLens: raw.collapseByLens,
-    viewModeByLens: needsViewMode ? Object.freeze({}) : raw.viewModeByLens,
-    currentDomainByLens: needsDomain
-      ? Object.freeze({})
-      : raw.currentDomainByLens,
+    viewModeByLens: raw.viewModeByLens ?? Object.freeze({}),
+    currentDomainByLens: raw.currentDomainByLens ?? Object.freeze({}),
+    connectModeByLens: raw.connectModeByLens ?? Object.freeze({}),
+    connectPendingSourceByLens:
+      raw.connectPendingSourceByLens ?? Object.freeze({}),
+    selectedNodeIdByLens: raw.selectedNodeIdByLens ?? Object.freeze({}),
   });
 }
 
@@ -241,13 +331,12 @@ export function toggleCollapsed(lensId: string, nodeId: string): void {
     : [...current, nodeId];
   const prev = getViewState();
   const next: AcwViewState = Object.freeze({
+    ...prev,
     schemaVersion: ACW_VIEW_SCHEMA_VERSION,
     collapseByLens: Object.freeze({
       ...prev.collapseByLens,
       [lensId]: Object.freeze(nextIds),
     }),
-    viewModeByLens: prev.viewModeByLens,
-    currentDomainByLens: prev.currentDomainByLens,
   });
   writeToStorage(next);
   cache = next;
@@ -268,13 +357,12 @@ export function setViewMode(lensId: string, mode: AcwLensViewMode): void {
   }
   const prev = getViewState();
   const next: AcwViewState = Object.freeze({
+    ...prev,
     schemaVersion: ACW_VIEW_SCHEMA_VERSION,
-    collapseByLens: prev.collapseByLens,
     viewModeByLens: Object.freeze({
       ...prev.viewModeByLens,
       [lensId]: mode,
     }),
-    currentDomainByLens: prev.currentDomainByLens,
   });
   writeToStorage(next);
   cache = next;
@@ -295,13 +383,105 @@ export function setCurrentDomain(lensId: string, tag: AcwDomainTag): void {
   }
   const prev = getViewState();
   const next: AcwViewState = Object.freeze({
+    ...prev,
     schemaVersion: ACW_VIEW_SCHEMA_VERSION,
-    collapseByLens: prev.collapseByLens,
-    viewModeByLens: prev.viewModeByLens,
     currentDomainByLens: Object.freeze({
       ...prev.currentDomainByLens,
       [lensId]: tag,
     }),
+  });
+  writeToStorage(next);
+  cache = next;
+  notify();
+}
+
+// EAStudio Phase 2 — Connect-mode toggle.
+//
+// Toggling Connect-mode off also clears any in-flight pending
+// source for the same lens, so the next Design-mode click cannot
+// accidentally complete a half-composed connection. The selection
+// slice is intentionally NOT touched here: a user can flip Connect
+// mode while still keeping the Properties panel pointed at the
+// node they were last editing.
+export function getConnectMode(lensId: string): boolean {
+  const map = getViewState().connectModeByLens ?? {};
+  return map[lensId] === true;
+}
+
+export function setConnectMode(lensId: string, on: boolean): void {
+  const prev = getViewState();
+  const prevMode = prev.connectModeByLens ?? {};
+  const prevPending = prev.connectPendingSourceByLens ?? {};
+  const nextMode: Record<string, boolean> = { ...prevMode };
+  if (on) nextMode[lensId] = true;
+  else delete nextMode[lensId];
+  const nextPending: Record<string, string> = { ...prevPending };
+  if (!on) delete nextPending[lensId];
+  const next: AcwViewState = Object.freeze({
+    ...prev,
+    schemaVersion: ACW_VIEW_SCHEMA_VERSION,
+    connectModeByLens: Object.freeze(nextMode),
+    connectPendingSourceByLens: Object.freeze(nextPending),
+  });
+  writeToStorage(next);
+  cache = next;
+  notify();
+}
+
+// EAStudio Phase 2 — pending-source for click-source-then-destination.
+export function getConnectPendingSource(lensId: string): string | null {
+  const map = getViewState().connectPendingSourceByLens ?? {};
+  return map[lensId] ?? null;
+}
+
+export function setConnectPendingSource(
+  lensId: string,
+  nodeId: string | null,
+): void {
+  if (nodeId !== null && (typeof nodeId !== "string" || nodeId.length === 0)) {
+    throw new Error(
+      "ACW view-state setConnectPendingSource rejected an empty node id.",
+    );
+  }
+  const prev = getViewState();
+  const prevPending = prev.connectPendingSourceByLens ?? {};
+  const nextPending: Record<string, string> = { ...prevPending };
+  if (nodeId === null) delete nextPending[lensId];
+  else nextPending[lensId] = nodeId;
+  const next: AcwViewState = Object.freeze({
+    ...prev,
+    schemaVersion: ACW_VIEW_SCHEMA_VERSION,
+    connectPendingSourceByLens: Object.freeze(nextPending),
+  });
+  writeToStorage(next);
+  cache = next;
+  notify();
+}
+
+// EAStudio Phase 2 — selected node for the Properties panel.
+export function getSelectedNodeId(lensId: string): string | null {
+  const map = getViewState().selectedNodeIdByLens ?? {};
+  return map[lensId] ?? null;
+}
+
+export function setSelectedNodeId(
+  lensId: string,
+  nodeId: string | null,
+): void {
+  if (nodeId !== null && (typeof nodeId !== "string" || nodeId.length === 0)) {
+    throw new Error(
+      "ACW view-state setSelectedNodeId rejected an empty node id.",
+    );
+  }
+  const prev = getViewState();
+  const prevSel = prev.selectedNodeIdByLens ?? {};
+  const nextSel: Record<string, string> = { ...prevSel };
+  if (nodeId === null) delete nextSel[lensId];
+  else nextSel[lensId] = nodeId;
+  const next: AcwViewState = Object.freeze({
+    ...prev,
+    schemaVersion: ACW_VIEW_SCHEMA_VERSION,
+    selectedNodeIdByLens: Object.freeze(nextSel),
   });
   writeToStorage(next);
   cache = next;

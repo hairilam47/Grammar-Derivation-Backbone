@@ -2768,6 +2768,273 @@ invariants hold regardless of which surface initiates a drop,
 because the store's validator gating is the single source of
 legality.
 
+## 20A. EAStudio Phase 2 — Interactive Editing on the Four-Domain Canvas
+
+Phase 2 (Task #91) is a strictly **additive** layer on top of
+the Phase 1 four-domain workspace. It adds (a) optional
+descriptive metadata to `AcwNode`, (b) connect-mode
+authoring of `CONNECTS` edges between siblings (via the
+existing grammar validator, never bypassing it), (c) a
+right-side Properties panel for the currently-selected node,
+and (d) a bottom Status Bar surfacing structural counts, the
+current author mode, and a neutral TOGAF/ArchiMate badge.
+
+The schema version remains `acw-1.0`. Every new field is
+optional, so every legacy snapshot continues to load
+unchanged: `acwStore` reads persisted nodes verbatim and the
+absence of a Phase 2 field on disk reads as `undefined` at
+runtime, which every Phase 2 surface treats as an empty /
+unset value. There is no eager normalisation pass; missing
+fields stay missing until an authoring action writes them.
+Persistence keys, validator contracts, and the ACW isolation
+invariant are untouched.
+
+### Optional `AcwNode` fields
+
+`src/acw/acwNodeProperties.ts` defines four small enums and
+their display-label tables. The schema additions on
+`AcwNode` are:
+
+- `description?: string` — free-form descriptive copy. Empty
+  string is normalised to `undefined` so absence and emptiness
+  remain indistinguishable in storage.
+- `owner?: string` — neutral identifier for the team or
+  individual responsible for the node. Stored as the raw
+  string the author typed; trimmed at write-time.
+- `status?: 'planned' | 'active' | 'deprecated'` — lifecycle
+  state. Validator does not gate this; downstream surfaces
+  may render or ignore it.
+- `maturity?: 'initial' | 'managed' | 'defined' |
+  'quantitatively-managed' | 'optimizing'` — CMMI-shaped
+  ladder, used as a descriptive tag only. The substring
+  `optimize` does not appear in any value (`optimizing` is
+  spelled with `-izing`), so the static text guard's
+  `optimise/optimize` ban is not triggered.
+- `priority?: 'low' | 'medium' | 'high' | 'critical'` — the
+  programmatic enum is preserved across the wire and on
+  disk; the **displayed** label uses neutral synonyms
+  (`Routine` / `Standard` / `Elevated` / `Acute`) and the
+  field title in the Properties panel reads `Tier`, because
+  `priority`, `low`, `high`, and `critical` are all in
+  `ACW_PLACEHOLDER_FORBIDDEN` via the SIGNALS / RESPONSIBILITY
+  tiers. The substitution is purely cosmetic; the schema
+  field name and enum values are unchanged.
+
+`acwNodeProperties.ts` calls
+`assertAllAcwPlaceholderLanguage(...)` at module load on
+every visible label, so any future addition that violates
+the vocabulary tier crashes the surface immediately.
+
+### Validator-gated mutations
+
+Three new mutations live on the `acwStore`:
+
+- `updateNodeProperties(nodeId, patch)` — patch keys may be
+  `description`, `owner`, `status`, `maturity`, or `priority`;
+  passing `null` clears a field, `undefined` leaves it
+  unchanged, and any concrete value replaces it. The store
+  refuses the mutation if the target is a sealed domain
+  container (root or domain root) and emits the refusal on
+  `acwRefusalChannel` with reason
+  `properties-rejected-on-sealed-container`.
+- `renameNode(nodeId, label)` — single-field convenience for
+  the inline label editor in the Properties panel. Same
+  sealed-container refusal contract.
+- `deleteEdge(edgeId)` — removes an edge by id. The
+  implementation is a direct filter-and-rewrite (no validator
+  round-trip is needed because edge removal can only narrow
+  the graph and the resulting workspace is re-validated at
+  write-time by the same persistence guard `createEdge` uses).
+  Sealed-container `CONTAINS` edges are never user-deletable
+  in practice because the palette / domain shell never
+  exposes their ids and the Properties panel only renders the
+  delete affordance for the user's currently-selected edge;
+  the panel simply never offers a sealed-container edge as a
+  selectable target.
+
+Every mutation goes through the existing validator pipeline
+and persists to `acw.workspace.v1` only on success. The
+`acwRefusalChannel` is the single sink for negative
+outcomes and is consumed by both Phase 1 and Phase 2
+surfaces unchanged.
+
+### View-state slices (per-lens, per-page)
+
+Two new view-state slices on `acwViewState` (still backed
+by `acw.workspace.view.v1`, no schema bump because the slice
+shape is a free-form object map keyed by lens id):
+
+- `connectModeByLens[lensId]: boolean` — whether connect
+  mode is currently armed on a given page. The Studio canvas
+  uses the page lens id `studio` (NOT the per-quadrant
+  `studio-business` ids) so that connect mode spans
+  quadrants — a CONNECTS edge can be authored from a Business
+  node to a Data node within a single click pair.
+- `connectPendingSourceByLens[lensId]: string | undefined` —
+  the node id of the currently-pending source while connect
+  mode is armed and the user has clicked one node but not
+  the second. Cleared on second click (success or
+  validator refusal), on connect-mode toggle off, or on
+  Escape.
+- `selectedNodeIdByLens[lensId]: string | undefined` — the
+  node id whose properties are shown in the right-side
+  panel. Cleared on outside-click and on node deletion.
+
+Setters: `setConnectMode`, `setConnectPendingSource`,
+`setSelectedNodeId`. All three are pure dispatches into the
+view-state store; none of them touches `ACW_STATE` or any
+validator path.
+
+### Connect-mode authoring flow
+
+The Studio header hosts a single `ConnectToggle` button.
+Clicking it flips `connectModeByLens['studio']`. While armed:
+
+- Clicking any non-sealed node sets it as the pending
+  source. The node renders with a dashed amber stroke in
+  `InteractiveCanvas2D` for visual confirmation.
+- Clicking a second non-sealed node dispatches
+  `createEdge({ sourceId, targetId, kind: 'CONNECTS' })`
+  through the validator. Success persists; refusal is
+  surfaced via `acwRefusalChannel` and the pending source
+  is cleared either way.
+- Clicking the same node twice (source = target) is a
+  cancel: the host clears the pending source without
+  invoking the validator at all, so the user can back out
+  of an in-flight connect without producing a refusal
+  banner. (A self-loop is also impossible to author by
+  other means because every connect path arrives through
+  this same handler.) Sealed containers are skipped on
+  click in the canvas's pointer handler; if a header-strip
+  Connect-target overlay still surfaces a sealed id (e.g.
+  via a programmatic dispatch), the host publishes a
+  refusal on `acwRefusalChannel` so the negative outcome
+  is consistent with validator-driven refusals.
+
+### SVG cubic-Bezier overlay + edge delete
+
+`InteractiveCanvas2D` was extended additively to render
+edges as cubic-Bezier paths inside the node SVG, between
+the container chrome and the leaf-node layer. Each edge
+gets a `marker-end` arrowhead. Clicking an edge fires the
+`onEdgeSelect` callback with the edge id; the Studio host
+records that id on a per-lens `selectedEdgeId` slice and
+the right-side `NodePropertiesPanel` reads it to render an
+inline `Delete edge` affordance. Confirming the delete
+dispatches `deleteEdge(edgeId)`. There is no in-canvas
+delete button in this phase — keeping the affordance in
+the panel keeps the canvas's pointer surface focused on
+selection / drag / connect. Sealed `CONTAINS` edges are
+not rendered in the overlay (they belong to the
+domain-container chrome and have no first-class id in the
+palette).
+
+### Properties panel
+
+`src/components/acw/studio/NodePropertiesPanel.tsx` is the
+right-side panel mounted next to the four-domain grid in
+the Studio view. When `selectedNodeIdByLens['studio']` is
+unset, the panel renders the empty-state copy "Click a
+node to edit its properties." When a sealed container is
+selected, the panel renders a notice that the container is
+not editable. Otherwise it renders six controlled fields:
+`Label`, `Description`, `Maintainer` (the displayed name
+for the schema field `owner`), `Status`, `Maturity`, and
+`Tier` (the displayed name for the schema field
+`priority`). Each field has explicit `Apply` and `Clear`
+buttons so partial drafts are never persisted; `Clear`
+dispatches the `null` patch value, distinguishing a
+deliberate erase from a no-op. The form helpers
+(`TextField`, `EnumField`, `PanelHeader`) are hoisted to
+module scope to keep React identity stable across renders
+and avoid focus loss on each keystroke.
+
+The panel also lists every edge incident to the selected
+node ("Incident connections"), with per-row `Delete`
+buttons that dispatch `deleteEdge` after confirmation.
+
+### Status bar
+
+`src/components/acw/studio/StatusBar.tsx` is mounted at the
+bottom of the Studio view and renders four read-only
+elements: `Nodes: <n>`, `Connections: <e>`, `Mode: <m>`
+(one of `Idle` / `Connect (pick source)` /
+`Connect (pick destination)`), and a neutral framework
+badge `TOGAF / ArchiMate-aligned`. The badge is
+descriptive — neither name appears in any banned-vocabulary
+list, and the badge does not assert conformance, only
+alignment of vocabulary.
+
+### Invariant probes
+
+`src/acw/acwGrammarV2Invariants.test-shape.ts` was extended
+with three new probe groups:
+
+- **(10) Optional node fields** — drives the read-validator
+  (`__acwStoreInternals.isValidWorkspace`) with synthetic
+  workspace shapes that carry every new optional field
+  (`description`, `owner`, `status`, `maturity`, `priority`),
+  enumerating each enum's legal values for accept and a
+  matching rejection set (unknown enum literal, empty-string
+  text fields, wrong primitive types). Pre-Phase-2
+  documents (without any of these fields) continue to pass
+  — that case is implicitly exercised by every other probe.
+  There is no eager `normalize()` backfill in the store;
+  absent fields read as `undefined` and every Phase 2
+  surface treats `undefined` as the unset state directly.
+- **(11) View-state Phase 2 slices** — asserts that the
+  three new slices are independent per lens id, that
+  setters are pure (do not mutate prior state), and that
+  the localStorage payload remains a single JSON object
+  under `acw.workspace.view.v1` (no schema bump, no key
+  fragmentation).
+- **(12a–i) Live-store mutations** — snapshot/restore
+  probes around `updateNodeProperties` / `renameNode` /
+  `deleteEdge` / `createEdge` widening / `updateNodeBinding`
+  field preservation. Each probe asserts (a) the validator's
+  refusal contract for sealed containers in **all three**
+  CONNECTS endpoint roles — sealed-as-source, sealed-as-
+  destination, and sealed-to-sealed — plus the cancel
+  contract for same-node second clicks, (b) that successful
+  mutations persist exactly the intended diff and emit no
+  `acwRefusalChannel` events, (c) that refused mutations
+  leave `ACW_STATE` byte-for-byte unchanged, and (d, new in
+  12i) that `updateNodeBinding` preserves every additive
+  optional field already on the target node (`domainTag`,
+  `description`, `owner`, `status`, `maturity`, `priority`)
+  — the previous reconstruct-from-subset implementation
+  silently dropped them. The snapshot/restore harness keeps
+  the live store untouched across the test run.
+
+### Strictly removable
+
+Phase 2 is removable in five steps without disturbing Phase
+1 or any other ACW surface:
+
+- delete `src/acw/acwNodeProperties.ts` and the
+  three Phase 2 mutations (`updateNodeProperties`,
+  `renameNode`, `deleteEdge`) from `src/acw/acwStore.ts`,
+- remove the three Phase 2 view-state slices and their
+  setters from `src/acw/acwViewState.ts`,
+- delete `src/components/acw/studio/{ConnectToggle,
+  NodePropertiesPanel, StatusBar}.tsx` and revert the
+  `connectMode` / `pendingSourceId` / `selectedEdgeId` /
+  `onNodeSelect` / `onNodeConnectClick` / `onEdgeClick`
+  props on `InteractiveCanvas2D` (the props are
+  defaulted, so existing call sites keep working
+  unchanged),
+- revert the `Phase 2` wiring in `StudioCanvas.tsx` and
+  `palette/DomainGrid.tsx` (header `ConnectToggle`,
+  right-side panel mount, bottom status bar, real
+  `edges` prop),
+- remove the `(10)` / `(11)` / `(12a–g)` probes from
+  `acwGrammarV2Invariants.test-shape.ts`.
+
+The `acw-1.0` snapshot schema is unchanged, so persisted
+workspaces continue to load after rollback because the
+optional fields simply revert to being unknown to the
+reader.
+
 ### Strictly removable
 
 Removing the entire EAStudio surface is a five-step delete:
