@@ -168,6 +168,17 @@ export function StudioTopBar({ lensId }: StudioTopBarProps) {
           <Zap className="w-3.5 h-3.5" />
           <span>{CONNECT_LABEL}</span>
         </button>
+        <button
+          type="button"
+          onClick={() => setViewTab(lensId, "export")}
+          data-testid="acw-studio-action-export"
+          aria-pressed={active === "export"}
+          data-active={active === "export" ? "true" : "false"}
+          className="es-btn"
+        >
+          <Download className="w-3.5 h-3.5" />
+          <span>{EXPORT_LABEL}</span>
+        </button>
       </div>
     </header>
   );

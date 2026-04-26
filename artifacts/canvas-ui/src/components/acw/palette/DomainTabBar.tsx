@@ -63,7 +63,12 @@ export function DomainTabBar({ lensId }: DomainTabBarProps) {
             aria-selected={isActive}
             className="es-dtab"
           >
-            <Icon className="w-3.5 h-3.5" />
+            {/* Prototype's `.dot` element — a 7×7 colour swatch
+                drawn in the domain's `--<domain>` token. CSS picks
+                the colour up via the `[data-domain]` attribute
+                cascade so the markup stays domain-agnostic. */}
+            <span className="es-dtab-dot" aria-hidden="true" />
+            <Icon className="w-3.5 h-3.5" aria-hidden="true" />
             <span>{ACW_DOMAIN_LABEL[tag]}</span>
           </button>
         );

@@ -84,6 +84,11 @@ export interface StudioEdgeOverlayProps {
    *  internally to those whose endpoints have rendered DOM. */
   readonly edges: readonly AcwEdge[];
   readonly selectedEdgeId: string | null;
+  /** When non-null, the user has armed a CONNECTS source. The
+   *  overlay tracks the pointer and renders a dashed temporary
+   *  line from that node's centre to the live cursor (Task #99
+   *  step 7). When `null`, no temp line is drawn. */
+  readonly pendingSourceId?: string | null;
   readonly onEdgeClick: (edgeId: string) => void;
   readonly onEdgeDelete: (edgeId: string) => void;
 }
@@ -93,12 +98,45 @@ export interface StudioEdgeOverlayProps {
 const RETRACT = 6;
 
 export function StudioEdgeOverlay(props: StudioEdgeOverlayProps) {
-  const { gridRef, edges, selectedEdgeId, onEdgeClick, onEdgeDelete } = props;
+  const {
+    gridRef,
+    edges,
+    selectedEdgeId,
+    pendingSourceId,
+    onEdgeClick,
+    onEdgeDelete,
+  } = props;
   const [positions, setPositions] = useState<ReadonlyMap<string, NodeRect>>(
     () => new Map(),
   );
   const [size, setSize] = useState<OverlaySize>({ w: 0, h: 0 });
+  const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const prevKeyRef = useRef<string>("");
+
+  // Track the pointer in grid-local coordinates while a CONNECTS
+  // source is armed so the temp line follows the cursor every
+  // frame (Task #99 step 7). When no source is armed we tear the
+  // listener down so the overlay does not pay for `pointermove`
+  // events outside connect mode.
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (grid === null) return;
+    if (pendingSourceId === null || pendingSourceId === undefined) {
+      setCursor(null);
+      return;
+    }
+    const onMove = (e: PointerEvent) => {
+      const r = grid.getBoundingClientRect();
+      setCursor({ x: e.clientX - r.left, y: e.clientY - r.top });
+    };
+    const onLeave = () => setCursor(null);
+    window.addEventListener("pointermove", onMove);
+    grid.addEventListener("pointerleave", onLeave);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      grid.removeEventListener("pointerleave", onLeave);
+    };
+  }, [gridRef, pendingSourceId]);
 
   useEffect(() => {
     let rafId = 0;
@@ -338,6 +376,37 @@ export function StudioEdgeOverlay(props: StudioEdgeOverlayProps) {
           </g>
         );
       })}
+      {(() => {
+        // Dashed temporary connect line. Anchored at the centre
+        // of the armed source node, follows the live cursor. Not
+        // an interactive element — `pointer-events: none` so it
+        // never blocks the click that completes the connect.
+        if (
+          pendingSourceId === null ||
+          pendingSourceId === undefined ||
+          cursor === null
+        ) {
+          return null;
+        }
+        const src = positions.get(pendingSourceId);
+        if (src === undefined) return null;
+        return (
+          <line
+            data-testid="acw-studio-edge-temp"
+            className="es-edge-temp"
+            x1={src.cx}
+            y1={src.cy}
+            x2={cursor.x}
+            y2={cursor.y}
+            stroke="var(--accent)"
+            strokeWidth={1.5}
+            strokeDasharray="6 4"
+            strokeLinecap="round"
+            pointerEvents="none"
+            opacity={0.85}
+          />
+        );
+      })()}
     </svg>
   );
 }

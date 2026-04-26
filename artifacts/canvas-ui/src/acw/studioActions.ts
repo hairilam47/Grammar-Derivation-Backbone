@@ -103,31 +103,20 @@ const SAMPLE_TILES: ReadonlyArray<{
 ] as const);
 
 // Cross-domain sample connections referenced by display label.
-// Echoes the spirit of the prototype's autoLayout
-// `connections.push(...)` block but restricted to grammar-permitted
-// CONNECTS pairs: the v1 grammar only permits like-typed peers
-// (Zone↔Zone, System↔System, Component↔Component, ComputeNode↔
-// ComputeNode), so cross-tier edges (e.g. Zone↔System) would be
-// refused by the validator and surface as a stack of refusal
-// banners on every Sample click. The four edges below were chosen
-// to (a) span every pair of domains the prototype originally
-// sampled and (b) stay strictly inside one element-type tier per
-// edge so the validator passes them through.
+// Verbatim mirror of the prototype's autoLayout
+// `connections.push(...)` block. Per Task #99 step 9, every
+// `createEdge` call routes through the existing validator; if any
+// refusal fires, the seed aborts and surfaces the verbatim reason
+// through the refusal channel. This keeps the grammar — not the
+// seed — as the single legality authority.
 const SAMPLE_EDGES: ReadonlyArray<{
   readonly fromLabel: string;
   readonly toLabel: string;
 }> = Object.freeze([
-  // Zone↔Zone, Business → Data: business strategy meets the data
-  // platform's organising container.
   { fromLabel: "Digital Strategy", toLabel: "Enterprise Data Lake" },
-  // System↔System, Data → Application: the ETL pipeline feeds the
-  // API gateway. Both tiles resolve to elementType=System.
-  { fromLabel: "Real-time ETL", toLabel: "API Gateway" },
-  // System↔System, intra-Application: two app systems peer.
-  { fromLabel: "API Gateway", toLabel: "Order Service" },
-  // System↔System, intra-Application: order service feeds the
-  // customer-facing portal.
-  { fromLabel: "Order Service", toLabel: "Customer Portal" },
+  { fromLabel: "Enterprise Data Lake", toLabel: "API Gateway" },
+  { fromLabel: "API Gateway", toLabel: "AWS us-east-1" },
+  { fromLabel: "Customer Journey", toLabel: "Order Service" },
 ] as const);
 
 const CONTAINER_BY_DOMAIN: Readonly<Record<AcwDomainTag, string>> =
@@ -150,10 +139,12 @@ export function seedStudioSample(): void {
   for (const t of SAMPLE_TILES) {
     const item = paletteItemByLabel(t.paletteLabel);
     if (item === undefined) {
+      // Palette mismatch is structural — abort so the seed never
+      // produces a partial workspace.
       publishRefusal(
         `The sample tile "${t.paletteLabel}" is not present in the palette.`,
       );
-      continue;
+      return;
     }
     const containerId = CONTAINER_BY_DOMAIN[t.domain];
     const r = createNode({
@@ -163,20 +154,32 @@ export function seedStudioSample(): void {
       domainTag: t.domain,
     });
     if (!r.ok) {
+      // Per Task #99 step 9: any validator refusal aborts the seed
+      // and surfaces the verbatim reason. The store's invariant
+      // chain has already rejected the offending mutation, so the
+      // workspace is left in whatever state preceded the bad call.
       publishRefusal(r.reason);
-      continue;
+      return;
     }
     idByLabel.set(t.displayLabel, r.id);
   }
   for (const edge of SAMPLE_EDGES) {
     const fromId = idByLabel.get(edge.fromLabel);
     const toId = idByLabel.get(edge.toLabel);
-    if (fromId === undefined || toId === undefined) continue;
+    if (fromId === undefined || toId === undefined) {
+      publishRefusal(
+        `The sample connection "${edge.fromLabel}" → "${edge.toLabel}" cannot be created because one of its endpoints did not seed.`,
+      );
+      return;
+    }
     const r = createEdge({
       kind: "CONNECTS",
       fromId,
       toId,
     });
-    if (!r.ok) publishRefusal(r.reason);
+    if (!r.ok) {
+      publishRefusal(r.reason);
+      return;
+    }
   }
 }

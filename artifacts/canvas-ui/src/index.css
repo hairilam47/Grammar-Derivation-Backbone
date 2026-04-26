@@ -890,3 +890,164 @@
 .eastudio-root .es-export-head p { margin: 0 0 12px; font-size: 11px; color: var(--text2); }
 .eastudio-root .es-export-block { background: var(--bg1); border: 1px solid var(--border2); border-radius: 6px; padding: 12px; font-family: 'DM Mono', ui-monospace, monospace; font-size: 11px; color: var(--text1); white-space: pre; overflow: auto; max-height: 60vh; }
 .eastudio-root .es-export-toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+
+/* Task #99 visual-alignment additions ---------------------------- */
+
+/* Domain tab dot — small coloured marker before the icon */
+.eastudio-root .es-dtab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  background: var(--text3);
+}
+.eastudio-root .es-dtab[data-domain="business"] .es-dtab-dot { background: var(--biz); }
+.eastudio-root .es-dtab[data-domain="data"] .es-dtab-dot { background: var(--data); }
+.eastudio-root .es-dtab[data-domain="application"] .es-dtab-dot { background: var(--app); }
+.eastudio-root .es-dtab[data-domain="technology"] .es-dtab-dot { background: var(--tech); }
+
+/* Zone count badge (replaces the previous "Sealed" meta) */
+.eastudio-root .es-zone-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--bg2);
+  color: var(--text2);
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--border2);
+}
+
+/* Palette collapse chevron — pinned in the title row */
+.eastudio-root .es-palette-collapse-btn {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--text2);
+  cursor: pointer;
+  padding: 2px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 3px;
+  transition: color 0.15s, background 0.15s;
+}
+.eastudio-root .es-palette-collapse-btn:hover {
+  color: var(--text0);
+  background: var(--bg2);
+}
+.eastudio-root .es-palette.es-palette-collapsed { padding-bottom: 14px; }
+
+/* Drag-ghost element appended to <body> while dragging a palette tile.
+   Lives outside `.eastudio-root` (because it's body-level), so the
+   class itself carries the look — we explicitly select via the
+   class without scoping. */
+.es-drag-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(20, 22, 28, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: #e6e6ea;
+  font-family: 'Syne', system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transform: rotate(-2deg) scale(0.96);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.es-drag-ghost-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: rgba(91, 141, 239, 0.18);
+  flex-shrink: 0;
+}
+.es-drag-ghost[data-domain="business"] .es-drag-ghost-icon { background: rgba(247, 147, 79, 0.22); }
+.es-drag-ghost[data-domain="data"] .es-drag-ghost-icon { background: rgba(79, 200, 247, 0.22); }
+.es-drag-ghost[data-domain="application"] .es-drag-ghost-icon { background: rgba(163, 79, 247, 0.22); }
+.es-drag-ghost[data-domain="technology"] .es-drag-ghost-icon { background: rgba(79, 247, 163, 0.22); }
+.es-drag-ghost-text {
+  display: inline-flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+.es-drag-ghost-label { color: #fff; }
+.es-drag-ghost-sub {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 400;
+  color: rgba(230, 230, 234, 0.6);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-top: 1px;
+}
+
+/* Dashed temp connect line during connect-mode arming */
+.eastudio-root .es-edge-temp {
+  pointer-events: none;
+}
+
+/* Export view — meta strip + Architecture Summary card */
+.eastudio-root .es-export-meta {
+  margin: 4px 0 12px 0;
+  font-size: 11px;
+  color: var(--text2);
+  letter-spacing: 0.04em;
+}
+.eastudio-root .es-export-summary {
+  list-style: none;
+  margin: 0;
+  padding: 12px;
+  background: var(--bg1);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.eastudio-root .es-export-summary-row {
+  display: grid;
+  grid-template-columns: 110px 40px 1fr;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 11px;
+}
+.eastudio-root .es-export-summary-label {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text2);
+  font-weight: 600;
+}
+.eastudio-root .es-export-summary-label[data-domain="business"] { color: var(--biz); }
+.eastudio-root .es-export-summary-label[data-domain="data"] { color: var(--data); }
+.eastudio-root .es-export-summary-label[data-domain="application"] { color: var(--app); }
+.eastudio-root .es-export-summary-label[data-domain="technology"] { color: var(--tech); }
+.eastudio-root .es-export-summary-count {
+  text-align: right;
+  color: var(--text0);
+  font-size: 11px;
+}
+.eastudio-root .es-export-summary-names {
+  color: var(--text1);
+  font-size: 11px;
+  word-break: break-word;
+}
+.eastudio-root .es-export-summary-conn {
+  border-top: 1px dashed var(--border2);
+  padding-top: 8px;
+  margin-top: 2px;
+}
+.eastudio-root .es-export-summary-conn .es-export-summary-label {
+  color: var(--accent);
+}

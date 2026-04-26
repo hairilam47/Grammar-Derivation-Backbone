@@ -179,9 +179,28 @@ export function DomainGrid({ lensId }: DomainGridProps) {
       >
         {ACW_DOMAIN_CONTAINERS.map((spec) => {
           const container = findDomainContainerById(spec.id);
-          const children = workspace.structureGraph.nodes.filter(
-            (n) => n.parentId === spec.id,
-          );
+          // Per Task #99 step 6: each zone renders every leaf
+          // descendant of its domain container as a flat list,
+          // matching the prototype. Walk the parent chain for
+          // every non-container node and include those whose
+          // ancestry hits this domain container. Sealed domain
+          // containers themselves are excluded.
+          const allNodes = workspace.structureGraph.nodes;
+          const nodeById = new Map(allNodes.map((n) => [n.id, n] as const));
+          const descendants = allNodes.filter((n) => {
+            if (n.id === spec.id) return false;
+            if (n.isDomainContainer === true) return false;
+            let cursor: string | null = n.parentId;
+            let guard = 0;
+            while (cursor !== null && guard < 1024) {
+              if (cursor === spec.id) return true;
+              const parent = nodeById.get(cursor);
+              if (parent === undefined) return false;
+              cursor = parent.parentId;
+              guard += 1;
+            }
+            return false;
+          });
           return (
             <Zone
               key={spec.id}
@@ -189,7 +208,7 @@ export function DomainGrid({ lensId }: DomainGridProps) {
               domain={spec.domain}
               containerId={spec.id}
               containerNode={container}
-              children={children}
+              children={descendants}
               onNodeClick={onNodeClick}
               onNodeDelete={onNodeDelete}
               selectedNodeId={selectedNodeId}
@@ -201,6 +220,7 @@ export function DomainGrid({ lensId }: DomainGridProps) {
           gridRef={gridRef}
           edges={workspace.structureGraph.edges}
           selectedEdgeId={selectedEdgeId}
+          pendingSourceId={pendingSource}
           onEdgeClick={onEdgeOverlayClick}
           onEdgeDelete={onEdgeOverlayDelete}
         />
@@ -298,9 +318,20 @@ function Zone(props: ZoneProps) {
           <Icon className="w-3.5 h-3.5" />
           <span>{ACW_DOMAIN_LABEL[domain]}</span>
         </div>
-        <span className="es-zone-meta" title={SEAL_LABEL}>
-          <Lock className="w-3 h-3" />
-          <span>{SEAL_LABEL}</span>
+        {/* Per Task #99 step 6, the zone header carries a live
+            descendant count badge (matching the prototype's
+            `.zone-badge` element). The container itself remains
+            sealed; the lock pictogram moves to a tooltip on the
+            badge so the constraint is still discoverable without
+            crowding the title row. */}
+        <span
+          className="es-zone-badge"
+          data-testid={`acw-studio-quadrant-badge-${domain}`}
+          data-count={children.length}
+          title={SEAL_LABEL}
+        >
+          <Lock className="w-3 h-3" aria-hidden="true" />
+          <span>{children.length}</span>
         </span>
       </header>
       <div

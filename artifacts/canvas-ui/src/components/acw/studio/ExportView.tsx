@@ -46,19 +46,52 @@ const PAGE_HINT =
   "Download the workspace document as JSON or the node list as CSV. Both files are generated in the browser and reflect the current workspace state.";
 const JSON_PANEL_TITLE = "Workspace JSON";
 const CSV_PANEL_TITLE = "Nodes CSV";
+const SUMMARY_PANEL_TITLE = "Architecture Summary";
+const SUMMARY_HINT =
+  "A per-domain rollup of every node currently on the canvas plus the count of CONNECTS relationships between them.";
 const DOWNLOAD_JSON_LABEL = "Download JSON";
 const DOWNLOAD_CSV_LABEL = "Download CSV";
+const META_PREFIX = "Architecture snapshot";
+const COMPONENTS_NOUN_SINGULAR = "component";
+const COMPONENTS_NOUN_PLURAL = "components";
+const CONNECTIONS_NOUN_SINGULAR = "connection";
+const CONNECTIONS_NOUN_PLURAL = "connections";
+const RELATIONSHIPS_NOUN_SINGULAR = "relationship";
+const RELATIONSHIPS_NOUN_PLURAL = "relationships";
+const CONNECTIONS_LINE_PREFIX = "CONNECTIONS";
 const JSON_FILENAME = "acw-workspace.json";
 const CSV_FILENAME = "acw-nodes.csv";
+
+const SUMMARY_DOMAIN_LABELS: Readonly<Record<string, string>> = Object.freeze({
+  business: "BUSINESS",
+  data: "DATA",
+  application: "APPLICATION",
+  technology: "TECHNOLOGY",
+});
 
 assertAllAcwPlaceholderLanguage([
   PAGE_TITLE,
   PAGE_HINT,
   JSON_PANEL_TITLE,
   CSV_PANEL_TITLE,
+  SUMMARY_PANEL_TITLE,
+  SUMMARY_HINT,
   DOWNLOAD_JSON_LABEL,
   DOWNLOAD_CSV_LABEL,
+  META_PREFIX,
+  COMPONENTS_NOUN_SINGULAR,
+  COMPONENTS_NOUN_PLURAL,
+  CONNECTIONS_NOUN_SINGULAR,
+  CONNECTIONS_NOUN_PLURAL,
+  RELATIONSHIPS_NOUN_SINGULAR,
+  RELATIONSHIPS_NOUN_PLURAL,
+  CONNECTIONS_LINE_PREFIX,
+  ...Object.values(SUMMARY_DOMAIN_LABELS),
 ]);
+
+function pluralise(count: number, singular: string, plural: string): string {
+  return count === 1 ? singular : plural;
+}
 
 // Column order is the order documented in the task brief. Keeping
 // it in a single tuple guarantees the header row, the body row
@@ -144,6 +177,45 @@ export function ExportView(_props: ExportViewProps) {
   const jsonText = useMemo(() => JSON.stringify(ws, null, 2), [ws]);
   const csvText = useMemo(() => buildNodesCsv(ws), [ws]);
 
+  // Per Task #99 step 12, the export view ends with a one-line meta
+  // strip (`Architecture snapshot · n components · n connections`)
+  // and an Architecture Summary card with a per-domain bullet list
+  // and a final connections-count line. The summary excludes the
+  // sealed domain containers — they are infrastructure, not user
+  // content — so the counts match the prototype.
+  const summary = useMemo(() => {
+    const allNodes = ws.structureGraph.nodes;
+    const userNodes = allNodes.filter((n) => n.isDomainContainer !== true);
+    const byDomain = new Map<string, AcwNode[]>();
+    for (const n of userNodes) {
+      const key = n.domainTag ?? "";
+      if (key === "") continue;
+      const list = byDomain.get(key) ?? [];
+      list.push(n);
+      byDomain.set(key, list);
+    }
+    const domainOrder = ["business", "data", "application", "technology"];
+    const lines = domainOrder
+      .filter((d) => (byDomain.get(d) ?? []).length > 0)
+      .map((d) => {
+        const list = byDomain.get(d) ?? [];
+        return {
+          domain: d,
+          label: SUMMARY_DOMAIN_LABELS[d] ?? d.toUpperCase(),
+          count: list.length,
+          names: list.map((n) => n.label).join(", "),
+        };
+      });
+    const connectionCount = ws.structureGraph.edges.filter(
+      (e) => e.kind === "CONNECTS",
+    ).length;
+    return {
+      componentCount: userNodes.length,
+      connectionCount,
+      lines,
+    };
+  }, [ws]);
+
   return (
     <section
       data-testid="acw-studio-export-view"
@@ -152,6 +224,23 @@ export function ExportView(_props: ExportViewProps) {
       <header className="es-export-head">
         <h3 data-testid="acw-studio-export-title">{PAGE_TITLE}</h3>
         <p data-testid="acw-studio-export-hint">{PAGE_HINT}</p>
+        <p
+          className="es-export-meta es-mono"
+          data-testid="acw-studio-export-meta"
+        >
+          {META_PREFIX} · {summary.componentCount}{" "}
+          {pluralise(
+            summary.componentCount,
+            COMPONENTS_NOUN_SINGULAR,
+            COMPONENTS_NOUN_PLURAL,
+          )}{" "}
+          · {summary.connectionCount}{" "}
+          {pluralise(
+            summary.connectionCount,
+            CONNECTIONS_NOUN_SINGULAR,
+            CONNECTIONS_NOUN_PLURAL,
+          )}
+        </p>
       </header>
 
       <div
@@ -233,6 +322,79 @@ export function ExportView(_props: ExportViewProps) {
           >
             {csvText}
           </pre>
+        </div>
+
+        <div data-testid="acw-studio-export-summary-panel">
+          <div className="es-export-toolbar">
+            <h4
+              style={{
+                margin: 0,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 11,
+                letterSpacing: "0.16em",
+                textTransform: "uppercase",
+                color: "var(--text2)",
+                marginRight: "auto",
+              }}
+            >
+              <FileJson className="w-3.5 h-3.5" />
+              <span>{SUMMARY_PANEL_TITLE}</span>
+            </h4>
+          </div>
+          <p
+            style={{
+              margin: "4px 0 8px 0",
+              fontSize: 11,
+              color: "var(--text2)",
+            }}
+            data-testid="acw-studio-export-summary-hint"
+          >
+            {SUMMARY_HINT}
+          </p>
+          <ul
+            className="es-export-summary"
+            data-testid="acw-studio-export-summary-list"
+          >
+            {summary.lines.map((line) => (
+              <li
+                key={line.domain}
+                data-testid={`acw-studio-export-summary-line-${line.domain}`}
+                data-domain={line.domain}
+                className="es-export-summary-row"
+              >
+                <span
+                  className="es-export-summary-label"
+                  data-domain={line.domain}
+                >
+                  {line.label}
+                </span>
+                <span className="es-export-summary-count es-mono">
+                  {line.count}
+                </span>
+                <span className="es-export-summary-names">{line.names}</span>
+              </li>
+            ))}
+            <li
+              className="es-export-summary-row es-export-summary-conn"
+              data-testid="acw-studio-export-summary-connections"
+            >
+              <span className="es-export-summary-label">
+                {CONNECTIONS_LINE_PREFIX}
+              </span>
+              <span className="es-export-summary-count es-mono">
+                {summary.connectionCount}
+              </span>
+              <span className="es-export-summary-names">
+                {pluralise(
+                  summary.connectionCount,
+                  RELATIONSHIPS_NOUN_SINGULAR,
+                  RELATIONSHIPS_NOUN_PLURAL,
+                )}
+              </span>
+            </li>
+          </ul>
         </div>
       </div>
     </section>
