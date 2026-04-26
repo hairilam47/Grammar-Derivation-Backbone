@@ -53,7 +53,14 @@ export function StatusBar({ lensId }: StatusBarProps) {
   useEffect(() => subscribeViewState(() => setTick((t) => t + 1)), []);
   void tick;
 
-  const nodeCount = ws.structureGraph.nodes.length;
+  // Per Task #99: the status-bar `n nodes` count reflects user-
+  // authored components only — the four sealed domain containers
+  // are infrastructure, not content, and counting them double-
+  // counts every drop the user makes (the prototype's own status
+  // strip excludes them for the same reason).
+  const nodeCount = ws.structureGraph.nodes.filter(
+    (n) => n.isDomainContainer !== true,
+  ).length;
   const connectsCount = ws.structureGraph.edges.filter(
     (e) => e.kind === "CONNECTS",
   ).length;

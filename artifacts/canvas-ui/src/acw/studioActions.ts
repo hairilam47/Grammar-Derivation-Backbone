@@ -24,6 +24,7 @@ import {
   getWorkspace,
 } from "./acwStore";
 import { publishRefusal } from "./acwRefusalChannel";
+import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 import {
   ACW_DOMAIN_CONTAINERS,
   ensureDomainContainers,
@@ -31,12 +32,35 @@ import {
 import { paletteItemByLabel } from "./palette/paletteRegistry";
 import type { AcwDomainTag } from "./acwGrammar";
 
+// Confirm-dialog copy. Surfaces the same intent the prototype's
+// `confirm("Clear all components?")` did but in workspace-neutral
+// language. Asserted at module load so it never drifts into a
+// forbidden ACW token.
+const CLEAR_CONFIRM =
+  "Clear every node and connection from the workspace?";
+
+assertAllAcwPlaceholderLanguage([CLEAR_CONFIRM]);
+
 // Wipe every user-authored card and connection from the workspace
 // while leaving the four sealed domain containers intact. Edges are
 // removed first so leaf-node deletion does not cascade through any
 // refusal that would leave the structureGraph holding dangling
 // endpoints.
-export function clearStudio(): void {
+//
+// Per Task #99 step 9 the call is gated behind a confirm dialog.
+// `confirmFn` is injectable so the unit tests can drive the path
+// deterministically without a real `window`. In production the
+// caller passes `window.confirm`; if no `window` is available
+// (SSR, tests with no jsdom override) the function falls through
+// without prompting — the seed path is the only consumer that
+// needs the dialog and it always runs in the browser.
+export function clearStudio(
+  confirmFn: ((message: string) => boolean) | null = null,
+): void {
+  const ask = confirmFn ?? (typeof window !== "undefined" ? window.confirm.bind(window) : null);
+  if (ask !== null) {
+    if (!ask(CLEAR_CONFIRM)) return;
+  }
   ensureDomainContainers();
   const before = getWorkspace();
   for (const e of [...before.structureGraph.edges]) {

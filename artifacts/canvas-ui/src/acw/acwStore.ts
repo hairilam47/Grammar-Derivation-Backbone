@@ -1021,10 +1021,21 @@ export function deleteEdge(edgeId: string): StoreResult {
 // EAStudio Phase 1–3 visual alignment (Task #99) — leaf-node
 // deletion. The Studio surface needs a way to remove a card the
 // user added by mistake; the prototype binds this to the small
-// `node-del` button on every card. Routing through the store keeps
-// the validator in the loop (sealed-container refusal still applies)
-// and lets every consumer subscribe via the workspace `notify`
-// channel instead of mutating the document directly.
+// `node-del` button on every card. The shape mirrors `deleteEdge`
+// above:
+//   - Local pre-checks emit deletion-specific refusal strings
+//     (id missing, sealed container, has children) — these are
+//     the structural guards that the grammar/validator does not
+//     model intrinsically because the v1 grammar describes
+//     *edge* legality only.
+//   - The full validator (`assertAllowedFields` /
+//     `isValidWorkspace`) still runs on the resulting workspace
+//     via `writeToStorage`, so a corruption regression in the
+//     filter path would be refused at the storage boundary.
+//   - The single write goes through the same `notify()` channel
+//     every other mutation uses; subscribers cannot tell a
+//     deleteNode apart from a deleteEdge. No view-state, no UI
+//     selection, and no document field is touched directly.
 //
 // Refusal rules:
 //   - The id must reference an existing node.

@@ -36,7 +36,7 @@
 //     styling — no traffic-light, no judgement, no animation.
 import type { DragEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Lock, X, Zap } from "lucide-react";
+import { ArrowLeftRight, Lock, X } from "lucide-react";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 import {
   ACW_DOMAIN_LABEL,
@@ -78,12 +78,16 @@ const SEAL_LABEL = "Sealed";
 const QUADRANT_HINT = "Drop a palette tile here.";
 const CONNECT_HINT = "Connect from this node";
 const DELETE_HINT = "Delete";
+const NODE_DELETE_CONFIRM = "Delete this node and any incident connections?";
+const EDGE_DELETE_CONFIRM = "Delete this connection?";
 
 assertAllAcwPlaceholderLanguage([
   SEAL_LABEL,
   QUADRANT_HINT,
   CONNECT_HINT,
   DELETE_HINT,
+  NODE_DELETE_CONFIRM,
+  EDGE_DELETE_CONFIRM,
 ]);
 
 export interface DomainGridProps {
@@ -109,19 +113,24 @@ export function DomainGrid({ lensId }: DomainGridProps) {
     return m;
   }, [workspace.structureGraph.nodes]);
 
-  // Edge selection / delete handlers, lifted to grid scope so the
-  // single overlay drives them uniformly. Toggle semantics: clicking
-  // the already-selected edge dismisses it; selecting an edge clears
-  // any standing node selection so only one of {node, edge} is
-  // selected at a time per page.
+  // Edge click handler — per Task #99 step 7 the prototype binds a
+  // click on an edge path to a confirm dialog that deletes the
+  // edge through the validator. We route the destructive call
+  // exclusively through the validator-gated `deleteEdge` store
+  // mutation; the dialog is the only confirm UX (no inline SVG
+  // pill).
   const onEdgeOverlayClick = (id: string) => {
-    if (selectedEdgeId === id) {
-      setSelectedEdgeId(lensId, null);
-    } else {
-      setSelectedEdgeId(lensId, id);
-      setSelectedNodeId(lensId, null);
+    if (typeof window !== "undefined") {
+      const ok = window.confirm(EDGE_DELETE_CONFIRM);
+      if (!ok) return;
     }
+    const r = deleteEdge(id);
+    setSelectedEdgeId(lensId, null);
+    if (!r.ok) publishRefusal(r.reason);
   };
+  // Retained for the overlay's existing `onEdgeDelete` API surface;
+  // the confirm dialog above is the canonical entry point now, so
+  // this just forwards through the validator.
   const onEdgeOverlayDelete = (id: string) => {
     const r = deleteEdge(id);
     setSelectedEdgeId(lensId, null);
@@ -163,6 +172,13 @@ export function DomainGrid({ lensId }: DomainGridProps) {
   };
 
   const onNodeDelete = (id: string) => {
+    // Per Task #99 step 6 / step 9: destructive operations are
+    // gated behind an explicit confirm dialog so a stray click on
+    // the small `node-del` button cannot silently drop a card.
+    if (typeof window !== "undefined") {
+      const ok = window.confirm(NODE_DELETE_CONFIRM);
+      if (!ok) return;
+    }
     if (selectedNodeId === id) setSelectedNodeId(lensId, null);
     if (pendingSource === id) setConnectPendingSource(lensId, null);
     const r = deleteNode(id);
@@ -430,7 +446,7 @@ function NodeCard(p: NodeCardProps) {
           title={CONNECT_HINT}
           data-testid={`acw-studio-node-${p.node.id}-connect`}
         >
-          <Zap className="w-3 h-3" />
+          <ArrowLeftRight className="w-3 h-3" />
         </button>
         <button
           type="button"

@@ -3168,3 +3168,94 @@ The `acw-1.0` snapshot schema and the `acw-view-1.0` view-state
 schema are unchanged. Persisted documents continue to load after
 rollback because the optional slice simply reverts to being
 unknown to the reader.
+
+
+## 20C. EAStudio Phase 1–3 — Visual Alignment to Prototype (Task #99)
+
+### Purpose
+
+Phase 20C is a **render-only** alignment pass: every Studio sub-
+surface (top bar, domain tabs, palette, drop zones, node cards,
+connection overlay, properties panel, status bar, matrix view,
+export view) is restyled to match `attached_assets/ea_studio_full
+_platform_*.html`. The store contract (`acw-1.0` schema, grammar
+constraints, validator-gated mutations, refusal channel) is
+unchanged. No new schema migrations were introduced.
+
+### Scope of changes
+
+- **Scoped CSS theme** lives under `.eastudio-root` in
+  `artifacts/canvas-ui/src/index.css`. All new selectors use the
+  `es-*` prefix and read prototype-derived CSS variables (`--bg`,
+  `--bg2`, `--border3`, `--accent`, `--biz`, `--data`, `--app`,
+  `--tech`, `--danger`). The rest of the canvas-ui Tailwind theme
+  is untouched.
+- **Iconography** is `lucide-react` only. `node-conn-btn` uses
+  `ArrowLeftRight`; node delete uses `X`; top-bar Connect uses
+  `Zap`; Sample uses `Sparkles`; Clear uses `X`; Export uses
+  `Download`.
+- **Drag ghost** is a body-level `<div class="es-drag-ghost">`
+  appended on `dragstart`, set as the platform drag image via
+  `setDragImage`, and disposed on `dragend` through a module-
+  scoped reference. The ghost is `pointer-events: none` so it
+  never intercepts a drop.
+- **Connect-mode temp line** is a dashed `<line class="es-edge-
+  temp">` rendered by `StudioEdgeOverlay` while a `pendingSource
+  Id` prop is non-null. The overlay listens to `pointermove` in
+  grid-local coordinates only while a source is armed; the
+  listener is torn down when the source clears.
+- **Edge deletion** is gated through a `window.confirm` dialog
+  invoked from `DomainGrid.onEdgeOverlayClick`; on accept it
+  routes to the existing validator-gated `deleteEdge` store
+  mutation. The earlier in-SVG confirm pill remains as a
+  fallback affordance behind the same approved store mutation.
+- **Per-card delete (`node-del`)** is gated through a
+  `window.confirm` and routes to the new `deleteNode` store
+  mutation. `deleteNode` is the only new store function in
+  Phase 20C; it follows the same shape as the existing
+  `deleteEdge`: refuse on missing id, refuse on a sealed
+  domain container, refuse if the node still has children, then
+  filter the node and its incident edges out of the workspace
+  and write through `writeToStorage`. `writeToStorage` runs the
+  full `assertAllowedFields` invariant chain on the resulting
+  workspace, so the validator is in the loop on every delete.
+- **Sample seed** in `acw/studioActions.ts` lays down the
+  prototype's twelve named cards and four named connections via
+  the existing `createNode` / `createEdge` validator-gated
+  mutations. If the validator refuses any single edge, the seed
+  aborts and surfaces the refusal verbatim through
+  `publishRefusal`.
+- **Clear** in `clearStudio()` is gated behind a
+  `window.confirm`; the confirm function is injectable so the
+  unit tests can drive the path deterministically without a
+  real `window`.
+- **Status-bar component count** excludes `isDomainContainer ===
+  true` so the count reflects user-authored cards only — the
+  four sealed domain containers are infrastructure and are not
+  counted as components.
+- **Export view** has three cards (JSON, CSV, Architecture
+  Summary) and a meta line `Architecture snapshot · n
+  components · n connections`. The summary excludes domain
+  containers and groups remaining nodes by `domainTag` in
+  BUSINESS / DATA / APPLICATION / TECHNOLOGY order, ending with
+  a `CONNECTIONS · n · relationships` row.
+
+### Invariants preserved
+
+- `acw-1.0` schema unchanged. No new fields on `AcwNode`,
+  `AcwEdge`, or `AcwWorkspace`.
+- Grammar (`acwGrammar.ts`) unchanged. The CONNECTS legality
+  table still permits like-typed pairs only.
+- Validator (`assertAllowedFields`, `isValidWorkspace`)
+  unchanged. Every mutation, including the new `deleteNode`,
+  routes through `writeToStorage` which runs the validator on
+  the resulting workspace.
+- Refusal channel (`publishRefusal`) unchanged. The Sample seed
+  surfaces refusals verbatim; the per-card and per-edge delete
+  paths surface the validator's refusal text as-is.
+- Phase 1–3 functionality (palette, four-zone canvas, properties
+  panel, matrix toggle, JSON/CSV download, view-tab persistence,
+  Connect-mode, debounced auto-commit, lens-keyed view state) is
+  preserved.
+- Build-time invariants pass. `assertAllAcwPlaceholderLanguage`
+  covers every new label including the confirm-dialog copy.
