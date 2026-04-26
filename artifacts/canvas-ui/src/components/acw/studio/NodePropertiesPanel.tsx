@@ -71,7 +71,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 const PANEL_TITLE = "Properties";
-const EMPTY_STATE = "Click a node to edit its properties.";
 const SEALED_NOTICE = "This is a sealed domain container and is not editable.";
 const FIELD_LABEL = "Label";
 const FIELD_DESCRIPTION = "Description";
@@ -97,7 +96,6 @@ const CLOSE_LABEL = "Close";
 
 assertAllAcwPlaceholderLanguage([
   PANEL_TITLE,
-  EMPTY_STATE,
   SEALED_NOTICE,
   FIELD_LABEL,
   FIELD_DESCRIPTION,
@@ -324,18 +322,13 @@ export function NodePropertiesPanel({ lensId }: NodePropertiesPanelProps) {
   }, [ownerDraft, node?.id, node?.owner]);
 
   if (selectedId === null || node === null) {
-    return (
-      <aside
-        data-testid="acw-studio-properties-panel"
-        data-state="empty"
-        className="w-[280px] border-l border-border/40 bg-card/30 flex flex-col"
-      >
-        <PanelHeader />
-        <p className="px-3 py-2 text-[11px] text-muted-foreground italic">
-          {EMPTY_STATE}
-        </p>
-      </aside>
-    );
+    // Conditional mount: when nothing is selected the panel is
+    // not rendered at all, so the four-domain grid uses the full
+    // width. Selecting a node remounts the panel in the editing
+    // (or sealed-notice) state below. This matches the Phase 2
+    // UX contract — "the panel opens on selection" — rather than
+    // standing as a persistent empty-state aside.
+    return null;
   }
 
   if (node.isDomainContainer === true) {

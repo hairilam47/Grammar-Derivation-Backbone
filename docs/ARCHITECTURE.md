@@ -2934,20 +2934,29 @@ palette).
 `src/components/acw/studio/NodePropertiesPanel.tsx` is the
 right-side panel mounted next to the four-domain grid in
 the Studio view. When `selectedNodeIdByLens['studio']` is
-unset, the panel renders the empty-state copy "Click a
-node to edit its properties." When a sealed container is
-selected, the panel renders a notice that the container is
-not editable. Otherwise it renders six controlled fields:
-`Label`, `Description`, `Maintainer` (the displayed name
-for the schema field `owner`), `Status`, `Maturity`, and
-`Tier` (the displayed name for the schema field
-`priority`). Each field has explicit `Apply` and `Clear`
-buttons so partial drafts are never persisted; `Clear`
-dispatches the `null` patch value, distinguishing a
-deliberate erase from a no-op. The form helpers
-(`TextField`, `EnumField`, `PanelHeader`) are hoisted to
-module scope to keep React identity stable across renders
-and avoid focus loss on each keystroke.
+unset, the panel does not mount at all; the four-domain
+grid uses the full width. When a sealed domain container
+is selected, the panel mounts in a "sealed" state that
+shows a notice that the container is not editable.
+Otherwise it mounts in an "editing" state with six
+controlled fields: `Label`, `Description`, `Maintainer`
+(the displayed name for the schema field `owner`),
+`Status`, `Maturity`, and `Tier` (the displayed name for
+the schema field `priority`). Every field is auto-
+committed via a per-field debounced effect (~350 ms) —
+there are no Apply or Clear buttons. An empty draft on a
+text field unsets the field by dispatching the `null`
+patch value, distinguishing a deliberate erase from a
+no-op. Per-field skip tokens (one per field, stamped with
+the freshly-selected node id) prevent a stale draft from
+the previously-selected node committing against the new
+one when the selection changes. The form helpers
+(`DebouncedTextField`, `EnumField`, `PanelHeader`) are
+hoisted to module scope to keep React identity stable
+across renders and avoid focus loss on each keystroke.
+All button / input / label primitives come from
+`@/components/ui` (shadcn). The native `<select>` is kept
+because the project's UI kit ships no Select primitive.
 
 The panel also lists every edge incident to the selected
 node ("Incident connections"), with per-row `Delete`
@@ -2958,8 +2967,7 @@ buttons that dispatch `deleteEdge` after confirmation.
 `src/components/acw/studio/StatusBar.tsx` is mounted at the
 bottom of the Studio view and renders four read-only
 elements: `Nodes: <n>`, `Connections: <e>`, `Mode: <m>`
-(one of `Idle` / `Connect (pick source)` /
-`Connect (pick destination)`), and a neutral framework
+(one of `Design` / `Connect` / `Connect (pending)`), and a neutral framework
 badge `TOGAF / ArchiMate-aligned`. The badge is
 descriptive — neither name appears in any banned-vocabulary
 list, and the badge does not assert conformance, only
