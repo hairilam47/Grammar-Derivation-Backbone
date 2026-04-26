@@ -1,0 +1,120 @@
+## Task: Align EAStudio Implementation Exaxtly to Provided HTML Prototype
+
+We have a fully functional EAStudio implementation (Phases 1‑3), but its visual appearance and some interactions **do not match** the design prototype in `ea_studio_full_platform.html`.  
+Your job is to update the existing code so that the **UI is identical** to the prototype in look and feel, while preserving the ACW store, validators, invariants, and all architectural rules.
+
+### Visual Alignment (Must Match Prototype Exactly)
+
+1. **Overall Theme**  
+   - Use the exact same CSS variables from the prototype: `--bg`, `--surface`, `--surface2`, `--surface3`, `--border`, `--text`, `--muted`, `--hint`, domain colours (`--biz`, `--data`, `--app`, `--tech`), and grid size.  
+   - Background must be `var(--bg)`, not a light theme.
+
+2. **Top Bar**  
+   - Identical to prototype: logo “EA**Studio**”, separator, view‑tabs (Design / Matrix / Export), Connect toggle button, “✦ Sample”, “✕ Clear”, “↓ Export” buttons.  
+   - Rounded buttons with subtle borders, exactly as styled in the HTML.
+
+3. **Domain Tabs**  
+   - Below the top bar, a row of four domain tabs (Business, Data, Application, Technology) with coloured dots and active‑state underline in the domain colour.  
+   - Active tab background uses the corresponding `--*-d` variable.
+
+4. **Left Palette**  
+   - Width 210 px, collapsible, with a `pal-sec-hdr` section header and draggable items.  
+   - Each palette item has the same layout as prototype: an icon container (rounded, coloured per domain), label, and sub‑text.  
+   - Dragged ghost must replicate the node style exactly (as in `pdStart`/ghost creation).  
+   - Use **lucide‑react icons** (not emoji). A mapping from prototype’s emoji icons to Lucide is required – see table below.  
+   - The palette’s contents must change with the active domain tab.
+
+5. **Canvas / Drop Zones**  
+   - The four domain zones must be displayed as a **2×2 CSS Grid** inside a full‑page container, with the same gap, dashed borders, coloured headers, and “Drop components here” hint.  
+   - Each zone must have a dashed border that changes colour and background on drag‑over exactly as in the prototype (`.zone.drag-over` styles).  
+   - Zone header must show the domain title and a pill badge with the node count for that domain.
+
+6. **Nodes (cnode)**  
+   - Nodes must be rendered **identically** to prototype `.cnode` styling: background `var(--surface)`, border colour per domain, rounded, with padding, gap, and hover elevation.  
+   - Inside each node: coloured icon square, label in bold, sub‑text in `DM Mono` font, delete button (✕) and connection button (↔) appearing on hover.  
+   - Selected node outline (2px solid var(--accent)), connect‑source outline, target‑hover outline must be exactly as prototype.  
+   - Node enter animation (`nodeIn`) should be used when a node is created.
+
+7. **Connections (SVG Overlay)**  
+   - Connections must be **cubic‑Bézier curves** with arrowheads (`marker-end`) drawn on an `<svg class="conn-svg">` overlay, exactly as the prototype.  
+   - The temporary dashed line (`conn-temp`) must appear when Connect mode is active and you move the mouse from the source node.  
+   - Hovering a connection path should change its stroke to `var(--accent)`.  
+   - Clicking a connection should allow deletion (confirm dialog).  
+   - The Connect mode toggle must be a button with class `btn connect-mode` that turns active/orange when on.
+
+8. **Properties Panel**  
+   - Must slide in from the right (width 230 px) with the same internal layout as the prototype:  
+     - Title “Properties”  
+     - Name, Description, Owner inputs (with pinput styling)  
+     - Status tags (Planned / Active / Deprecated) – clickable, active state styling  
+     - Maturity dropdown (Initial, Managed, Defined, Quantitatively Managed, Optimizing)  
+     - Priority dropdown (Low, Medium, High, Critical)  
+     - Connection list with small arrow and remove button  
+   - The panel opens only on node click; closes with “Close ✕” button or click outside.
+
+9. **Status Bar**  
+   - Bottom‑fixed bar with live counters: total components, total connections, current mode (Design / Connect), and the TOGAF/ArchiMate reference badge.  
+   - Use the prototype’s `.statusbar` and `.sitem` styling.
+
+10. **Matrix & Export Views**  
+    - Must follow the same structural styling as prototype, though the data source is the ACW store.  
+    - Matrix table columns/rows must be styled as in prototype (`.matrix-table`, domain‑colored headers, `.matrix-cell` with hover).  
+    - Export view format must match prototype: JSON preview area, CSV description, download buttons.
+
+### Interactive Behaviour (Must Match Prototype)
+
+- Drag‑and‑drop from palette to zones works exactly as prototype (with ghost, drag‑over highlighting, refusal via banner).  
+- Connect mode: clicking source node highlights it, mouse move draws temporary line, clicking target creates edge via store (validator‑gated).  
+- Property fields update node metadata through the store (already wired).  
+- The “✦ Sample” button populates the workspace with the same sample data as the prototype’s `autoLayout()` (same node labels, connections).  
+- “✕ Clear” clears everything (with confirm).  
+- “↓ Export” switches to Export view and generates the export.
+
+### Important Constraints
+
+- Do **not** break the ACW store, grammar, validator, invariants, or isolation boundaries.  
+- The **schema remains `acw‑1.0`** – all visual data (status, maturity, etc.) is stored in optional node fields you’ve already added.  
+- The visual changes are purely CSS + component rendering; do **not** introduce new emoji. All icons must be Lucide.
+
+### Icon Mapping (Partial – Extend as Needed)
+
+- 🎯 → `Target`
+- ♟ → `Workflow`
+- 🏛 → `Gavel`
+- 📋 → `Puzzle`
+- 🤝 → `ArrowRightLeft`
+- 👥 → `FolderKanban`
+- 📊 → `BarChart`
+- 🔒 → `ShieldAlert`
+- 🗄 → `Database`
+- 🔗 → `ArrowLeftRight`
+- 📐 → `Ruler`
+- 📦 → `Container`
+- 🔑 → `Key`
+- 🛡 → `Shield`
+- 🔄 → `GitBranch`
+- 💾 → `Database` (again)
+- 🖥 → `Monitor`
+- 🔌 → `Router`
+- 📡 → `Radio`
+- 🧩 → `Puzzle`
+- 📲 → `Smartphone`
+- ⚡ → `Zap`
+- 🌐 → `Globe`
+- 🔁 → `RefreshCw`
+- ☁ → `Cloud`
+- 🖧 → `Network`
+- ⚙ → `Settings`
+- 🔐 → `ShieldCheck`
+- 📈 → `TrendingUp`
+- 🗃 → `Container`
+- 🛠 → `Wrench`
+
+Match the prototype’s palette item text exactly. If a prototype label differs from the Lucide concept, still use the label exactly as prototype.
+
+### Acceptance Criteria
+
+- A side‑by‑side visual comparison between the running app and the HTML prototype shows **identical layout, colours, fonts, hover states, and interactions** (modulo Lucide icons instead of emoji).  
+- All functional requirements from Phases 1‑3 still work (nodes persist, connections persist, properties edit, matrix updates, export downloads).  
+- All build‑time invariants pass.  
+- The canvas remains full‑page and responsive.

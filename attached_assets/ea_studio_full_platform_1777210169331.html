@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,400;0,500;1,400&family=Syne:wght@400;600;700;800&display=swap');
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#090b10;--surface:#10131a;--surface2:#181c25;--surface3:#1f2330;
+  --border:#ffffff12;--border2:#ffffff20;--border3:#ffffff30;
+  --text:#e2e5f0;--muted:#6b7280;--hint:#404550;
+  --biz:#f7934f;--data:#4fc8f7;--app:#a34ff7;--tech:#4ff7a3;
+  --biz-d:#f7934f22;--data-d:#4fc8f722;--app-d:#a34ff722;--tech-d:#4ff7a322;
+  --biz-m:#f7934f55;--data-m:#4fc8f755;--app-m:#a34ff755;--tech-m:#4ff7a355;
+  --accent:#4f8ef7;--grid:26px;
+}
+body{background:var(--bg);font-family:'Syne',sans-serif;color:var(--text);display:flex;flex-direction:column;height:100vh;overflow:hidden;min-height:720px;}
+
+.topbar{display:flex;align-items:center;padding:0 14px;height:46px;background:var(--surface);border-bottom:1px solid var(--border);gap:12px;flex-shrink:0;z-index:200;}
+.logo{font-weight:800;font-size:15px;color:var(--text);white-space:nowrap;}
+.logo em{font-style:normal;color:var(--accent);}
+.tb-sep{width:1px;height:20px;background:var(--border);flex-shrink:0;}
+.view-tabs{display:flex;gap:2px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:2px;}
+.vtab{padding:4px 11px;font-size:11px;font-weight:600;border-radius:5px;cursor:pointer;color:var(--muted);background:transparent;border:none;font-family:'Syne',sans-serif;transition:all .15s;}
+.vtab.active{background:var(--surface3);color:var(--text);}
+.tb-actions{display:flex;gap:5px;margin-left:auto;align-items:center;}
+.btn{padding:5px 11px;border-radius:6px;border:1px solid var(--border2);background:transparent;color:var(--muted);font-family:'Syne',sans-serif;font-size:11px;font-weight:600;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:5px;white-space:nowrap;}
+.btn:hover{background:var(--surface2);color:var(--text);border-color:var(--border3);}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+.btn.primary:hover{background:#6ba3f9;color:#fff;}
+.btn.danger{color:#f76f6f;border-color:#f76f6f33;}
+.btn.danger:hover{background:#f76f6f18;}
+.btn.connect-mode{color:var(--accent);border-color:var(--accent)44;}
+.btn.connect-mode.active{background:var(--accent)22;border-color:var(--accent);color:var(--accent);}
+
+.domain-tabs{display:flex;padding:0 14px;background:var(--surface);border-bottom:1px solid var(--border);gap:1px;flex-shrink:0;}
+.dtab{padding:7px 14px;font-size:11px;font-weight:700;letter-spacing:.4px;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;color:var(--muted);border-radius:4px 4px 0 0;display:flex;align-items:center;gap:6px;white-space:nowrap;}
+.dtab:hover{color:var(--text);background:var(--surface2);}
+.dtab.active[data-d=business]{color:var(--biz);border-bottom-color:var(--biz);background:var(--biz-d);}
+.dtab.active[data-d=data]{color:var(--data);border-bottom-color:var(--data);background:var(--data-d);}
+.dtab.active[data-d=application]{color:var(--app);border-bottom-color:var(--app);background:var(--app-d);}
+.dtab.active[data-d=technology]{color:var(--tech);border-bottom-color:var(--tech);background:var(--tech-d);}
+.dot{width:7px;height:7px;border-radius:50%;}
+
+.main{display:flex;flex:1;overflow:hidden;}
+
+.palette{width:210px;background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;flex-shrink:0;padding:10px 0;scrollbar-width:thin;scrollbar-color:var(--border2) transparent;}
+.pal-sec-hdr{font-size:9px;font-family:'DM Mono',monospace;letter-spacing:1.5px;color:var(--hint);padding:8px 12px 4px;text-transform:uppercase;}
+.pal-item{display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:grab;border-radius:6px;margin:1px 7px;transition:all .12s;font-size:12px;color:var(--text);user-select:none;border:1px solid transparent;position:relative;overflow:hidden;}
+.pal-item::before{content:'';position:absolute;inset:0;opacity:0;transition:opacity .12s;border-radius:6px;}
+.pal-item:hover{border-color:var(--border2);}
+.pal-item:hover::before{opacity:1;}
+.pal-item[data-d=business]::before{background:var(--biz-d);}
+.pal-item[data-d=data]::before{background:var(--data-d);}
+.pal-item[data-d=application]::before{background:var(--app-d);}
+.pal-item[data-d=technology]::before{background:var(--tech-d);}
+.pal-icon{width:26px;height:26px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;position:relative;z-index:1;border:1px solid;}
+.pal-item[data-d=business] .pal-icon{background:var(--biz-d);border-color:var(--biz-m);color:var(--biz);}
+.pal-item[data-d=data] .pal-icon{background:var(--data-d);border-color:var(--data-m);color:var(--data);}
+.pal-item[data-d=application] .pal-icon{background:var(--app-d);border-color:var(--app-m);color:var(--app);}
+.pal-item[data-d=technology] .pal-icon{background:var(--tech-d);border-color:var(--tech-m);color:var(--tech);}
+.pal-text{position:relative;z-index:1;display:flex;flex-direction:column;gap:1px;}
+.pal-label{font-size:11px;font-weight:600;}
+.pal-sub{font-size:10px;color:var(--muted);}
+
+.canvas-wrap{flex:1;position:relative;overflow:hidden;background:var(--bg);}
+.canvas-grid{position:absolute;inset:0;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:var(--grid) var(--grid);pointer-events:none;}
+
+.view-panel{position:absolute;inset:0;overflow:hidden;}
+.view-panel.hidden{display:none;}
+
+.drop-zones{position:absolute;top:16px;left:16px;display:grid;grid-template-columns:1fr 1fr;gap:14px;width:calc(100% - 32px);}
+.zone{border-radius:12px;border:1.5px dashed;min-height:220px;padding:12px;position:relative;transition:all .18s;}
+.zone[data-d=business]{border-color:var(--biz-m);background:rgba(247,147,79,0.03);}
+.zone[data-d=data]{border-color:var(--data-m);background:rgba(79,200,247,0.03);}
+.zone[data-d=application]{border-color:var(--app-m);background:rgba(163,79,247,0.03);}
+.zone[data-d=technology]{border-color:var(--tech-m);background:rgba(79,247,163,0.03);}
+.zone.drag-over[data-d=business]{border-color:var(--biz);background:rgba(247,147,79,0.08);box-shadow:inset 0 0 0 1px var(--biz);}
+.zone.drag-over[data-d=data]{border-color:var(--data);background:rgba(79,200,247,0.08);box-shadow:inset 0 0 0 1px var(--data);}
+.zone.drag-over[data-d=application]{border-color:var(--app);background:rgba(163,79,247,0.08);box-shadow:inset 0 0 0 1px var(--app);}
+.zone.drag-over[data-d=technology]{border-color:var(--tech);background:rgba(79,247,163,0.08);box-shadow:inset 0 0 0 1px var(--tech);}
+.zone-hdr{display:flex;align-items:center;gap:7px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border);}
+.zone-title{font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;}
+.zone[data-d=business] .zone-title{color:var(--biz);}
+.zone[data-d=data] .zone-title{color:var(--data);}
+.zone[data-d=application] .zone-title{color:var(--app);}
+.zone[data-d=technology] .zone-title{color:var(--tech);}
+.zone-badge{font-size:10px;font-family:'DM Mono',monospace;padding:2px 6px;border-radius:20px;border:1px solid;}
+.zone[data-d=business] .zone-badge{color:var(--biz);border-color:var(--biz-m);background:var(--biz-d);}
+.zone[data-d=data] .zone-badge{color:var(--data);border-color:var(--data-m);background:var(--data-d);}
+.zone[data-d=application] .zone-badge{color:var(--app);border-color:var(--app-m);background:var(--app-d);}
+.zone[data-d=technology] .zone-badge{color:var(--tech);border-color:var(--tech-m);background:var(--tech-d);}
+.zone-nodes{display:flex;flex-wrap:wrap;gap:7px;min-height:60px;}
+.zone-hint{font-size:10px;color:var(--hint);position:absolute;bottom:12px;left:0;right:0;text-align:center;pointer-events:none;font-family:'DM Mono',monospace;}
+
+.cnode{display:flex;align-items:flex-start;gap:7px;padding:9px 10px;border-radius:9px;border:1px solid;cursor:pointer;position:relative;transition:box-shadow .15s,transform .1s,border-color .15s;animation:nodeIn .22s cubic-bezier(.34,1.56,.64,1) both;min-width:130px;max-width:185px;background:var(--surface);user-select:none;}
+@keyframes nodeIn{from{opacity:0;transform:scale(.78) translateY(-6px);}to{opacity:1;transform:scale(1);}}
+.cnode[data-d=business]{border-color:var(--biz-m);}
+.cnode[data-d=data]{border-color:var(--data-m);}
+.cnode[data-d=application]{border-color:var(--app-m);}
+.cnode[data-d=technology]{border-color:var(--tech-m);}
+.cnode:hover{transform:translateY(-2px);}
+.cnode.selected{outline:2px solid var(--accent);outline-offset:2px;}
+.cnode.conn-source{outline:2px solid #f7934f;outline-offset:2px;cursor:crosshair;}
+.cnode.conn-target-hover{outline:2px solid #4ff7a3;outline-offset:2px;}
+.node-icon{width:24px;height:24px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;border:1px solid;}
+.cnode[data-d=business] .node-icon{background:var(--biz-d);border-color:var(--biz-m);color:var(--biz);}
+.cnode[data-d=data] .node-icon{background:var(--data-d);border-color:var(--data-m);color:var(--data);}
+.cnode[data-d=application] .node-icon{background:var(--app-d);border-color:var(--app-m);color:var(--app);}
+.cnode[data-d=technology] .node-icon{background:var(--tech-d);border-color:var(--tech-m);color:var(--tech);}
+.node-label{font-size:11px;font-weight:600;line-height:1.3;color:var(--text);}
+.node-sub{font-size:9px;color:var(--muted);margin-top:1px;font-family:'DM Mono',monospace;}
+.node-del{position:absolute;top:3px;right:3px;width:15px;height:15px;border-radius:50%;background:var(--surface2);border:1px solid var(--border);color:var(--muted);font-size:8px;display:none;align-items:center;justify-content:center;cursor:pointer;line-height:1;}
+.cnode:hover .node-del{display:flex;}
+.node-del:hover{background:#e04040;border-color:#e04040;color:#fff;}
+.node-conn-btn{position:absolute;bottom:3px;right:3px;width:14px;height:14px;border-radius:50%;background:var(--accent)22;border:1px solid var(--accent)44;color:var(--accent);font-size:7px;display:none;align-items:center;justify-content:center;cursor:pointer;font-family:'DM Mono',monospace;font-weight:700;}
+.cnode:hover .node-conn-btn{display:flex;}
+
+.conn-svg{position:absolute;inset:0;pointer-events:none;width:100%;height:100%;overflow:visible;}
+
+.props-panel{width:0;background:var(--surface);border-left:1px solid var(--border);overflow:hidden;transition:width .2s cubic-bezier(.4,0,.2,1);flex-shrink:0;}
+.props-panel.open{width:230px;}
+.props-inner{width:230px;padding:14px;}
+.props-title{font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;}
+.pfield{margin-bottom:10px;}
+.plabel{font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:3px;text-transform:uppercase;letter-spacing:.8px;}
+.pinput{width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:6px 9px;font-size:11px;color:var(--text);font-family:'Syne',sans-serif;outline:none;transition:border-color .12s;}
+.pinput:focus{border-color:var(--accent);}
+.pselect{width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:5px 9px;font-size:11px;color:var(--text);font-family:'Syne',sans-serif;outline:none;}
+.ptags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;}
+.ptag{padding:3px 8px;border-radius:20px;font-size:10px;font-family:'DM Mono',monospace;border:1px solid var(--border2);color:var(--muted);cursor:pointer;transition:all .1s;}
+.ptag:hover{border-color:var(--accent);color:var(--accent);}
+.ptag.active{background:var(--accent);border-color:var(--accent);color:#fff;}
+.psep{height:1px;background:var(--border);margin:12px 0;}
+.conn-list{max-height:100px;overflow-y:auto;}
+.conn-item{display:flex;align-items:center;gap:6px;padding:4px 0;font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;border-bottom:1px solid var(--border);}
+.conn-item:last-child{border-bottom:none;}
+.conn-arrow{color:var(--accent);}
+
+.statusbar{height:26px;background:var(--surface);border-top:1px solid var(--border);display:flex;align-items:center;padding:0 12px;gap:14px;flex-shrink:0;}
+.sitem{font-size:10px;font-family:'DM Mono',monospace;color:var(--muted);display:flex;align-items:center;gap:4px;}
+.sdot{width:6px;height:6px;border-radius:50%;background:var(--tech);animation:pulse 2.5s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35};}
+
+.matrix-view{padding:16px;overflow:auto;width:100%;height:100%;}
+.matrix-table{border-collapse:collapse;font-family:'DM Mono',monospace;font-size:11px;width:100%;}
+.matrix-table th{padding:6px 10px;text-align:left;color:var(--muted);font-weight:400;border-bottom:1px solid var(--border);white-space:nowrap;font-size:10px;}
+.matrix-table td{padding:6px 10px;border-bottom:1px solid var(--border);color:var(--text);font-size:10px;white-space:nowrap;}
+.matrix-table tr:hover td{background:var(--surface2);}
+.matrix-cell{width:28px;height:28px;border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .12s;font-size:11px;}
+.matrix-cell.has-conn{background:var(--accent)22;color:var(--accent);}
+.matrix-cell.empty{color:var(--border2);}
+.matrix-cell:hover{background:var(--accent)33;}
+.matrix-domain-biz{color:var(--biz);}
+.matrix-domain-data{color:var(--data);}
+.matrix-domain-app{color:var(--app);}
+.matrix-domain-tech{color:var(--tech);}
+
+.export-panel{padding:20px;overflow:auto;width:100%;height:100%;}
+.export-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:12px;}
+.export-title{font-size:12px;font-weight:700;margin-bottom:4px;color:var(--text);}
+.export-desc{font-size:11px;color:var(--muted);margin-bottom:12px;font-family:'DM Mono',monospace;}
+.json-preview{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;font-size:10px;font-family:'DM Mono',monospace;color:var(--data);max-height:160px;overflow-y:auto;white-space:pre;line-height:1.6;}
+
+.drag-ghost-el{position:fixed;pointer-events:none;z-index:9999;opacity:.85;transform:rotate(2deg) scale(1.05);transition:none;}
+.conn-temp{stroke:var(--accent);stroke-width:1.5;stroke-dasharray:5 4;fill:none;pointer-events:none;}
+@keyframes dashMove{to{stroke-dashoffset:-18;}}
+.conn-temp{animation:dashMove .6s linear infinite;}
+.conn-line{stroke:var(--border3);stroke-width:1.2;fill:none;pointer-events:all;cursor:pointer;transition:stroke .15s;}
+.conn-line:hover{stroke:var(--accent);}
+
+.palette::-webkit-scrollbar{width:3px;}
+.palette::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">EA<em>Studio</em></div>
+  <div class="tb-sep"></div>
+  <div class="view-tabs">
+    <button class="vtab active" onclick="switchView('design',this)">Design</button>
+    <button class="vtab" onclick="switchView('matrix',this)">Matrix</button>
+    <button class="vtab" onclick="switchView('export',this)">Export</button>
+  </div>
+  <div class="tb-sep"></div>
+  <button class="btn connect-mode" id="connModeBtn" onclick="toggleConnectMode()">⚡ Connect</button>
+  <div class="tb-actions">
+    <button class="btn" onclick="autoLayout()">✦ Sample</button>
+    <button class="btn danger" onclick="clearAll()">✕ Clear</button>
+    <button class="btn primary" onclick="switchView('export',document.querySelectorAll(\'.vtab\')[2])">↓ Export</button>
+  </div>
+</div>
+
+<div class="domain-tabs">
+  <div class="dtab active" data-d="business" onclick="setDomain('business')"><span class="dot" style="background:var(--biz)"></span>Business</div>
+  <div class="dtab" data-d="data" onclick="setDomain('data')"><span class="dot" style="background:var(--data)"></span>Data</div>
+  <div class="dtab" data-d="application" onclick="setDomain('application')"><span class="dot" style="background:var(--app)"></span>Application</div>
+  <div class="dtab" data-d="technology" onclick="setDomain('technology')"><span class="dot" style="background:var(--tech)"></span>Technology</div>
+</div>
+
+<div class="main">
+  <div class="palette" id="palette"></div>
+
+  <div class="canvas-wrap" id="canvasWrap">
+    <div class="canvas-grid"></div>
+
+    <div class="view-panel" id="view-design">
+      <div class="drop-zones" id="dropZones">
+        <div class="zone" data-d="business" ondragover="onDragOver(event,'business')" ondragleave="e=>e.currentTarget.classList.remove('drag-over')" ondrop="onDrop(event,'business')">
+          <div class="zone-hdr"><span class="zone-title">Business</span><span class="zone-badge" id="badge-business">0</span></div>
+          <div class="zone-nodes" id="nodes-business"></div>
+          <div class="zone-hint" id="hint-business">Drop components here</div>
+        </div>
+        <div class="zone" data-d="data" ondragover="onDragOver(event,'data')" ondragleave="e=>e.currentTarget.classList.remove('drag-over')" ondrop="onDrop(event,'data')">
+          <div class="zone-hdr"><span class="zone-title">Data</span><span class="zone-badge" id="badge-data">0</span></div>
+          <div class="zone-nodes" id="nodes-data"></div>
+          <div class="zone-hint" id="hint-data">Drop components here</div>
+        </div>
+        <div class="zone" data-d="application" ondragover="onDragOver(event,'application')" ondragleave="e=>e.currentTarget.classList.remove('drag-over')" ondrop="onDrop(event,'application')">
+          <div class="zone-hdr"><span class="zone-title">Application</span><span class="zone-badge" id="badge-application">0</span></div>
+          <div class="zone-nodes" id="nodes-application"></div>
+          <div class="zone-hint" id="hint-application">Drop components here</div>
+        </div>
+        <div class="zone" data-d="technology" ondragover="onDragOver(event,'technology')" ondragleave="e=>e.currentTarget.classList.remove('drag-over')" ondrop="onDrop(event,'technology')">
+          <div class="zone-hdr"><span class="zone-title">Technology</span><span class="zone-badge" id="badge-technology">0</span></div>
+          <div class="zone-nodes" id="nodes-technology"></div>
+          <div class="zone-hint" id="hint-technology">Drop components here</div>
+        </div>
+      </div>
+      <svg class="conn-svg" id="connSvg" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="ah" markerWidth="7" markerHeight="5" refX="5" refY="2.5" orient="auto">
+            <polygon points="0 0,7 2.5,0 5" fill="#ffffff30"/>
+          </marker>
+          <marker id="ah-accent" markerWidth="7" markerHeight="5" refX="5" refY="2.5" orient="auto">
+            <polygon points="0 0,7 2.5,0 5" fill="var(--accent)"/>
+          </marker>
+        </defs>
+        <line id="tempLine" class="conn-temp" x1="0" y1="0" x2="0" y2="0" style="display:none" marker-end="url(#ah-accent)"/>
+      </svg>
+    </div>
+
+    <div class="view-panel hidden" id="view-matrix">
+      <div class="matrix-view">
+        <div id="matrixContent"></div>
+      </div>
+    </div>
+
+    <div class="view-panel hidden" id="view-export">
+      <div class="export-panel" id="exportPanel"></div>
+    </div>
+  </div>
+
+  <div class="props-panel" id="propsPanel">
+    <div class="props-inner">
+      <div class="props-title">Properties</div>
+      <div class="pfield"><div class="plabel">Name</div><input class="pinput" id="propName" placeholder="Component name" oninput="updateNodeLabel()"/></div>
+      <div class="pfield"><div class="plabel">Description</div><input class="pinput" id="propDesc" placeholder="Description"/></div>
+      <div class="pfield"><div class="plabel">Owner</div><input class="pinput" id="propOwner" placeholder="Team or person"/></div>
+      <div class="psep"></div>
+      <div class="pfield">
+        <div class="plabel">Status</div>
+        <div class="ptags" id="statusTags">
+          <span class="ptag active" onclick="selTag(this)">Planned</span>
+          <span class="ptag" onclick="selTag(this)">Active</span>
+          <span class="ptag" onclick="selTag(this)">Deprecated</span>
+        </div>
+      </div>
+      <div class="pfield"><div class="plabel">Maturity</div>
+        <select class="pselect"><option>Initial</option><option>Managed</option><option>Defined</option><option>Quantitatively Managed</option><option>Optimizing</option></select>
+      </div>
+      <div class="pfield"><div class="plabel">Priority</div>
+        <select class="pselect"><option>Low</option><option selected>Medium</option><option>High</option><option>Critical</option></select>
+      </div>
+      <div class="psep"></div>
+      <div class="plabel" style="margin-bottom:6px;">Connections</div>
+      <div class="conn-list" id="propConnList"><div style="font-size:10px;color:var(--hint);font-family:'DM Mono',monospace;">No connections yet</div></div>
+      <div class="psep"></div>
+      <button class="btn" style="width:100%;justify-content:center;font-size:11px;" onclick="closeProps()">Close ✕</button>
+    </div>
+  </div>
+</div>
+
+<div class="statusbar">
+  <div class="sitem"><span class="sdot"></span>Live</div>
+  <div class="sitem" id="stNodes">0 components</div>
+  <div class="sitem" id="stConns">0 connections</div>
+  <div class="sitem" id="stMode">Design mode</div>
+  <div class="sitem" style="margin-left:auto;">TOGAF 10 · ArchiMate 3.2</div>
+</div>
+
+<script>
+const PAL={
+  business:[
+    {icon:'🎯',label:'Strategy Map',sub:'Vision & goals'},
+    {icon:'♟',label:'Business Process',sub:'Workflow model'},
+    {icon:'🏛',label:'Governance Model',sub:'Policy & control'},
+    {icon:'📋',label:'Capability Map',sub:'Business capabilities'},
+    {icon:'🤝',label:'Value Stream',sub:'End-to-end value'},
+    {icon:'👥',label:'Org Unit',sub:'Business unit'},
+    {icon:'📊',label:'KPI Dashboard',sub:'Metrics & OKRs'},
+    {icon:'🔒',label:'Compliance',sub:'Regulatory control'},
+  ],
+  data:[
+    {icon:'🗄',label:'Data Store',sub:'Logical entity'},
+    {icon:'🔗',label:'Data Flow',sub:'Integration pipe'},
+    {icon:'📐',label:'Data Model',sub:'Schema & structure'},
+    {icon:'📦',label:'Data Product',sub:'Consumable dataset'},
+    {icon:'🔑',label:'Master Data',sub:'Golden record'},
+    {icon:'📊',label:'Data Catalog',sub:'Metadata registry'},
+    {icon:'🛡',label:'Data Policy',sub:'Governance rules'},
+    {icon:'🔄',label:'ETL Pipeline',sub:'Transform & load'},
+  ],
+  application:[
+    {icon:'🖥',label:'Application',sub:'System component'},
+    {icon:'🔌',label:'API Gateway',sub:'Integration point'},
+    {icon:'📡',label:'Microservice',sub:'Bounded context'},
+    {icon:'🧩',label:'Module',sub:'App subsystem'},
+    {icon:'📲',label:'Mobile App',sub:'Client endpoint'},
+    {icon:'⚡',label:'Event Bus',sub:'Async messaging'},
+    {icon:'🌐',label:'Web Portal',sub:'User interface'},
+    {icon:'🔁',label:'Integration',sub:'System connector'},
+  ],
+  technology:[
+    {icon:'☁',label:'Cloud Region',sub:'Compute zone'},
+    {icon:'🖧',label:'Network Layer',sub:'Topology segment'},
+    {icon:'💾',label:'Database',sub:'Persistent store'},
+    {icon:'⚙',label:'Runtime Engine',sub:'Execution env'},
+    {icon:'🔐',label:'IAM Service',sub:'Auth & identity'},
+    {icon:'📈',label:'Monitoring',sub:'Observability'},
+    {icon:'🗃',label:'Object Storage',sub:'Blob tier'},
+    {icon:'🛠',label:'CI/CD Pipeline',sub:'DevOps toolchain'},
+  ]
+};
+
+let curDomain='business';
+let nodes={business:[],data:[],application:[],technology:[]};
+let connections=[];
+let selNode=null;
+let connMode=false;
+let connFrom=null;
+let dragging=null;
+let ghost=null;
+let nodeId=0;
+let connId=0;
+let curView='design';
+
+function setDomain(d){
+  curDomain=d;
+  document.querySelectorAll('.dtab').forEach(t=>t.classList.remove('active'));
+  document.querySelector(`.dtab[data-d="${d}"]`).classList.add('active');
+  renderPalette();
+}
+
+function renderPalette(){
+  const items=PAL[curDomain];
+  document.getElementById('palette').innerHTML=`<div class="pal-sec-hdr">${curDomain} layer</div>`+
+    items.map((it,i)=>`<div class="pal-item" data-d="${curDomain}" draggable="true"
+      ondragstart="pdStart(event,'${curDomain}',${i})" ondragend="pdEnd()">
+      <div class="pal-icon">${it.icon}</div>
+      <div class="pal-text"><span class="pal-label">${it.label}</span><span class="pal-sub">${it.sub}</span></div>
+    </div>`).join('');
+}
+
+function pdStart(e,d,i){
+  dragging={d,i};
+  e.dataTransfer.effectAllowed='copy';
+  e.dataTransfer.setData('text/plain','drag');
+  ghost=document.createElement('div');
+  ghost.className='drag-ghost-el';
+  const it=PAL[d][i];
+  ghost.innerHTML=`<div class="cnode" data-d="${d}" style="pointer-events:none;animation:none;">
+    <div class="node-icon">${it.icon}</div>
+    <div><div class="node-label">${it.label}</div><div class="node-sub">${it.sub}</div></div>
+  </div>`;
+  document.body.appendChild(ghost);
+  e.dataTransfer.setDragImage(new Image(),0,0);
+}
+function pdEnd(){dragging=null;ghost&&ghost.remove();ghost=null;}
+
+document.addEventListener('dragover',e=>{
+  if(ghost){ghost.style.left=(e.clientX+10)+'px';ghost.style.top=(e.clientY-16)+'px';}
+});
+
+function onDragOver(e,d){
+  e.preventDefault();
+  e.dataTransfer.dropEffect='copy';
+  document.querySelector(`.zone[data-d="${d}"]`).classList.add('drag-over');
+}
+
+function onDrop(e,d){
+  e.preventDefault();
+  document.querySelector(`.zone[data-d="${d}"]`).classList.remove('drag-over');
+  if(!dragging)return;
+  addNode(d,PAL[dragging.d][dragging.i],dragging.d);
+}
+
+function addNode(zone,item,srcDomain){
+  const id='n'+(++nodeId);
+  const d=srcDomain||zone;
+  const el=document.createElement('div');
+  el.className='cnode';el.setAttribute('data-d',d);el.setAttribute('data-id',id);
+  el.innerHTML=`<div class="node-icon">${item.icon}</div>
+    <div><div class="node-label">${item.label}</div><div class="node-sub">${item.sub}</div></div>
+    <div class="node-del" onclick="delNode(event,'${id}','${zone}')">✕</div>
+    <div class="node-conn-btn" onclick="startConn(event,'${id}')">↔</div>`;
+  el.addEventListener('click',ev=>{if(!ev.target.classList.contains('node-del')&&!ev.target.classList.contains('node-conn-btn'))nodeClick(el,id,item,zone);});
+  nodes[zone].push({id,item,d,el,zone,label:item.label,desc:item.sub,connections:[]});
+  document.getElementById('nodes-'+zone).appendChild(el);
+  updateHints();updateStatus();
+}
+
+function delNode(e,id,zone){
+  e.stopPropagation();
+  const idx=nodes[zone].findIndex(n=>n.id===id);
+  if(idx<0)return;
+  const el=nodes[zone][idx].el;
+  el.style.animation='nodeIn .12s reverse both';
+  setTimeout(()=>{
+    el.remove();
+    nodes[zone].splice(idx,1);
+    connections=connections.filter(c=>c.from!==id&&c.to!==id);
+    redrawConns();updateHints();updateStatus();
+  },110);
+  if(selNode&&selNode.id===id)closeProps();
+}
+
+function nodeClick(el,id,item,zone){
+  if(connMode&&connFrom){
+    if(connFrom.id!==id){
+      const exists=connections.find(c=>(c.from===connFrom.id&&c.to===id)||(c.from===id&&c.to===connFrom.id));
+      if(!exists){
+        connections.push({id:'c'+(++connId),from:connFrom.id,to:id,label:'',fromZone:connFrom.zone,toZone:zone});
+        redrawConns();updateStatus();
+      }
+    }
+    document.querySelectorAll('.cnode').forEach(n=>{n.classList.remove('conn-source','conn-target-hover');});
+    connFrom=null;
+    return;
+  }
+  document.querySelectorAll('.cnode').forEach(n=>n.classList.remove('selected'));
+  el.classList.add('selected');
+  selNode={id,item,el,zone};
+  document.getElementById('propName').value=el.querySelector('.node-label').textContent;
+  document.getElementById('propDesc').value='';
+  document.getElementById('propOwner').value='';
+  renderPropConns(id);
+  document.getElementById('propsPanel').classList.add('open');
+}
+
+function renderPropConns(id){
+  const myConns=connections.filter(c=>c.from===id||c.to===id);
+  const el=document.getElementById('propConnList');
+  if(!myConns.length){el.innerHTML='<div style="font-size:10px;color:var(--hint);font-family:\'DM Mono\',monospace;">No connections yet</div>';return;}
+  el.innerHTML=myConns.map(c=>{
+    const otherId=c.from===id?c.to:c.from;
+    const otherNode=findNode(otherId);
+    const dir=c.from===id?'→':'←';
+    return `<div class="conn-item"><span class="conn-arrow">${dir}</span><span>${otherNode?otherNode.item.label:'Unknown'}</span>
+      <span style="margin-left:auto;cursor:pointer;color:#f76f6f;" onclick="delConn('${c.id}')">✕</span></div>`;
+  }).join('');
+}
+
+function delConn(id){
+  connections=connections.filter(c=>c.id!==id);
+  redrawConns();updateStatus();
+  if(selNode)renderPropConns(selNode.id);
+}
+
+function findNode(id){
+  for(const d of Object.keys(nodes)){
+    const n=nodes[d].find(n=>n.id===id);
+    if(n)return n;
+  }
+}
+
+function startConn(e,id){
+  e.stopPropagation();
+  if(!connMode){toggleConnectMode();}
+  document.querySelectorAll('.cnode').forEach(n=>n.classList.remove('conn-source','conn-target-hover'));
+  const node=findNode(id);
+  if(node){connFrom=node;node.el.classList.add('conn-source');}
+}
+
+function toggleConnectMode(){
+  connMode=!connMode;
+  const btn=document.getElementById('connModeBtn');
+  btn.classList.toggle('active',connMode);
+  document.getElementById('stMode').textContent=connMode?'Connect mode — click two nodes':'Design mode';
+  if(!connMode){
+    document.querySelectorAll('.cnode').forEach(n=>n.classList.remove('conn-source','conn-target-hover'));
+    connFrom=null;
+    document.getElementById('tempLine').style.display='none';
+  }
+}
+
+document.addEventListener('mousemove',e=>{
+  if(connMode&&connFrom){
+    const srcRect=connFrom.el.getBoundingClientRect();
+    const wrapRect=document.getElementById('canvasWrap').getBoundingClientRect();
+    const sx=srcRect.left+srcRect.width/2-wrapRect.left;
+    const sy=srcRect.top+srcRect.height/2-wrapRect.top;
+    const tx=e.clientX-wrapRect.left;
+    const ty=e.clientY-wrapRect.top;
+    const tl=document.getElementById('tempLine');
+    tl.style.display='';
+    tl.setAttribute('x1',sx);tl.setAttribute('y1',sy);
+    tl.setAttribute('x2',tx);tl.setAttribute('y2',ty);
+    document.querySelectorAll('.cnode').forEach(n=>{
+      n.classList.remove('conn-target-hover');
+      if(n!==connFrom.el){
+        const r=n.getBoundingClientRect();
+        if(e.clientX>=r.left&&e.clientX<=r.right&&e.clientY>=r.top&&e.clientY<=r.bottom)
+          n.classList.add('conn-target-hover');
+      }
+    });
+  }
+});
+
+function redrawConns(){
+  const svg=document.getElementById('connSvg');
+  svg.querySelectorAll('.conn-line,.conn-label-el').forEach(el=>el.remove());
+  const wrapRect=document.getElementById('canvasWrap').getBoundingClientRect();
+  connections.forEach(c=>{
+    const fn=findNode(c.from),tn=findNode(c.to);
+    if(!fn||!tn)return;
+    const fr=fn.el.getBoundingClientRect();
+    const tr=tn.el.getBoundingClientRect();
+    const x1=fr.left+fr.width/2-wrapRect.left;
+    const y1=fr.top+fr.height/2-wrapRect.top;
+    const x2=tr.left+tr.width/2-wrapRect.left;
+    const y2=tr.top+tr.height/2-wrapRect.top;
+    const mx=(x1+x2)/2,my=(y1+y2)/2;
+    const cp1x=x1+(mx-x1)*.5,cp1y=y1;
+    const cp2x=x2+(mx-x2)*.5,cp2y=y2;
+    const line=document.createElementNS('http://www.w3.org/2000/svg','path');
+    line.setAttribute('class','conn-line');
+    line.setAttribute('d',`M${x1},${y1} C${cp1x},${cp1y} ${cp2x},${cp2y} ${x2},${y2}`);
+    line.setAttribute('marker-end','url(#ah)');
+    line.addEventListener('click',()=>{if(confirm('Remove this connection?')){delConn(c.id);}});
+    svg.appendChild(line);
+  });
+  document.getElementById('tempLine').style.display='none';
+}
+
+window.addEventListener('resize',()=>{setTimeout(redrawConns,50);});
+
+function updateNodeLabel(){
+  if(!selNode)return;
+  selNode.el.querySelector('.node-label').textContent=document.getElementById('propName').value||selNode.item.label;
+  const n=findNode(selNode.id);
+  if(n)n.label=document.getElementById('propName').value;
+}
+function closeProps(){
+  document.querySelectorAll('.cnode').forEach(n=>n.classList.remove('selected'));
+  selNode=null;
+  document.getElementById('propsPanel').classList.remove('open');
+}
+function selTag(el){document.querySelectorAll('#statusTags .ptag').forEach(t=>t.classList.remove('active'));el.classList.add('active');}
+
+function updateHints(){
+  ['business','data','application','technology'].forEach(d=>{
+    const c=nodes[d].length;
+    document.getElementById('hint-'+d).style.display=c>0?'none':'';
+    document.getElementById('badge-'+d).textContent=c;
+  });
+}
+function updateStatus(){
+  const total=Object.values(nodes).reduce((s,a)=>s+a.length,0);
+  document.getElementById('stNodes').textContent=total+' component'+(total!==1?'s':'');
+  document.getElementById('stConns').textContent=connections.length+' connection'+(connections!==1?'s':'');
+}
+
+function switchView(v,btn){
+  curView=v;
+  document.querySelectorAll('.vtab').forEach(b=>b.classList.remove('active'));
+  if(btn)btn.classList.add('active');
+  document.querySelectorAll('.view-panel').forEach(p=>p.classList.add('hidden'));
+  document.getElementById('view-'+v).classList.remove('hidden');
+  if(v==='matrix')renderMatrix();
+  if(v==='export')renderExport();
+  if(v==='design')setTimeout(redrawConns,50);
+}
+
+function renderMatrix(){
+  const allNodes=Object.values(nodes).flat();
+  if(!allNodes.length){document.getElementById('matrixContent').innerHTML='<div style="color:var(--muted);font-size:12px;padding:20px;font-family:\'DM Mono\',monospace;">No components on canvas yet. Add some in Design view first.</div>';return;}
+  const cols=['business','data','application','technology'];
+  const colColors={business:'var(--biz)',data:'var(--data)',application:'var(--app)',technology:'var(--tech)'};
+  let html=`<div style="margin-bottom:16px;"><div style="font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:12px;">Relationship matrix — click a cell to add/remove connections. ✓ = connected.</div>`;
+  html+=`<div style="overflow-x:auto;"><table class="matrix-table"><thead><tr><th>Component</th><th>Domain</th>`;
+  allNodes.forEach(n=>{html+=`<th style="color:${colColors[n.d]};max-width:80px;overflow:hidden;text-overflow:ellipsis;">${n.label||n.item.label}</th>`;});
+  html+=`</tr></thead><tbody>`;
+  allNodes.forEach(rowN=>{
+    html+=`<tr><td style="font-weight:600;">${rowN.label||rowN.item.label}</td><td style="color:${colColors[rowN.d]};">${rowN.d}</td>`;
+    allNodes.forEach(colN=>{
+      if(rowN.id===colN.id){html+=`<td><div class="matrix-cell" style="background:var(--surface2);color:var(--hint);">—</div></td>`;return;}
+      const conn=connections.find(c=>(c.from===rowN.id&&c.to===colN.id)||(c.from===colN.id&&c.to===rowN.id));
+      html+=`<td><div class="matrix-cell ${conn?'has-conn':'empty'}" onclick="toggleMatrixConn('${rowN.id}','${colN.id}','${rowN.zone}','${colN.zone}',this)">${conn?'✓':'+'}</div></td>`;
+    });
+    html+=`</tr>`;
+  });
+  html+=`</tbody></table></div></div>`;
+  document.getElementById('matrixContent').innerHTML=html;
+}
+
+function toggleMatrixConn(fromId,toId,fz,tz,el){
+  const existing=connections.findIndex(c=>(c.from===fromId&&c.to===toId)||(c.from===toId&&c.to===fromId));
+  if(existing>-1){
+    connections.splice(existing,1);
+    el.className='matrix-cell empty';el.textContent='+';
+  } else {
+    connections.push({id:'c'+(++connId),from:fromId,to:toId,label:'',fromZone:fz,toZone:tz});
+    el.className='matrix-cell has-conn';el.textContent='✓';
+  }
+  updateStatus();
+}
+
+function renderExport(){
+  const allNodes=Object.values(nodes).flat();
+  const exportData={
+    metadata:{version:'1.0',framework:'TOGAF 10',notation:'ArchiMate 3.2',exportedAt:new Date().toISOString()},
+    domains:{
+      business:nodes.business.map(n=>({id:n.id,label:n.label||n.item.label,type:n.item.label,domain:'business'})),
+      data:nodes.data.map(n=>({id:n.id,label:n.label||n.item.label,type:n.item.label,domain:'data'})),
+      application:nodes.application.map(n=>({id:n.id,label:n.label||n.item.label,type:n.item.label,domain:'application'})),
+      technology:nodes.technology.map(n=>({id:n.id,label:n.label||n.item.label,type:n.item.label,domain:'technology'}))
+    },
+    connections:connections.map(c=>({id:c.id,from:c.from,to:c.to})),
+    summary:{totalComponents:allNodes.length,totalConnections:connections.length}
+  };
+  const json=JSON.stringify(exportData,null,2);
+  document.getElementById('exportPanel').innerHTML=`
+    <div style="font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:16px;">Architecture snapshot · ${allNodes.length} components · ${connections.length} connections</div>
+    <div class="export-card">
+      <div class="export-title">JSON / ArchiMate Export</div>
+      <div class="export-desc">Full architecture model in structured JSON format</div>
+      <div class="json-preview">${json.replace(/</g,'&lt;')}</div>
+      <button class="btn primary" style="margin-top:10px;" onclick="downloadJSON()">↓ Download JSON</button>
+    </div>
+    <div class="export-card">
+      <div class="export-title">CSV Export</div>
+      <div class="export-desc">Component list for spreadsheet tools</div>
+      <button class="btn" onclick="downloadCSV()">↓ Download CSV</button>
+    </div>
+    <div class="export-card">
+      <div class="export-title">Architecture Summary</div>
+      <div class="export-desc">Human-readable snapshot</div>
+      <div style="font-size:11px;font-family:'DM Mono',monospace;color:var(--muted);line-height:1.8;">
+        ${['business','data','application','technology'].map(d=>`<div><span style="color:var(--${d==='business'?'biz':d==='data'?'data':d==='application'?'app':'tech'})">${d.toUpperCase()}</span> — ${nodes[d].length} component${nodes[d].length!==1?'s':''}: ${nodes[d].map(n=>n.label||n.item.label).join(', ')||'none'}</div>`).join('')}
+        <div style="margin-top:8px;">CONNECTIONS — ${connections.length} relationship${connections.length!==1?'s':''}</div>
+      </div>
+    </div>`;
+  window._exportData=exportData;
+}
+
+function downloadJSON(){
+  if(!window._exportData)return;
+  const blob=new Blob([JSON.stringify(window._exportData,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='ea-architecture.json';a.click();
+}
+
+function downloadCSV(){
+  const allNodes=Object.values(nodes).flat();
+  const rows=[['ID','Label','Type','Domain'],...allNodes.map(n=>[n.id,n.label||n.item.label,n.item.label,n.d])];
+  const csv=rows.map(r=>r.map(c=>`"${c}"`).join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='ea-components.csv';a.click();
+}
+
+function clearAll(){
+  if(!confirm('Clear everything from canvas?'))return;
+  ['business','data','application','technology'].forEach(d=>{
+    document.getElementById('nodes-'+d).innerHTML='';nodes[d]=[];
+  });
+  connections=[];redrawConns();updateHints();updateStatus();closeProps();
+}
+
+function autoLayout(){
+  clearAll();
+  const samples={
+    business:[{icon:'🎯',label:'Digital Strategy',sub:'Vision & goals'},{icon:'📋',label:'Customer Journey',sub:'Business capabilities'},{icon:'🏛',label:'Risk Governance',sub:'Policy & control'}],
+    data:[{icon:'🗄',label:'Enterprise Data Lake',sub:'Logical entity'},{icon:'🔑',label:'Customer MDM',sub:'Golden record'},{icon:'🔄',label:'Real-time ETL',sub:'Transform & load'}],
+    application:[{icon:'🔌',label:'API Gateway',sub:'Integration point'},{icon:'📡',label:'Order Service',sub:'Bounded context'},{icon:'🌐',label:'Customer Portal',sub:'User interface'}],
+    technology:[{icon:'☁',label:'AWS us-east-1',sub:'Compute zone'},{icon:'🔐',label:'Okta IAM',sub:'Auth & identity'},{icon:'📈',label:'Datadog APM',sub:'Observability'}]
+  };
+  Object.entries(samples).forEach(([d,items],di)=>{
+    items.forEach((item,i)=>setTimeout(()=>addNode(d,item,d),(di*100)+(i*55)));
+  });
+  setTimeout(()=>{
+    const allN=Object.values(nodes).flat();
+    if(allN.length>=6){
+      connections.push(
+        {id:'c'+(++connId),from:'n1',to:'n4',label:'',fromZone:'business',toZone:'data'},
+        {id:'c'+(++connId),from:'n4',to:'n7',label:'',fromZone:'data',toZone:'application'},
+        {id:'c'+(++connId),from:'n7',to:'n10',label:'',fromZone:'application',toZone:'technology'},
+        {id:'c'+(++connId),from:'n2',to:'n8',label:'',fromZone:'business',toZone:'application'}
+      );
+      setTimeout(redrawConns,100);
+      updateStatus();
+    }
+  },1600);
+}
+
+renderPalette();updateHints();updateStatus();
+setTimeout(autoLayout,300);
+</script>
+</body>
+</html>
