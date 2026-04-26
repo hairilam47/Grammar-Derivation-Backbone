@@ -44,28 +44,31 @@ export default function DecisionCanvasShell() {
   };
 
   return (
-    <div className="min-h-[100dvh] bg-background text-foreground flex flex-col font-mono">
-      <header className="border-b border-border/50 bg-card/50 backdrop-blur sticky top-0 z-10">
-        <div className="container max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-primary">
-            <Layout className="w-5 h-5" />
-            <span className="font-bold tracking-tight text-sm uppercase">
+    <div className="min-h-[100dvh] bg-background text-foreground flex flex-col">
+      <header className="glass-header sticky top-0 z-10">
+        <div className="container max-w-6xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="brand-mark" aria-hidden="true">
+              <Layout />
+            </span>
+            <span className="font-semibold tracking-tight text-sm">
               Architecture Decision Canvas
             </span>
           </div>
           <GlobalNav />
         </div>
+        <div className="hairline-accent h-px w-full opacity-60" aria-hidden="true" />
       </header>
 
       <div
-        className="border-b border-border/40 bg-muted/10"
+        className="glass-rail border-b border-border/40"
         data-testid="decision-session-bar"
       >
         <div className="container max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
             {decisionInProgress && (
               <span
-                className="text-[10px] uppercase tracking-widest text-primary"
+                className="text-[10px] uppercase tracking-[0.18em] text-primary tnum"
                 data-testid="decision-in-progress"
               >
                 Decision in Progress
@@ -89,13 +92,13 @@ export default function DecisionCanvasShell() {
                     data-done={done ? "true" : "false"}
                   >
                     <span
-                      className={`w-1.5 h-1.5 rounded-full ${
+                      className={`w-1.5 h-1.5 rounded-full transition-colors duration-[var(--motion-base)] ${
                         done || active ? "bg-primary" : "bg-muted"
                       }`}
                       aria-hidden="true"
                     />
                     <span
-                      className={`text-[10px] uppercase tracking-widest ${
+                      className={`text-[10px] uppercase tracking-[0.18em] transition-colors duration-[var(--motion-base)] ${
                         active
                           ? "text-primary"
                           : done

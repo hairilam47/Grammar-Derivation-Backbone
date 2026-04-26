@@ -68,6 +68,14 @@ The project is structured as a pnpm workspace monorepo, separating deployable su
 - **Strict Removability:** Each feature or phase is designed for independent removal.
 - **Build-Time Refusals:** Invariants are checked at module load, failing the build on regression.
 
+### Visual System (Task #104 — App-wide UI polish)
+- **Typography:** Single Inter sans stack with OpenType feature flags applied at body level. JetBrains Mono / ui-monospace for monospaced text. `.tnum` utility provides tabular numerals for stat readouts.
+- **Surface tokens:** Multi-stop shadow ramp (light + ambient bloom). Restrained `--accent-gradient`, `--accent-gradient-soft`, `--accent-gradient-hairline`, `--surface-gradient` tokens. Accent gradients are applied only to brand marks, primary CTAs, the active route indicator, and a small number of statement surfaces — never to status, urgency, or judgement signals (no traffic-light usage).
+- **Motion tokens:** `--motion-fast / -base / -slow` with `--motion-ease` / `-ease-out`. A `prefers-reduced-motion: reduce` block zeros all three durations and disables the route fade.
+- **Glass utilities:** `.glass-surface(-strong)` for tooltips/popovers/toasts; `.glass-header` and `.glass-rail` for the app chrome. Glass is used only on overlays and chrome — never on decision surfaces.
+- **Interaction utilities:** `.lift` (cards), `.interactive` (controls), `.ui-transition`, `.ui-transition-card`, `.ui-transition-input` (shadcn primitives), `.nav-active-bar` (active route indicator), `.brand-mark` (gradient logo square), `.route-fade-in` + `RouteTransition` (App.tsx page change).
+- **Shared header:** `components/AppHeader.tsx` is the canonical top bar (brand mark, page title/subtitle, GlobalNav). Used by Portfolio, Signals, Reflection, Exposure, Containment.
+
 # External Dependencies
 
 - **PostgreSQL:** Primary database.

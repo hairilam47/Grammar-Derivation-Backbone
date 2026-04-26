@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
@@ -91,6 +91,20 @@ function DarkModeApplier() {
   return null;
 }
 
+// Route-fade transition wrapper. Re-keys on every wouter location
+// change so the inner subtree re-mounts and the keyframed
+// `route-fade-in` animation replays. The animation itself is defined
+// in src/index.css and is collapsed to 0ms under
+// `prefers-reduced-motion: reduce`.
+function RouteTransition({ children }: { children: React.ReactNode }) {
+  const [location] = useLocation();
+  return (
+    <div key={location} className="route-fade-in">
+      {children}
+    </div>
+  );
+}
+
 function Router() {
   return (
     <Switch>
@@ -124,7 +138,9 @@ function App() {
       <DarkModeApplier />
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router />
+          <RouteTransition>
+            <Router />
+          </RouteTransition>
         </WouterRouter>
         <Toaster />
       </TooltipProvider>

@@ -3264,3 +3264,95 @@ unchanged. No new schema migrations were introduced.
   preserved.
 - Build-time invariants pass. `assertAllAcwPlaceholderLanguage`
   covers every new label including the confirm-dialog copy.
+
+
+## 21. App-wide Visual Polish (Task #104)
+
+### Purpose
+
+A render-only visual lift applied to every governance surface in
+`artifacts/canvas-ui` (Landing, DecisionCanvasShell, Portfolio,
+Signals, Reflection, Exposure, Containment, AppHeader-mounted
+pages, and the shadcn primitives). No grammar, schema, validator,
+refusal channel, or behaviour was changed. The Studio canvas
+(`.eastudio-root`) is also restyled at the typography level only —
+its prototype-aligned scope from §20C is preserved.
+
+### What changed
+
+- **Tokens (`index.css :root` + `.dark`)**
+  - `--app-font-sans` collapsed to a single Inter stack with a
+    tasteful fallback chain. `--app-font-serif` and
+    `--app-font-mono` widened to `ui-serif` / `ui-monospace`.
+  - `--radius` raised to `0.5rem`.
+  - Multi-stop shadow ramp (`--shadow-2xs` … `--shadow-2xl`)
+    introduced for both light and dark modes — a crisp inner
+    edge plus a soft ambient bloom.
+  - Restrained `--accent-gradient`, `--accent-gradient-soft`,
+    `--accent-gradient-hairline`, and `--surface-gradient`
+    tokens. Gradients are decoration only — they never carry
+    status, urgency, or judgement signals (no traffic-light
+    usage).
+  - `--motion-fast / -base / -slow` and
+    `--motion-ease / -ease-out` tokens for consistent micro-
+    interactions. A `prefers-reduced-motion: reduce` block at
+    the stylesheet root zeros the three durations and disables
+    the route fade.
+
+- **Utility classes (`@layer utilities`)**
+  - `.glass-surface(-strong)` for tooltips, popovers, toasts
+    and dialogs — backdrop-blur is the only "glass" effect in
+    the app and is applied only to overlays / chrome, never to
+    decision surfaces.
+  - `.glass-header` and `.glass-rail` for the app top bar and
+    side rails.
+  - `.lift` for hoverable cards (transform + shadow swap +
+    accessible focus ring).
+  - `.interactive`, `.ui-transition`, `.ui-transition-card`,
+    `.ui-transition-input` so the shadcn primitives never need
+    to embed comma-separated arbitrary `[transition:...]` values
+    (which the Tailwind v4 parser refuses).
+  - `.brand-mark`, `.gradient-accent(-soft)`, `.gradient-text`,
+    `.hairline-accent` for the brand mark, hero headline accent
+    word, and decorative hairline rules.
+  - `.nav-active-bar` — the active-route underline rendered by
+    `GlobalNav`.
+  - `.route-fade-in` driven by the root-scope
+    `@keyframes routeFadeIn`. The `RouteTransition` wrapper in
+    `App.tsx` re-keys on `useLocation()` so each navigation
+    triggers a brief, restrained fade — never carrying
+    judgement.
+  - `.tnum` for tabular-numerals on stat readouts.
+
+- **Shadcn primitives**
+  - `button`, `card`, `input`, `tooltip`, `toast` switched to
+    the shared transition / glass utilities. No variant API
+    changed.
+
+- **Page-level**
+  - New `components/AppHeader.tsx` is the canonical top bar
+    (brand mark, page title / subtitle, GlobalNav). Adopted by
+    Portfolio, Signals, Reflection, Exposure, Containment.
+  - `LandingPage` and `DecisionCanvasShell` keep their bespoke
+    headers but adopt the `.brand-mark` + `.glass-header` +
+    `.hairline-accent` pattern.
+  - `App.tsx` wraps `<Routes>` in `<RouteTransition>` keyed by
+    `useLocation()`.
+
+### Invariants preserved
+
+- `acw-1.0` schema, grammar, validator, and refusal channel
+  unchanged.
+- All 107 vitest suites pass.
+- Every `data-testid` selector preserved.
+- The `.eastudio-root` scope from §20C is preserved — only the
+  Inter typography swap was applied to it.
+- No emoji, no traffic-light colour palette, no animation that
+  could be read as judgement / approval / disapproval.
+- `prefers-reduced-motion: reduce` collapses every
+  app-introduced transition and animation.
+
+### Deferred (out of scope)
+
+The seven EAStudio prototype-parity items already deferred in
+§20C are still deferred and not addressed here.

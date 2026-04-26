@@ -5,14 +5,18 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 hover-elevate active-elevate-2",
+  "ui-transition inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 hover-elevate active-elevate-2",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground border border-primary-border",
-        destructive: "bg-destructive text-destructive-foreground shadow-sm border-destructive-border",
-        outline: "border [border-color:var(--button-outline)] shadow-xs active:shadow-none",
-        secondary: "border bg-secondary text-secondary-foreground border-secondary-border",
+        default:
+          "bg-primary text-primary-foreground border border-primary-border shadow-sm hover:shadow-md hover:brightness-110",
+        destructive:
+          "bg-destructive text-destructive-foreground shadow-sm border-destructive-border hover:shadow-md",
+        outline:
+          "border [border-color:var(--button-outline)] shadow-xs hover:shadow-sm hover:border-ring/40 active:shadow-none",
+        secondary:
+          "border bg-secondary text-secondary-foreground border-secondary-border shadow-xs hover:shadow-sm",
         ghost: "border border-transparent",
         link: "text-primary underline-offset-4 hover:underline",
       },

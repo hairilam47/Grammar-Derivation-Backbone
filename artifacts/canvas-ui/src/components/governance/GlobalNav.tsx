@@ -88,10 +88,10 @@ export function GlobalNav() {
   const [location] = useLocation();
   return (
     <nav
-      className="flex items-center gap-3 text-xs uppercase tracking-widest"
+      className="flex items-center gap-1 text-[11px] uppercase tracking-[0.14em]"
       data-testid="global-nav"
     >
-      {PRIMARY_ITEMS.map((item, idx) => {
+      {PRIMARY_ITEMS.map((item) => {
         const Icon = item.icon;
         const active = item.matches(location);
         // Sub-links surface only when their parent is active or
@@ -100,29 +100,35 @@ export function GlobalNav() {
           (s) => s.parentTestId === item.testId && (active || s.matches(location)),
         );
         return (
-          <span key={item.href} className="flex items-center gap-3">
-            {idx > 0 && <span className="text-muted-foreground/40">·</span>}
+          <span key={item.href} className="flex items-center">
             <Link
               href={item.href}
-              className={`flex items-center gap-1.5 hover:text-primary transition-colors ${
-                active ? "text-primary" : "text-muted-foreground"
+              className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-md interactive ${
+                active
+                  ? "text-foreground bg-secondary/60"
+                  : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
               }`}
               data-testid={item.testId}
+              aria-current={active ? "page" : undefined}
             >
-              <Icon className="w-3.5 h-3.5" /> {item.label}
+              <Icon className="w-3.5 h-3.5" /> <span>{item.label}</span>
+              {active && <span className="nav-active-bar" aria-hidden="true" />}
             </Link>
             {subs.map((s) => {
               const SubIcon = s.icon;
               const subActive = s.matches(location);
               return (
-                <span key={s.href} className="flex items-center gap-1.5">
+                <span key={s.href} className="flex items-center gap-1 ml-1">
                   <span className="text-muted-foreground/50 text-[10px]">›</span>
                   <Link
                     href={s.href}
-                    className={`flex items-center gap-1.5 hover:text-primary transition-colors text-[11px] normal-case ${
-                      subActive ? "text-primary" : "text-muted-foreground/80"
+                    className={`flex items-center gap-1.5 px-2 py-1 rounded-md interactive text-[10px] normal-case ${
+                      subActive
+                        ? "text-foreground bg-secondary/60"
+                        : "text-muted-foreground/80 hover:text-foreground hover:bg-secondary/40"
                     }`}
                     data-testid={s.testId}
+                    aria-current={subActive ? "page" : undefined}
                   >
                     <SubIcon className="w-3 h-3" /> {s.label}
                   </Link>

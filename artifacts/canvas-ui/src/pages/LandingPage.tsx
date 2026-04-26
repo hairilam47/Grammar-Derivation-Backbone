@@ -82,25 +82,32 @@ const CARDS: readonly IntentCard[] = [
 
 export default function LandingPage() {
   return (
-    <div className="min-h-[100dvh] bg-background text-foreground flex flex-col font-mono">
-      <header className="border-b border-border/50 bg-card/50 backdrop-blur sticky top-0 z-10">
-        <div className="container max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-primary">
-            <Layout className="w-5 h-5" />
-            <span className="font-bold tracking-tight text-sm uppercase">
+    <div className="min-h-[100dvh] bg-background text-foreground flex flex-col">
+      <header className="glass-header sticky top-0 z-10">
+        <div className="container max-w-6xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="brand-mark" aria-hidden="true">
+              <Layout />
+            </span>
+            <span className="font-semibold tracking-tight text-sm">
               Architecture Decision Canvas
             </span>
           </div>
           <GlobalNav />
         </div>
+        <div className="hairline-accent h-px w-full opacity-60" aria-hidden="true" />
       </header>
 
-      <main className="flex-1 container max-w-6xl mx-auto px-4 py-12">
-        <div className="mb-10 text-center space-y-3" data-testid="intent-heading">
-          <h1 className="text-2xl font-bold tracking-tight">
-            Choose how you want to engage with the architecture
+      <main className="flex-1 container max-w-6xl mx-auto px-4 py-16">
+        <div className="mb-12 text-center space-y-4" data-testid="intent-heading">
+          <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+            Architecture Decision Canvas
+          </p>
+          <h1 className="text-3xl md:text-4xl font-semibold tracking-tight leading-tight max-w-3xl mx-auto">
+            Choose how you want to{" "}
+            <span className="gradient-text">engage with the architecture</span>
           </h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground max-w-xl mx-auto">
             Three surfaces are available. They are independent and equal.
             Pick the one that matches what you want to do right now.
           </p>
@@ -113,18 +120,28 @@ export default function LandingPage() {
               <Card
                 key={card.testId}
                 data-testid={card.testId}
-                className="flex flex-col"
+                className="lift flex flex-col group relative overflow-hidden"
               >
-                <CardHeader className="space-y-3">
-                  <Icon
-                    className="w-8 h-8 text-muted-foreground"
-                    aria-hidden="true"
-                    data-testid={`${card.testId}-icon`}
-                  />
+                <div
+                  className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-[var(--motion-base)] gradient-accent-soft pointer-events-none"
+                  aria-hidden="true"
+                />
+                <div
+                  className="absolute inset-x-0 top-0 h-px hairline-accent opacity-0 group-hover:opacity-100 transition-opacity duration-[var(--motion-base)]"
+                  aria-hidden="true"
+                />
+                <CardHeader className="space-y-3 relative">
+                  <span className="inline-flex items-center justify-center w-11 h-11 rounded-lg bg-secondary/60 border border-border/60 text-foreground group-hover:text-primary transition-colors duration-[var(--motion-base)]">
+                    <Icon
+                      className="w-5 h-5"
+                      aria-hidden="true"
+                      data-testid={`${card.testId}-icon`}
+                    />
+                  </span>
                   <CardTitle className="text-lg">{card.title}</CardTitle>
                   <CardDescription>{card.description}</CardDescription>
                 </CardHeader>
-                <CardContent className="flex-1 flex flex-col justify-between gap-6">
+                <CardContent className="flex-1 flex flex-col justify-between gap-6 relative">
                   <ul className="space-y-2 text-xs text-muted-foreground list-disc pl-4">
                     {card.hints.map((hint) => (
                       <li key={hint}>{hint}</li>

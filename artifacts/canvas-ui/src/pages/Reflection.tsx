@@ -6,7 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { GlobalNav } from "@/components/governance/GlobalNav";
+import { AppHeader } from "@/components/AppHeader";
 import {
   listEntries,
   type PortfolioEntry,
@@ -206,18 +206,8 @@ export default function Reflection() {
   }, [signals]);
 
   return (
-    <div className="min-h-[100dvh] bg-background text-foreground flex flex-col font-mono">
-      <header className="border-b border-border/50 bg-card/50 backdrop-blur sticky top-0 z-10">
-        <div className="container max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-primary">
-            <Eye className="w-5 h-5" />
-            <span className="font-bold tracking-tight text-sm uppercase">
-              {T.pageTitle}
-            </span>
-          </div>
-          <GlobalNav />
-        </div>
-      </header>
+    <div className="min-h-[100dvh] bg-background text-foreground flex flex-col">
+      <AppHeader icon={Eye} title={T.pageTitle} />
 
       <main className="flex-1 container max-w-6xl mx-auto px-4 py-8 space-y-8">
         <InterpretationPanel />
