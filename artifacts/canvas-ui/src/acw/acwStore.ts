@@ -348,6 +348,11 @@ function viewFor(workspace: AcwWorkspace): ValidatorWorkspaceView {
     getNodeType(nodeId: string) {
       return byId.get(nodeId)?.type;
     },
+    getNodeParentId(nodeId: string) {
+      const n = byId.get(nodeId);
+      if (n === undefined) return undefined;
+      return n.parentId;
+    },
   };
 }
 

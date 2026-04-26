@@ -235,25 +235,28 @@ function Quadrant(props: QuadrantProps) {
       );
       return;
     }
-    // (b) Strict Business chain — a Business Process (System) is
-    // permitted only when the current focus is an OrgUnit-tier
-    // Zone. The grammar permits System under any Zone (used by
-    // the Application quadrant for Application-in-Zone), so this
-    // additional refusal is applied at the UI layer for the
-    // Business domain only and references the spec chain
-    // explicitly in its reason text.
-    if (
-      domain === "business" &&
-      (item.elementType as AcwElementType) === "System"
-    ) {
-      const tier = classifyBusinessFocus();
-      if (tier !== "orgunit") {
-        publishRefusal(
-          'A Business process is not permitted directly inside the Business container or a Department-tier Zone. Drill into an Org unit first; the chain is BusinessEntity → Department → Org unit → Business process.',
-        );
-        return;
-      }
-    }
+    // (b) The strict Business chain (BusinessEntity → Department
+    // → Org unit → Business process) is enforced at the
+    // *validator* level for both palette drops and drag-to-
+    // reparent, so the duplicate UI-layer check that previously
+    // lived here has been removed. The validator surfaces a
+    // refusal whose reason text references the chain literally
+    // when a System tile lands directly inside the Business
+    // container or a Department-tier Zone, and `createNode`
+    // routes it through the standard refusal channel below. Two
+    // historical concerns motivated keeping the previous UI
+    // check; both are now resolved:
+    //   - palette-drop and reparent paths used to diverge in
+    //     enforcement strength, letting a user move a Business
+    //     process out of an OrgUnit by drag. The validator now
+    //     gates `updateNodeParent` identically.
+    //   - the grammar's `permittedParents` table allows System
+    //     under any Zone, which is required for the Application
+    //     quadrant. The validator's contextual chain check kicks
+    //     in only when the parent Zone's top-most ancestor is a
+    //     `BusinessEntity`, so Application-in-Zone continues to
+    //     pass.
+    void classifyBusinessFocus;
 
     const r = createNode({
       type: item.elementType,
@@ -303,8 +306,8 @@ function Quadrant(props: QuadrantProps) {
       data-drop-active={isOver ? "true" : "false"}
       data-focused-parent={focusedParentId}
       onClick={onActivate}
-      className={`relative flex flex-col rounded border ${
-        isOver ? "border-primary/70 bg-primary/5" : "border-border/40 bg-card/30"
+      className={`relative flex flex-col rounded border-2 border-dashed ${
+        isOver ? "border-primary/70 bg-primary/5" : "border-border/50 bg-card/30"
       } min-h-[260px] transition-colors`}
     >
       <header

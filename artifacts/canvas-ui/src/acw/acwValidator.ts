@@ -37,6 +37,13 @@ const REASON_SELF_EDGE = "A relationship from a node to itself is not permitted.
 export const REASON_POSITION_NOT_FINITE =
   "Only finite numbers are permitted as position coordinates.";
 const REASON_PARENT_ROOT = "the workspace root";
+// Strict Business chain — surfaces from `canCreateNode` whenever a
+// caller (palette drop or drag-to-reparent) tries to land a System
+// directly inside the Business container or inside a Department-tier
+// Zone. The reason text references the chain literally so the
+// refusal is self-documenting.
+export const REASON_BUSINESS_CHAIN_BREAK =
+  "A Business process is not permitted directly inside the Business container or a Department-tier Zone. Drill into an Org unit first; the chain is BusinessEntity then Department then Org unit then Business process.";
 
 assertAllAcwPlaceholderLanguage([
   REASON_UNKNOWN_TYPE,
@@ -48,13 +55,22 @@ assertAllAcwPlaceholderLanguage([
   REASON_SELF_EDGE,
   REASON_PARENT_ROOT,
   REASON_POSITION_NOT_FINITE,
+  REASON_BUSINESS_CHAIN_BREAK,
 ]);
 
 // Read-only view of the live workspace surface the validator needs.
 // Passed in rather than imported so the validator remains a pure
 // function and can be exercised against fabricated graphs in tests.
+//
+// `getNodeParentId` is optional: views that do not implement it
+// (older tests with simple type-only fabrications) will skip the
+// EAStudio Business-chain ancestor check below — that check is
+// only meaningful when the validator can walk parents to detect a
+// Business container, and is layered on top of the existing
+// `permittedParents` rule which still runs for every caller.
 export interface ValidatorWorkspaceView {
   getNodeType(nodeId: string): AcwElementType | undefined;
+  getNodeParentId?(nodeId: string): string | null | undefined;
 }
 
 // canCreateNode: may a node of `type` be created with the given
@@ -85,6 +101,47 @@ export function canCreateNode(
       ok: false,
       reason: `${REASON_PARENT_FORBIDDEN_PREFIX} ${parentLabel}.`,
     };
+  }
+  // EAStudio strict Business chain. When a System is placed under a
+  // Zone, walk the Zone's ancestor chain. If the topmost ancestor
+  // is a `BusinessEntity`, the System (a Business process in this
+  // domain) is permitted only when the immediate parent Zone is
+  // itself nested under another Zone (OrgUnit-tier). A Zone whose
+  // parent is the BusinessEntity directly is Department-tier and
+  // refuses. The Application quadrant — whose container is also a
+  // Zone (no BusinessEntity ancestor) — is unaffected, so
+  // Application-as-System under any Zone continues to validate.
+  if (
+    type === "System" &&
+    parentType === "Zone" &&
+    typeof view.getNodeParentId === "function"
+  ) {
+    const getParent = view.getNodeParentId.bind(view);
+    let cursorId: string | null | undefined = parentId;
+    let lastZoneParentType: AcwElementType | null = null;
+    let topAncestorType: AcwElementType | null = null;
+    let guard = 0;
+    while (cursorId !== undefined && cursorId !== null && guard < 1024) {
+      const t = view.getNodeType(cursorId);
+      if (t === undefined) break;
+      topAncestorType = t;
+      const nextId = getParent(cursorId);
+      if (nextId === undefined || nextId === null) break;
+      const nextType = view.getNodeType(nextId);
+      if (cursorId === parentId) {
+        // The first iteration's "next type" is the parent Zone's parent.
+        lastZoneParentType = nextType ?? null;
+      }
+      cursorId = nextId;
+      guard += 1;
+    }
+    if (topAncestorType === "BusinessEntity") {
+      // Refuse when the immediate parent Zone is itself the child of
+      // a BusinessEntity (Department-tier) or has no parent at all.
+      if (lastZoneParentType !== "Zone") {
+        return { ok: false, reason: REASON_BUSINESS_CHAIN_BREAK };
+      }
+    }
   }
   return { ok: true };
 }

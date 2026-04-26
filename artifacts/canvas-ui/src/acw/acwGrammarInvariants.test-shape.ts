@@ -341,6 +341,70 @@ expectRefusal(
   );
 }
 
+// (6b) Strict-chain *contextual* refusal — System (Business
+// process) inside a Department-tier Zone (a Zone whose parent is
+// a BusinessEntity) must be refused even though the
+// `permittedParents` table allows System under any Zone. This is
+// the validator-level guard that makes drag-to-reparent obey the
+// same rule as palette drop. Three positive controls assert:
+//   - System under an OrgUnit-tier Zone (Zone whose parent is
+//     itself a Zone, ancestor BusinessEntity) is permitted.
+//   - System under a Zone whose top ancestor is *not* a
+//     BusinessEntity (e.g. an Application-domain Zone parented to
+//     another Zone) is permitted.
+//   - System under a Zone whose top ancestor is *not* a
+//     BusinessEntity AND is itself the top container is
+//     permitted (Application-as-System under domain Zone).
+{
+  // Negative — Department-tier (Zone "dept" parented to "be" which
+  // is a BusinessEntity).
+  const view: ValidatorWorkspaceView = {
+    getNodeType: (id: string) => {
+      if (id === "be") return "BusinessEntity" as AcwElementType;
+      if (id === "dept") return "Zone" as AcwElementType;
+      if (id === "orgu") return "Zone" as AcwElementType;
+      return undefined;
+    },
+    getNodeParentId: (id: string) => {
+      if (id === "be") return null;
+      if (id === "dept") return "be";
+      if (id === "orgu") return "dept";
+      return undefined;
+    },
+  };
+  expectRefusal(
+    "System inside Department-tier Zone (Business chain break)",
+    canCreateNode("System", "dept", view),
+    "Org unit",
+  );
+  // Positive — OrgUnit-tier Zone (parent is a Zone whose own
+  // parent is BusinessEntity) accepts System.
+  {
+    const r = canCreateNode("System", "orgu", view);
+    if (r.ok !== true) {
+      throw new Error(
+        `${PREFIX}: System inside OrgUnit-tier Zone refused: ${r.ok === false ? r.reason : "unknown reason"}.`,
+      );
+    }
+  }
+}
+{
+  // Positive — Application-domain shape: Zone "appz" is the top
+  // container (no BusinessEntity ancestor). System under "appz"
+  // must remain permitted.
+  const view: ValidatorWorkspaceView = {
+    getNodeType: (id: string) =>
+      id === "appz" ? ("Zone" as AcwElementType) : undefined,
+    getNodeParentId: (id: string) => (id === "appz" ? null : undefined),
+  };
+  const r = canCreateNode("System", "appz", view);
+  if (r.ok !== true) {
+    throw new Error(
+      `${PREFIX}: Application-as-System under top Zone refused: ${r.ok === false ? r.reason : "unknown reason"}.`,
+    );
+  }
+}
+
 // Exported predicate so future callers (or a follow-up test
 // harness) can re-run the assertions on demand. Calling it after
 // module load is a no-op for the live registry.
