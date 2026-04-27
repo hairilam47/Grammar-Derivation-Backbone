@@ -66,8 +66,19 @@ export interface NodeContextMenuProps {
 
 export function NodeContextMenu(props: NodeContextMenuProps) {
   const { node, x, y, activeLod, onClose } = props;
-  const options = useMemo(() => resolveBoundOptions(node), [node]);
+  // Phase 3 — surface ONLY the alternatives. The current selection
+  // is intentionally NOT rendered as a disabled item: when the
+  // bound parameter has exactly one option (the one already in
+  // use), the resulting `actionable` list is empty and the menu
+  // shows the "No other options available." empty state — matching
+  // the brief's contract that the menu is a SWAP affordance, not
+  // a status display.
+  const allOptions = useMemo(() => resolveBoundOptions(node), [node]);
   const current = useMemo(() => resolveBoundOption(node, undefined), [node]);
+  const options = useMemo(
+    () => allOptions.filter((opt) => opt !== current),
+    [allOptions, current],
+  );
 
   const onPick = (value: string) => {
     if (node.boundParam === undefined) {
@@ -125,6 +136,14 @@ export function NodeContextMenu(props: NodeContextMenuProps) {
       <header className="es-context-menu-head">
         <ArrowLeftRight className="w-3 h-3" aria-hidden="true" />
         <span>{MENU_TITLE}</span>
+        {current !== null ? (
+          <span
+            className="es-context-menu-current"
+            data-testid="acw-studio-node-context-menu-current"
+          >
+            {CURRENT_SUFFIX}: {current}
+          </span>
+        ) : null}
       </header>
       <ul className="es-context-menu-list">
         {options.length === 0 ? (
@@ -135,29 +154,25 @@ export function NodeContextMenu(props: NodeContextMenuProps) {
             {NO_OPTIONS}
           </li>
         ) : (
-          options.map((opt) => {
-            const isCurrent = current === opt;
-            return (
-              <li key={opt}>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="es-context-menu-item"
-                  data-current={isCurrent ? "true" : "false"}
-                  data-testid={`acw-studio-node-context-menu-item-${opt}`}
-                  disabled={isCurrent}
-                  onClick={() => onPick(opt)}
-                >
-                  <span>{opt}</span>
-                  {isCurrent ? (
-                    <span className="es-context-menu-current">
-                      {CURRENT_SUFFIX}
-                    </span>
-                  ) : null}
-                </button>
-              </li>
-            );
-          })
+          // Phase 3 — `options` already excludes the current
+          // selection (filtered above), so every rendered item is
+          // an actionable alternative. The `current` value is
+          // surfaced once via a header annotation so the user can
+          // confirm what they are swapping AWAY from without the
+          // current option ever appearing as a disabled menu line.
+          options.map((opt) => (
+            <li key={opt}>
+              <button
+                type="button"
+                role="menuitem"
+                className="es-context-menu-item"
+                data-testid={`acw-studio-node-context-menu-item-${opt}`}
+                onClick={() => onPick(opt)}
+              >
+                <span>{opt}</span>
+              </button>
+            </li>
+          ))
         )}
       </ul>
       <footer className="es-context-menu-foot">
