@@ -79,6 +79,7 @@ import { isVisibleAtLod, type AcwDomainTag } from "@/acw/acwGrammar";
 import { NodeContextMenu } from "@/components/acw/studio/NodeContextMenu";
 import { cssForOu } from "@/acw/orgUnits/ouHue";
 import { getOu, subscribeOus } from "@/acw/orgUnits/ouStore";
+import { resolveLabel, resolveIcon } from "@/acw/semantic/techNodeBinding";
 
 const SEAL_LABEL = "Sealed";
 const QUADRANT_HINT = "Drop a palette tile here.";
@@ -514,7 +515,18 @@ function resolveTile(node: AcwNode, domain: AcwDomainTag): PaletteItem {
 
 function NodeCard(p: NodeCardProps) {
   const tile = resolveTile(p.node, p.domain);
-  const { Icon } = tile;
+  // Phase 3 — Studio cards now derive their label and icon from the
+  // semantic-binding resolvers (`resolveLabel` / `resolveIcon`) so
+  // a right-click "Swap technology" mutation that changes only
+  // `boundParam.optionValue` is reflected on the card in the same
+  // gesture. `resolveLabel` falls back to `node.label` when no
+  // bound option is available; `resolveIcon` returns `undefined`
+  // when no `boundTechnologyCategory` is set, in which case we
+  // keep the palette tile's icon (the pre-Phase-5 affordance) so
+  // unbound nodes still render an appropriate glyph.
+  const displayLabel = resolveLabel(p.node);
+  const iconEntry = resolveIcon(p.node);
+  const Icon = iconEntry !== undefined ? iconEntry.Icon : tile.Icon;
   // ARIA augmentation for the OU overlay. Colour is categorical so
   // the assistive label MUST carry the unit name independently —
   // never rely on hue to convey membership. The augmentation is
@@ -522,11 +534,11 @@ function NodeCard(p: NodeCardProps) {
   // !== null) so an OU bound to a node while the overlay is OFF
   // does not leak through assistive tech in a context where no
   // visual signal accompanies it. Phrasing is parenthetical so
-  // screen readers announce the node label first, then the
-  // membership clause.
+  // screen readers announce the (semantic) node label first, then
+  // the membership clause.
   const ariaLabel =
     p.overlayCss !== null && p.ouName !== null
-      ? `${p.node.label} (organisational unit: ${p.ouName})`
+      ? `${displayLabel} (organisational unit: ${p.ouName})`
       : undefined;
   // The categorical hue lives on backgroundColor; CSS handles
   // hover / selected affordances on its own classes. We do NOT
@@ -579,7 +591,7 @@ function NodeCard(p: NodeCardProps) {
         <Icon className="w-3 h-3" />
       </span>
       <span className="es-cnode-text">
-        <span className="es-cnode-label">{p.node.label}</span>
+        <span className="es-cnode-label">{displayLabel}</span>
         <span className="es-cnode-sub es-mono">{tile.subLabel}</span>
       </span>
       <span className="es-cnode-actions">

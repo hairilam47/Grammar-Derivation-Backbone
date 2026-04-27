@@ -46,6 +46,7 @@ import {
   updateNodePosition,
   updateNodeProperties,
 } from "./acwStore";
+import { resolveLabel } from "./semantic/techNodeBinding";
 
 const STORE_KEY = "acw.workspace.v1";
 const VIEW_KEY = "acw.workspace.view.v1";
@@ -1105,6 +1106,81 @@ try {
     if (empty.ok !== false) {
       throw new Error(
         `${PREFIX}: updateNodeProperties accepted an empty organisationalUnitId.`,
+      );
+    }
+  }
+  // (12k) EAStudio Path B Phase 3 — right-click "Swap technology"
+  // mutation must be visible to the Studio renderer in the same
+  // tick. The Studio NodeCard derives its label from
+  // `resolveLabel(node)` (which reads `boundParam.optionValue`),
+  // so a swap that calls `updateNodeBinding({ ..., optionValue:
+  // <new> })` MUST cause `resolveLabel` to return `<new>` on the
+  // very next workspace read. This probe locks the binding-read
+  // contract end-to-end so a future renderer change cannot
+  // silently revert to the pre-Phase-3 `node.label` rendering and
+  // break the swap-visibility acceptance criterion.
+  {
+    const swapNode = createNode({
+      type: "Component",
+      parentId: sysId,
+      label: "swap-probe",
+      domainTag: "application",
+      boundParam: {
+        sectionId: "ops",
+        paramId: "containerOrchestration",
+        optionValue: "Kubernetes",
+      },
+    });
+    if (!swapNode.ok) {
+      throw new Error(
+        `${PREFIX}: swap-probe createNode refused: ${swapNode.reason}`,
+      );
+    }
+    const beforeNode = parseSnapshot(
+      __acwStoreInternals.serializeForTest(),
+    ).nodes.find((n) => n.id === swapNode.id) as
+      | (Record<string, unknown> & { id: string; label: string })
+      | undefined;
+    if (beforeNode === undefined) {
+      throw new Error(`${PREFIX}: swap-probe seed node not present.`);
+    }
+    if (
+      resolveLabel(beforeNode as unknown as Parameters<typeof resolveLabel>[0]) !==
+      "Kubernetes"
+    ) {
+      throw new Error(
+        `${PREFIX}: resolveLabel did not surface the seeded optionValue ("Kubernetes").`,
+      );
+    }
+    // Swap to a different valid option of the same parameter. The
+    // validator must accept and the resolver must immediately read
+    // the new value through the live workspace.
+    const swapped = updateNodeBinding(swapNode.id, {
+      boundParam: {
+        sectionId: "ops",
+        paramId: "containerOrchestration",
+        optionValue: "Nomad",
+      },
+    });
+    if (!swapped.ok) {
+      throw new Error(
+        `${PREFIX}: swap updateNodeBinding refused: ${swapped.reason}`,
+      );
+    }
+    const afterNode = parseSnapshot(
+      __acwStoreInternals.serializeForTest(),
+    ).nodes.find((n) => n.id === swapNode.id) as
+      | (Record<string, unknown> & { id: string; label: string })
+      | undefined;
+    if (afterNode === undefined) {
+      throw new Error(`${PREFIX}: swap-probe node missing after swap.`);
+    }
+    if (
+      resolveLabel(afterNode as unknown as Parameters<typeof resolveLabel>[0]) !==
+      "Nomad"
+    ) {
+      throw new Error(
+        `${PREFIX}: resolveLabel did not reflect the swapped optionValue ("Nomad").`,
       );
     }
   }
