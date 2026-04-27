@@ -22,16 +22,18 @@
 //       structurally well-formed shape (non-empty `sectionId` /
 //       `paramId`, `optionValue` either `null` or non-empty
 //       string) AND its `(sectionId, paramId)` pair resolves
-//       through the live CTAD registry via `findSectionForParam`,
-//       mirroring the runtime resolver in
-//       `acw/semantic/techNodeBinding.ts`. Phase 1 ships no
-//       `boundParam` defaults so both checks are vacuous today;
-//       wiring them up now means a future Phase 2 edit that
-//       smuggles in a malformed or stale default fails the bundle
-//       rather than silently degrading to the node's own label at
-//       render time. The CTAD-registry import is permitted by the
-//       ACW isolation invariant (`@/ctad/ctadRegistry` is on the
-//       read-only allowlist; the CTAD STORE remains forbidden).
+//       through the live CTAD registry via the same
+//       `findRegistryParam(sectionId, paramId)` resolver the
+//       runtime uses in `acw/semantic/techNodeBinding.ts`. Phase
+//       1 ships no `boundParam` defaults so both checks are
+//       vacuous today; wiring them up now means a future Phase 2
+//       edit that smuggles in a malformed or stale default fails
+//       the bundle rather than silently degrading to the node's
+//       own label at render time. `findRegistryParam` is the
+//       intra-ACW wrapper that pair-validates `(sectionId,
+//       paramId)` and is itself the only ACW module permitted to
+//       import the CTAD registry — this invariant module reuses
+//       it so the isolation invariant stays intact.
 //   (4) The Path B Phase 1 expected coverage holds: at least one
 //       tile in each of the three EAStudio domains touched by
 //       Phase 1 (data, application, technology) carries a
@@ -54,7 +56,7 @@ import {
   ACW_DOMAIN_TAGS,
   type AcwDomainTag,
 } from "../acwGrammar";
-import { findSectionForParam } from "@/ctad/ctadRegistry";
+import { findRegistryParam } from "../semantic/techNodeBinding";
 import { ACW_PALETTE } from "./paletteRegistry";
 
 const PREFIX = "EAStudio Path B Phase 1 palette-registry invariant violation";
@@ -113,10 +115,10 @@ for (const item of ACW_PALETTE) {
   // future Phase 2 default that names a stale or renamed pair
   // fails the bundle here. Vacuous in Phase 1 (no boundParam
   // defaults).
-  const section = findSectionForParam(bp.sectionId, bp.paramId);
-  if (section === undefined) {
+  const param = findRegistryParam(bp.sectionId, bp.paramId);
+  if (param === undefined) {
     throw new Error(
-      `${PREFIX}: tile "${item.paletteKind}" declares boundParam (sectionId="${bp.sectionId}", paramId="${bp.paramId}") which does not resolve through findSectionForParam in the live CTAD registry.`,
+      `${PREFIX}: tile "${item.paletteKind}" declares boundParam (sectionId="${bp.sectionId}", paramId="${bp.paramId}") which does not resolve through findRegistryParam in the live CTAD registry.`,
     );
   }
 }
