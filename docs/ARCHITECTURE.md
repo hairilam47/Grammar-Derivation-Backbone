@@ -38,6 +38,149 @@ decision pipeline.
 
 ---
 
+## 1A. Discipline Framing
+
+This project's documentation evolved alongside the code, so it
+reads mostly as build history (Layer 1 Grammar Engine, Layer 2
+Wizard, Phase 6 TOGAF / ArchiMate, etc.). That numbering captures
+*how* the system was built, but it does not tell an EA-literate
+reader *which discipline construct each piece realises*. This
+section is the bridge between the implementation history and the
+canonical EA vocabulary an enterprise or solution architect would
+expect, and it is the single source of truth other sections
+cross-reference for that vocabulary.
+
+### Reference frameworks (vocabulary, not adopted methods)
+
+This project takes its **vocabulary** from the standard EA
+discipline literature. It does not adopt the full method of any
+single framework as a deliverable shape:
+
+- **TOGAF / Spewak EAP** — for the four standard architecture
+  domains (Business, Data, Application, Technology), the
+  current-state vs future-state framing, and the position of
+  strategy as **input** to architecture (not as architecture
+  itself).
+- **ISO/IEC/IEEE 42010** — for the way an architecture description
+  is specified: *stakeholders*, *concerns*, *viewpoints*, and
+  *correspondence rules*.
+- **Standard EA abstraction levels** — conceptual → logical →
+  physical, the layering used across TOGAF, ArchiMate, and the
+  ISO 42010 commentary.
+- **Strategy → Architecture → Transformation** — the canonical
+  positioning of the EA discipline between business strategy
+  (input) and execution / transformation (downstream).
+- **Zachman** — for the classification idea (artefacts arrayed by
+  what / how / where / who / when / why × abstraction level).
+
+Where this document uses *viewpoint* or *correspondence rule* it
+means the ISO 42010 sense; where it uses *domain* it means the
+TOGAF four-domain sense; where it uses *conceptual / logical /
+physical* it means the standard EA abstraction layering.
+
+### Position in the strategy → architecture → transformation chain
+
+The canonical EA-discipline positioning places architecture
+**between** business strategy (the input that motivates
+architectural choice) and execution / transformation (the
+downstream activity that realises it). This project sits squarely
+in the architecture middle:
+
+- It does **not** elicit, capture, or analyse business strategy.
+  It consumes context describing an organisation already shaped by
+  a strategy.
+- It does **not** plan or sequence transformation. ADS / ECP
+  artefacts state what was decided; they do not state how to
+  deliver it, when to do so, or who carries the work.
+- ACW and CTAD describe **what the architecture is** (or could be,
+  in the conceptual / interpretive sense). They do not state what
+  it should become or in what order.
+
+### Implementation layers vs discipline constructs
+
+The §3 layer diagram (Layers 1–6) captures the **build-time**
+stack — what runs, what reads what, where the isolation lines
+live. The mapping below restates the same surfaces in
+**discipline** terms.
+
+| Implementation surface | Discipline construct |
+| --- | --- |
+| Layer 1 — Grammar engine (`lib/architecture-grammar`) | Decision derivation rules — deterministic mapping from context + capability selections to components, risks, and complexity indicators |
+| Layer 2 — Wizard (`pages/Wizard.tsx`) | Decision elicitation interview — the user-facing form that captures the inputs the rules consume |
+| Layer 3 — Freeze + ADS / ECP builders | Decision-record discipline — immutability, integrity hash, identity, export |
+| Layer 4 — Portfolio store + view | Decision-record archive — per-organisation history of frozen decisions |
+| Layer 5 — Policy signals store + view | Post-decision policy commentary — advisory annotations on past decisions, never re-derivation |
+| Layer 6 — Reflective view | Aggregate read of the archive — governance overview that persists nothing |
+| Phase 6 constitutional layer (§17) | Build-time correspondence-rule conformance — the verbatim non-authority disclaimer plus the build-time invariants module |
+| ACW (§18) | Architecture description surface — viewpoints (ISO 42010) over the four standard TOGAF domains |
+| ACW Track 3 (§18D) | Derived structural visualisation — mechanical compile of the conceptual state into a structural diagram |
+| CTAD (§19) | Conceptual-level technology exploration — the conceptual abstraction layer in standard EA layering |
+
+### Canonical glossary (acronym ↔ EA-discipline term)
+
+| Internal name | EA-discipline construct |
+| --- | --- |
+| **ADC** — Architecture Decision Canvas | Architecture decision discipline — the surface that elicits, derives, freezes, and archives a single decision record |
+| **ADS** — Architecture Decision Snapshot | Decision-record artefact — what was decided, on what context (immutable) |
+| **ECP** — Execution Constraint Profile | Constraint-record artefact — what bounds the decision implies for downstream execution (immutable) |
+| **ACW** — Architecture Composition Workspace | Architecture description surface — viewpoints over the four standard EA domains, structurally isolated from the decision pipeline |
+| **CTAD** — Conceptual Technology Architecture Design | Conceptual-level technology exploration — the conceptual abstraction layer in the conceptual → logical → physical EA layering |
+| **Lens** | Viewpoint (ISO 42010) — a partial view of the architecture description shaped to a specific concern |
+| **Validator + refusal channel** | Correspondence-rule conformance (ISO 42010) — the mechanism that refuses any structurally invalid edit and surfaces a neutral reason |
+| **Isolation invariant** | Layered delegation — the build-time assertion that a module never reads from a peer or higher layer (the "each layer delegates to the layer below" pattern, applied at module-graph level) |
+| **Schema lock** | Conformance pinning — the build-time assertion that a persisted artefact's shape cannot drift without a deliberate version bump |
+| **Refusal banner** | Correspondence-rule diagnostic — the neutral, judgement-free user-visible surface for a refused structural edit |
+
+### Lens ↔ four-domain coverage
+
+Per the standard TOGAF four-domain partition, each ACW lens
+covers the following:
+
+| Lens | Domain coverage |
+| --- | --- |
+| Context & Domain (`/workspace/context`) | Business architecture |
+| System Landscape (`/workspace/landscape`) | Application portfolio architecture |
+| Integration (`/workspace/integration`) | Application + Data integration |
+| Deployment & Infrastructure (`/workspace/deployment`) | Technology architecture |
+| Operations & Continuity (`/workspace/operations`) | Operational / governance overlay |
+| EAStudio Canvas (`/workspace/studio`) | Free-form blueprint surface — author can place elements in any of the four domains |
+
+### Conceptual vs logical layering
+
+CTAD lives at the **conceptual** layer of the standard
+conceptual → logical → physical layering: it captures categorical,
+reversible, exploratory technology choices (e.g., "managed
+hosting" or "event-driven" as a category, rather than a specific
+vendor's product at a specific version). ACW (and the Track 3
+derived view) lives at the **logical** layer: it composes named
+systems, components, and connections, but does not pin down vendor
+identity, version, or physical placement detail. The project does
+not currently introduce a physical-layer surface.
+
+### Observed inconsistency: "Decision Contract" vs "Design Contract"
+
+During this restructure we surfaced a real, pre-existing naming
+inconsistency in the navigation surface:
+
+- The EAStudio right-rail header reads **"Decision Contract"**
+  (component `DecisionContractNav.tsx`, introduced by Task #100;
+  also referenced in `replit.md` line 45).
+- The left-sidebar parent group is labelled **"Design Contract"**
+  (testid `nav-design-contract`, introduced by Task #108; also
+  referenced in `replit.md` line 79).
+
+Both group the same destinations (Decision Canvas, CTAD,
+Portfolio, Signals, Reflection). Of the two, **"Decision Contract"
+is the more accurate phrase** — every artefact under this group is
+a decision-record artefact (ADS / ECP / portfolio entry / policy
+signal / reflective view), not a design artefact. We document the
+inconsistency here and leave the actual rename for a separate
+follow-up: it would touch a stable testid plus several
+user-visible labels, so it warrants its own scoped change rather
+than riding on this documentation alignment.
+
+---
+
 ## 2. Monorepo Layout
 
 The project is a pnpm workspace.
@@ -1251,6 +1394,13 @@ pipelines. Phase 6 adds **no** new decision logic, derivation,
 portfolio fields, computed signals, or exports. It only documents
 and asserts what ADC artefacts must NOT be read as doing.
 
+In the EA-discipline framing of §1A, this layer is a build-time
+**correspondence-rule conformance** mechanism (ISO 42010): it
+constrains how ADC artefacts may be cited and exported, and it
+fails the bundle if a future regression crosses the line. It is
+not itself a discipline construct that produces or revises
+architecture content.
+
 ### Hard constraints (PH6-HC1..PH6-HC7)
 
 These are quoted verbatim from the brief. Each is enforced by one
@@ -1425,6 +1575,14 @@ A separate, structurally-only workspace shell for assembling and
 viewing architecture *structure*. The ACW is **a sibling lens**, not
 a successor of the Decision Canvas. It is empty by default and ships
 no architecture content, no recommendations, no derivation logic.
+
+In the EA-discipline framing of §1A, ACW realises the
+**architecture description surface** in the ISO 42010 sense: each
+lens is a *viewpoint* over the four standard TOGAF domains
+(Business / Data / Application / Technology), and the validator
+plus refusal channel acts as the *correspondence-rule conformance*
+mechanism for structural edits. See §1A "Lens ↔ four-domain
+coverage" for the per-lens domain mapping.
 
 ### Non-goals (intentional, documentary)
 
