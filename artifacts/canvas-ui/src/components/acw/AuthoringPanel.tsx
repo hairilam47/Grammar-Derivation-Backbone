@@ -282,10 +282,12 @@ function OptionPill({ selected, onClick, label, testId }: OptionPillProps) {
 function iconForElementType(type: AcwElementType): ReactNode {
   switch (type) {
     case "Zone":
+    case "BusinessEntity":
       return <Layers className="w-3.5 h-3.5" aria-hidden="true" />;
     case "System":
-    case "Subsystem":
       return <Network className="w-3.5 h-3.5" aria-hidden="true" />;
+    case "ComputeNode":
+    case "Component":
     default:
       return <Workflow className="w-3.5 h-3.5" aria-hidden="true" />;
   }
