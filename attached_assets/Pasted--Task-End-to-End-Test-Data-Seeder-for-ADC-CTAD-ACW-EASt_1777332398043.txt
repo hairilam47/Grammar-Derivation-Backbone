@@ -1,0 +1,73 @@
+## Task: End‑to‑End Test Data Seeder for ADC, CTAD, ACW, EAStudio, and Governance
+
+### What & Why
+We need a deterministic, repeatable way to populate the entire application with rich, realistic test data. This will let us demo the full system, run manual smoke tests, and catch regressions without navigating through the wizard, CTAD shells, and Authoring Panel dozens of times. The seeder must exercise every major surface: ADC decisions, CTAD architectures (both bound and standalone), ACW/EAStudio authored workspaces, Organisational Units, policy signals, and Track 3 preferences.
+
+The seeder lives as a development‑only route (`/seed-all`) that can be visited in the browser. It deletes all existing localStorage data for the app, then programmatically calls the same store functions the UI uses, so all invariants, validators, and vocabulary guards are enforced exactly as they would be during normal use.
+
+### Design rules
+- **Deterministic**: use hard‑coded dates, ids, and names (no `Date.now()` or `Math.random()` inside the seeded data). The goal is that running the seeder twice produces **identical** localStorage state.
+- **Safe**: only available when `import.meta.env.DEV` is `true`. In production it is a no‑op.
+- **Complete**: seeds at least 3 ADC decisions, 3 CTAD architectures (mix of legacy bound and standalone), 1 full ACW/EAStudio workspace, 2 Organisational Units, and 3 policy signals.
+- **Passes all validators**: every value must be within the allowed enums, every text label must pass the vocabulary guard, and every edge must be grammar‑legal. The seeder must **never** trigger a refusal banner.
+- **Additive only**: import and call existing store functions (`addOrUpdateEntry`, `createArchitecture`, `setArchitectureParam`, `createNode`, `createEdge`, `updateNodeProperties`, `createOu`, `addSignal`, etc.). Do **not** bypass the validators by writing raw JSON to localStorage.
+
+### Data to seed
+
+#### 1. Portfolio (ADC) – 3 decisions
+| adsId | projectName | approvingAuthority | sensitivityLevel | systemIntent | capabilities | expectedLifespanYears | baselinePosture |
+|-------|-------------|-------------------|-----------------|-------------|-------------|-----------------------|-----------------|
+| `customer-portal` | Customer Portal Modernization | Sarah Chen | high | external-portal | EXTERNAL_ACCESS, CASE_MANAGEMENT, AUDIT_COMPLIANCE | 5 | balanced |
+| `data-lake` | Enterprise Data Lake | Marcus Rivera | medium | internal-admin | REPORTING_ANALYTICS, DOCUMENT_MANAGEMENT | 7 | cost-optimized |
+| `compliance-hub` | Regulatory Compliance Hub | Aisha Khan | high | internal-admin | AUDIT_COMPLIANCE, WORKFLOW_APPROVAL | 10 | risk-averse |
+
+Each entry must include all 17 allowed fields. Derive `complexityScore`, `operationalOverheadScore`, `changeCostLaterScore`, `highestRiskSeverity`, `riskCategoriesPresent`, `layersPresent`, `inScopeCapabilityIds`, `ecpConstraintCategories`, `approvalFunctionsAffected`, `approvalDominantFunctions` by actually calling `deriveArchitecture` from the grammar engine (so they are realistic).
+
+#### 2. CTAD – 1 legacy ADC‑bound workspace + 2 standalone architecture workspaces
+- **Legacy** – bound to `customer-portal@v1`. Set `hostingModel` to `kubernetes`, `frameworkFamily` to `react`, `databaseClass` to `relational-sql`, and create environments `prod` (kind=production, hostingModel=cloud) and `dev` (kind=development, hostingModel=cloud).
+- **Standalone‑1** – name `NextGen Platform`. Set `hostingModel` to `multi-cloud`, `deploymentTopology` to `active-active`, `databaseClass` to `document-nosql`, `observabilitySurface` to `full-observability`. Create environments `prod-us` (production, cloud) and `dr-eu` (dr, cloud).
+- **Standalone‑2** – name `Mobile‑First Architecture`. Set `applicationStyle` to `mobile-app`, `frameworkFamily` to `flutter`, `hostingModel` to `serverless`. Environments: `production` and `staging`.
+
+Use `createArchitecture`, then `setArchitectureParam` and the environment CRUD functions.
+
+#### 3. ACW / EAStudio Authored Workspace
+Populate the `acw.workspace.v1` store with a rich 4‑domain diagram:
+- **Business domain** (`domain-business` container): Create a `Department` ("Sales & Marketing") containing an `OrgUnit` ("Online Sales") with a `BusinessProcess` ("Order‑to‑Cash"). Add a `StrategyMap` node and a `KPI` node at the Business root.
+- **Application domain** (`domain-application` container): Create a `Application` node ("Customer Portal"), a `Microservice` node ("Payment Service"), and an `API Gateway` node. Connect them with CONNECTS edges (Portal → Payment, Portal → Gateway). Set `boundTechnologyCategory` and `boundParam` where appropriate (e.g., the Portal node binds to `application.frameworkFamily: 'react'`).
+- **Data domain** (`domain-data` container): Create `Data Store` ("Customer DB") and `Data Flow` ("Payment Events").
+- **Technology domain** (`domain-technology` container): Create `Cloud Region` ("AWS us‑east‑1"), `Database` ("Order DB"), `Runtime Engine` ("K8s Cluster"). Set appropriate `boundParam` values.
+- On some nodes, set properties: status, maturity, priority, owner, description. Assign an `organisationalUnitId` to a couple of nodes (must match the OUs created in step 5).
+- Also set per‑lens view state: `currentDomainByLens[“studio”]` = `"application"`, `activeLodByLens[“studio”]` = 2, `showOrgOverlayByLens[“studio”]` = false, and a collapsed domain container (via `toggleCollapsed` or direct slice) for the Technology domain.
+
+#### 4. CNCF Apply Layer
+For the legacy CTAD binding (`customer-portal`), apply two CNCF cards via `cncfApplyService.applyCard` – e.g., a card that sets `containerRuntime` to `containerd` and one that constrains `databaseClass` to `relational-sql`. This exercises the constraints store and applied‑cards audit log.
+
+#### 5. Organisational Units
+Create two OUs in the OU store:
+- `engineering`: "Engineering"
+- `compliance`: "Compliance & Risk"
+
+#### 6. Policy Signals
+Create three signals referencing the portfolio entries:
+- `sig-risk-accumulation`: category "Risk Accumulation", referencing `customer-portal` and `data-lake`. Status "Under Discussion". Interpretation guidance ends with `?`.
+- `sig-posture-drift`: "Posture Drift", referencing `compliance-hub`. Status "Observed".
+- `sig-dependency-concentration`: "Dependency Concentration", referencing all three. Status "Acknowledged" (and hence terminal – ensure the store accepts it).
+
+Use `addSignal` and `advanceSignal` functions.
+
+#### 7. Track 3 View Preferences
+For the derived view (Track 3), set view preferences for architectures `nextgen‑platform` (from CTAD standalone‑1) – set `viewMode: "3d"`, `perspective: "topDown"`, and collapse a couple of layers.
+
+### Technical implementation
+
+**New file:** `artifacts/canvas-ui/src/dev/seedAll.ts`
+
+- Export a single async function `seedAll()` that:
+  - Clears localStorage keys that the app uses: `adc.portfolio.v1`, `adc.policy‑signals.v1`, `ctad.state.v1`, `ctad.applied‑cards.v1`, `ctad.constraints.v1`, `acw.workspace.v1`, `acw.workspace.view.v1`, `acw.track3.viewprefs.v1`, `adc.architecture‑attachments.v1`, `acw.organisational‑units.v1`, `acw.workspace.viewprefs.v1`.
+  - Calls the store functions sequentially to populate everything. Use the actual modules – no raw object writes.
+  - Returns a summary of what was created (for console.log or on‑screen).
+- Return a Promise so we can await it.
+
+**New route:** In `src/App.tsx` (or a `DevTools` wrapper), add:
+```tsx
+{import.meta.env.DEV && <Route path="/seed-all" component={SeedAllPage} />}
