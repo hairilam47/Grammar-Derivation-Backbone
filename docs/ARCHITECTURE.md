@@ -1616,13 +1616,58 @@ itself UI-free.
 ### Authoring panel — `components/acw/AuthoringPanel.tsx`
 
 A single shared panel embedded once at the top of `WorkspaceShell`.
-It renders two forms — *Add element* and *Add relationship* — both
-derived from the registry (no element type or edge kind is
-hard-coded in the UI). On submission it asks the validator first;
-on failure it surfaces the refusal in the
-`acw-refusal-banner` and leaves the workspace untouched. The shell's
-five lenses share this one authoring source — there is no per-lens
-authoring forking.
+It renders two stepwise flows — *Add element* and *Add relationship*
+— both derived from the registry (no element type or edge kind is
+hard-coded in the UI). The shell's five lenses share this one
+authoring source — there is no per-lens authoring forking.
+
+Each flow walks the user through one blank at a time, and every
+selectable choice is rendered as a card (`role="radio"` inside a
+`role="radiogroup"`); the previous native `<select>` controls are
+gone. The two flows are:
+
+- *Add element* (3 steps): **Type → Parent → Label**. Type is a
+  card grid over `ACW_ELEMENT_TYPES`; Parent is a card list of the
+  permitted parents (computed from `permittedParentsFor(type)` plus
+  the optional `Workspace root` card when the type may live at the
+  root); Label is a free-text input that defaults to the type label
+  if left blank. Parent snap-back is preserved: switching Type
+  clears any previous Parent selection and forces an explicit
+  re-pick before *Continue* is enabled (a single-permitted-parent
+  case auto-satisfies the gate).
+- *Add relationship* (3 steps): **Kind → From → Destination**. All
+  three steps are card lists; the *From* node card is disabled in
+  the *Destination* step so the picker UI cannot offer a self-edge.
+
+A small dot row above each flow indicates progress (current /
+done / upcoming) and a *Continue* button is gated by an explicit
+selection on the current step; *Back* returns to the prior step
+without clearing earlier picks. Submission goes through
+`createNode` / `createEdge`; on failure the validator's refusal is
+surfaced verbatim in the shared `acw-refusal-banner` and the
+workspace is left untouched. There is no UI-local refusal
+short-circuit — the validator is still the only gate.
+
+The panel also embeds a *Bound parameters* subsection that lists
+every node carrying a `boundParam` (Phase 5, see §18E). For each
+bound node the option set is rendered as a horizontal row of
+selectable pill cards (with an explicit `Not specified` pill that
+maps to `optionValue: null`); selection routes through
+`updateNodeBinding`, so the validator still gates the change and
+refusals continue to surface in the same `acw-refusal-banner`.
+
+Constitutional rules are preserved: `lucide-react` is the only
+icon library (`ArrowLeft`, `ArrowRight`, `Check`, `Layers`,
+`Network`, `Workflow`); no traffic-light colour usage; no
+judgement animation; no emoji; and every new visible static
+label (`Step`, `of`, `Continue`, `Back`, `Section`, `Parameter`,
+`Option`, `Not specified`, etc.) is asserted at module load via
+`assertAllAcwPlaceholderLanguage` against
+`ACW_PLACEHOLDER_FORBIDDEN`. The 107-case Vitest suite remained
+green across the conversion (no test referenced the removed
+dropdown testids; the new card / pill testids follow the
+`acw-{node|edge}-{type|parent|kind|from|to}-card-{value}` and
+`acw-bound-option-card-{nodeId}-{value}` patterns).
 
 ### Live structure renderer — `components/acw/LiveStructurePanel.tsx`
 
