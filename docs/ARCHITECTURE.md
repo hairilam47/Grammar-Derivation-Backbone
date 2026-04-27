@@ -1640,9 +1640,12 @@ gone. The two flows are:
   the *Destination* step so the picker UI cannot offer a self-edge.
 
 A small dot row above each flow indicates progress (current /
-done / upcoming) and a *Continue* button is gated by an explicit
-selection on the current step; *Back* returns to the prior step
-without clearing earlier picks. Submission goes through
+done / upcoming). The *Add element* Type step starts with a default
+selection and *Continue* is always enabled there; *Continue* on
+the Parent step and on every *Add relationship* step is gated by
+an explicit pick (`nodeParentTouched` / `edgeKindTouched` /
+non-empty `edgeFrom` / non-empty `edgeTo`). *Back* returns to the
+prior step without clearing earlier picks. Submission goes through
 `createNode` / `createEdge`; on failure the validator's refusal is
 surfaced verbatim in the shared `acw-refusal-banner` and the
 workspace is left untouched. There is no UI-local refusal
