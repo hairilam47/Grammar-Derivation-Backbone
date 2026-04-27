@@ -1394,12 +1394,9 @@ pipelines. Phase 6 adds **no** new decision logic, derivation,
 portfolio fields, computed signals, or exports. It only documents
 and asserts what ADC artefacts must NOT be read as doing.
 
-In the EA-discipline framing of §1A, this layer is a build-time
-**correspondence-rule conformance** mechanism (ISO 42010): it
-constrains how ADC artefacts may be cited and exported, and it
-fails the bundle if a future regression crosses the line. It is
-not itself a discipline construct that produces or revises
-architecture content.
+In the EA-discipline framing of §1A, this layer realises the
+build-time **correspondence-rule conformance** mechanism (ISO 42010)
+that constrains how ADC artefacts may be cited and exported.
 
 ### Hard constraints (PH6-HC1..PH6-HC7)
 
@@ -1576,13 +1573,10 @@ viewing architecture *structure*. The ACW is **a sibling lens**, not
 a successor of the Decision Canvas. It is empty by default and ships
 no architecture content, no recommendations, no derivation logic.
 
-In the EA-discipline framing of §1A, ACW realises the
-**architecture description surface** in the ISO 42010 sense: each
-lens is a *viewpoint* over the four standard TOGAF domains
-(Business / Data / Application / Technology), and the validator
-plus refusal channel acts as the *correspondence-rule conformance*
-mechanism for structural edits. See §1A "Lens ↔ four-domain
-coverage" for the per-lens domain mapping.
+In the EA-discipline framing of §1A, ACW realises the ISO 42010
+**architecture description surface** — each lens is a *viewpoint*
+over the four standard TOGAF domains; see §1A "Lens ↔ four-domain
+coverage" for the per-lens domain map.
 
 ### Non-goals (intentional, documentary)
 
