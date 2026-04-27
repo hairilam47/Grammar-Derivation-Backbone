@@ -75,9 +75,39 @@ export function enumerateLensVisibility(
 ): LensVisibility {
   const lodFilter = (n: AcwNode): boolean =>
     currentLodLevel === undefined ? true : isVisibleAtLod(n, currentLodLevel);
-  const directSiblings = nodes
+  // Standard window: nodes whose parent is the focused parent.
+  const baseSiblings = nodes
     .filter((n) => n.parentId === focusedParentId)
     .filter(lodFilter);
+  // EAStudio Phase 2 (LoS framework) — at L3 the structural depth
+  // window is widened to surface every L3-only node (lodRange
+  // starting at 3) regardless of its depth from the focus, because
+  // the L3 generator parents children to their L2 origin (which is
+  // typically a grandchild of the root domain container) and would
+  // otherwise sit outside the standard one-tier visibility window
+  // when the L3 fullscreen surface focuses on `null`. Pre-Phase-2
+  // nodes never carry `lodRange` and so are unaffected; nodes
+  // whose `lodRange` does not start at the active level are still
+  // filtered out by `lodFilter` (so an L1-only or L2-only node is
+  // not promoted to an L3 sibling). When the active level is not
+  // 3 this branch is a no-op — `baseSiblings` is returned as-is,
+  // preserving pre-Phase-2 behaviour byte-for-byte.
+  const directSiblings: readonly AcwNode[] =
+    currentLodLevel === 3
+      ? (() => {
+          const seen = new Set(baseSiblings.map((n) => n.id));
+          const extra: AcwNode[] = [];
+          for (const n of nodes) {
+            if (seen.has(n.id)) continue;
+            if (n.lodRange === undefined) continue;
+            if (n.lodRange[0] !== 3) continue;
+            if (!lodFilter(n)) continue;
+            extra.push(n);
+            seen.add(n.id);
+          }
+          return [...baseSiblings, ...extra];
+        })()
+      : baseSiblings;
 
   // Pre-compute children-by-parent for O(n) container detection.
   const childCount = new Map<string, number>();

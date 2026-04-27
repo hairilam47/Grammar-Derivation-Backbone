@@ -31,7 +31,9 @@
 import {
   __acwStoreInternals,
   ACW_SCHEMA_VERSION,
+  getWorkspace,
 } from "../acwStore";
+import { enumerateLensVisibility } from "../acwLensStructure";
 import { generateL3Nodes, __l3GeneratorInternals } from "./l3Generator";
 
 const PREFIX = "ACW L3 generator invariant violation";
@@ -491,6 +493,97 @@ if (typeof window !== "undefined") {
       throw new Error(
         `${PREFIX}: closed-mapping skip — db L3 child label "${dbSkip.label}" must equal "Document" verbatim.`,
       );
+    }
+
+    // ------------------------------------------------------------
+    // Fixture F — render-level visibility at L3.
+    //
+    // The L3 generator parents minted children to their L2 origin
+    // (a grandchild of the root domain container). Without the
+    // EAStudio Phase 2 widening in `enumerateLensVisibility`, the
+    // standard one-tier focus window would clip them out when the
+    // L3 fullscreen surface focuses on `null`. This fixture
+    // exercises the lens helper with the same arguments
+    // `Canvas3DStructural` uses (focusedParentId=null, no
+    // collapses, currentLodLevel=3) and asserts that every minted
+    // L3 node id appears in the resulting `visibleNodeIds` set.
+    //
+    // It also asserts the dual: at L1 and L2 the same minted
+    // nodes are NOT visible (so the widening is strictly L3-only
+    // and pre-Phase-2 behaviour at L1/L2 is unchanged).
+    // ------------------------------------------------------------
+    window.localStorage.removeItem(ACW_STORE_KEY);
+    window.localStorage.removeItem(CTAD_STORE_KEY);
+    __acwStoreInternals.reloadFromStorageForTest();
+    seedWorkspace();
+    const ctadDocVis = {
+      schemaVersion: "ctad-1.0",
+      bindings: {},
+      architectures: {
+        [ARCH_ID]: {
+          architectureId: ARCH_ID,
+          architectureName: "Probe",
+          params: {
+            hostingModel: "kubernetes",
+            databaseClass: "Relational",
+          },
+          environments: [],
+          createdAt: "",
+          updatedAt: "",
+        },
+      },
+    };
+    window.localStorage.setItem(CTAD_STORE_KEY, JSON.stringify(ctadDocVis));
+    __l3GeneratorInternals.resetMemoForTest();
+    const consideredVis = generateL3Nodes(ARCH_ID);
+    if (consideredVis.length !== 2) {
+      throw new Error(
+        `${PREFIX}: render-visibility setup — expected 2 minted L3 ids, got ${consideredVis.length}.`,
+      );
+    }
+    const wsLive = getWorkspace();
+    const visAtL3 = enumerateLensVisibility(
+      wsLive.structureGraph.nodes,
+      wsLive.structureGraph.edges,
+      null,
+      new Set<string>(),
+      3,
+    );
+    const visibleAtL3 = new Set(visAtL3.visibleNodeIds);
+    for (const id of consideredVis) {
+      if (!visibleAtL3.has(id)) {
+        throw new Error(
+          `${PREFIX}: render-visibility — minted L3 id "${id}" is NOT in enumerateLensVisibility's visible set at LoS=3 (focusedParentId=null). The L3 fullscreen surface would render an empty canvas.`,
+        );
+      }
+    }
+    const visAtL1 = enumerateLensVisibility(
+      wsLive.structureGraph.nodes,
+      wsLive.structureGraph.edges,
+      null,
+      new Set<string>(),
+      1,
+    );
+    const visibleAtL1 = new Set(visAtL1.visibleNodeIds);
+    const visAtL2 = enumerateLensVisibility(
+      wsLive.structureGraph.nodes,
+      wsLive.structureGraph.edges,
+      null,
+      new Set<string>(),
+      2,
+    );
+    const visibleAtL2 = new Set(visAtL2.visibleNodeIds);
+    for (const id of consideredVis) {
+      if (visibleAtL1.has(id)) {
+        throw new Error(
+          `${PREFIX}: render-visibility — L3-only id "${id}" leaked into the L1 visibility set; the Phase 2 widening must be strictly LoS=3.`,
+        );
+      }
+      if (visibleAtL2.has(id)) {
+        throw new Error(
+          `${PREFIX}: render-visibility — L3-only id "${id}" leaked into the L2 visibility set; the Phase 2 widening must be strictly LoS=3.`,
+        );
+      }
     }
   } finally {
     restoreStorage(snap);

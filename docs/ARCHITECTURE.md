@@ -3678,6 +3678,32 @@ Other CTAD parameters are reserved for later phases.
 - The L3 surface subscribes to the acwStore so the 3D canvas
   re-renders the moment the generator mints (or refreshes) its
   nodes.
+- **Lens-visibility widening at LoS=3.** The minted L3 children
+  are parented to their L2 origin (typically a grandchild of a
+  root domain container), so the standard one-tier focus
+  window in `enumerateLensVisibility` would clip them out when
+  the L3 fullscreen surface focuses on `null`. Phase 2
+  therefore widens the helper at `currentLodLevel === 3` only:
+  the result still includes the standard direct-sibling +
+  child-ref tiers, **and** every workspace node whose
+  `lodRange` starts at `3` is appended as an additional direct
+  sibling (deduplicated by id, still subject to the same
+  `lodFilter`). At L1 and L2 the helper returns the
+  pre-Phase-2 result byte-for-byte, because no legacy node
+  carries `lodRange` at all and no L3-only node satisfies
+  `isVisibleAtLod(n, 1|2)`. The render-level guarantee is
+  pinned by Fixture F of `acwL3GeneratorInvariants
+  .test-shape.ts` (every minted L3 id is present in
+  `visibleNodeIds` at LoS=3 and absent at LoS=1 / LoS=2).
+- **Static-label vocabulary guard.** `l3Generator.ts` calls
+  `assertAllAcwPlaceholderLanguage(["Kubernetes cluster"])` at
+  module load. The `databaseClass` row projects the chosen
+  CTAD option value verbatim (already frozen by the CTAD
+  registry's own grammar invariants), so only the literal
+  `"Kubernetes cluster"` requires a direct ACW
+  placeholder-language assertion; introducing any further
+  static label means appending to that array so the bundle
+  fails fast on a forbidden phrase.
 
 ### Reversibility
 

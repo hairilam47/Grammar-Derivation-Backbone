@@ -66,6 +66,19 @@
 import { exportArchitectureState } from "@/ctad/ctadStore";
 import { createNode, getWorkspace, type AcwNode } from "../acwStore";
 import { isVisibleAtLod } from "../acwGrammar";
+import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
+
+// Static label vocabulary the generator may mint. Asserted at module
+// load against the ACW placeholder-language guard so a forbidden
+// phrase introduced in a future mapping table change fails the
+// bundle. The `databaseClass` mapping uses the chosen CTAD option
+// value VERBATIM (which is itself frozen by the CTAD registry's
+// own grammar invariants), so only the `hostingModel` literal
+// needs an explicit guard here.
+const L3_STATIC_LABELS: readonly string[] = Object.freeze([
+  "Kubernetes cluster",
+]);
+assertAllAcwPlaceholderLanguage(L3_STATIC_LABELS as string[]);
 
 // Locally-derived shape of `exportArchitectureState`'s return value.
 // We do NOT import `CtadArchitectureStateExport` from the CTAD
