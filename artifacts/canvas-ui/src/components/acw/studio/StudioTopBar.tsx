@@ -28,6 +28,7 @@ import {
   Grid3X3,
   LayoutGrid,
   Sparkles,
+  Users,
   X,
   Zap,
 } from "lucide-react";
@@ -36,11 +37,13 @@ import {
   ACW_STUDIO_VIEW_TABS,
   getActiveLod,
   getConnectMode,
+  getShowOrgOverlay,
   getViewTab,
   setActiveLod,
   setConnectMode,
   setConnectPendingSource,
   setSelectedEdgeId,
+  setShowOrgOverlay,
   setViewTab,
   subscribeViewState,
   type AcwStudioViewTab,
@@ -61,6 +64,11 @@ const EXPORT_LABEL = "Export";
 const SAMPLE_LABEL = "Sample";
 const CLEAR_LABEL = "Clear";
 const CONNECT_LABEL = "Connect";
+// EAStudio Path B Phase 3 — categorical OU overlay toggle. The
+// label intentionally stays short to match the rest of the action
+// row; the per-button title attribute discloses the affordance.
+const ORG_VIEW_LABEL = "Org View";
+const ORG_VIEW_TITLE = "Toggle organisational unit overlay";
 const CLEAR_CONFIRM =
   "Remove every node and connection? Sealed domain containers stay.";
 // EAStudio Phase 2 (LoS framework) — short, plain labels for the
@@ -95,6 +103,8 @@ assertAllAcwPlaceholderLanguage([
   SAMPLE_LABEL,
   CLEAR_LABEL,
   CONNECT_LABEL,
+  ORG_VIEW_LABEL,
+  ORG_VIEW_TITLE,
   CLEAR_CONFIRM,
   LOD_LABELS[1],
   LOD_LABELS[2],
@@ -134,6 +144,13 @@ export function StudioTopBar({ lensId }: StudioTopBarProps) {
   // toggle hidden so their existing top-bar layout is unchanged.
   const showLodToggle = lensId === STUDIO_LENS_ID;
   const activeLod = getActiveLod(lensId);
+  // EAStudio Path B Phase 3 — Org View toggle is gated to the
+  // Studio lens for the same reason as the LoS toggle: the
+  // categorical OU overlay is a property of the Studio canvas
+  // chrome, not a workspace-wide affordance. The toggle's
+  // pressed state mirrors the per-lens slice on view-state.
+  const showOrgToggle = lensId === STUDIO_LENS_ID;
+  const orgOverlayOn = getShowOrgOverlay(lensId);
 
   const onClear = () => {
     if (typeof window !== "undefined" && !window.confirm(CLEAR_CONFIRM)) return;
@@ -224,6 +241,21 @@ export function StudioTopBar({ lensId }: StudioTopBarProps) {
           <X className="w-3.5 h-3.5" />
           <span>{CLEAR_LABEL}</span>
         </button>
+        {showOrgToggle ? (
+          <button
+            type="button"
+            onClick={() => setShowOrgOverlay(lensId, !orgOverlayOn)}
+            data-testid="acw-studio-org-view-toggle"
+            aria-pressed={orgOverlayOn}
+            data-active={orgOverlayOn ? "true" : "false"}
+            title={ORG_VIEW_TITLE}
+            aria-label={ORG_VIEW_TITLE}
+            className="es-btn"
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>{ORG_VIEW_LABEL}</span>
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={onConnectToggle}

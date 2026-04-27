@@ -105,6 +105,18 @@ export interface AcwNode {
   //     surface only when the shell switches to the Technology
   //     LoS.
   readonly lodRange?: readonly [number, number];
+  // EAStudio Path B Phase 3 — optional Organisational Unit binding.
+  // The id of an `OrganisationalUnit` recorded in the separate
+  // `acw.organisational-units.v1` registry (see
+  // `acw/orgUnits/ouStore.ts`). Absence is the documented default
+  // and reads as "no organisational unit"; presence is a non-empty
+  // string. The validator has no opinion about which units exist
+  // — the OU registry is a pure visual overlay — so a node may
+  // hold an id that has since been removed from the registry. The
+  // OU store cascades a clear via `updateNodeProperties` on its
+  // own remove path so dangling references are the rare exception
+  // rather than the rule.
+  readonly organisationalUnitId?: string;
 }
 
 export interface AcwEdge {
@@ -154,6 +166,11 @@ const ALLOWED_NODE = [
   // Specification range. Absent on every pre-Phase-2 document; the
   // read-validator accepts both absence and well-formed presence.
   "lodRange",
+  // EAStudio Path B Phase 3 — optional Organisational Unit binding.
+  // Absent on every pre-Phase-3 document; the read-validator
+  // accepts both absence and well-formed presence (a non-empty
+  // string id).
+  "organisationalUnitId",
 ] as const;
 const ALLOWED_EDGE = ["id", "kind", "fromId", "toId"] as const;
 
@@ -301,6 +318,30 @@ function assertAllowedFields(workspace: unknown): void {
       if (!isAcwLodRangeShape(node.lodRange)) {
         throw new Error(
           "ACW node.lodRange, when present, must be a 2-tuple [min, max] of integers in [1, 3] with min <= max.",
+        );
+      }
+    }
+    // EAStudio Path B Phase 3 — optional Organisational Unit
+    // binding. When present must be a non-empty string id.
+    // Sealed domain containers (`isDomainContainer === true`) are
+    // refused outright: they cannot carry descriptive properties,
+    // and the OU `removeOu` cascade clears bindings via
+    // `updateNodeProperties` which itself refuses sealed nodes —
+    // so allowing OU on a sealed node would create an unreachable
+    // dangling-binding hazard. Refusing here at the validator
+    // boundary is the structural enforcement.
+    if (node.organisationalUnitId !== undefined) {
+      if (
+        typeof node.organisationalUnitId !== "string" ||
+        node.organisationalUnitId.length === 0
+      ) {
+        throw new Error(
+          "ACW node.organisationalUnitId, when present, must be a non-empty string.",
+        );
+      }
+      if (node.isDomainContainer === true) {
+        throw new Error(
+          "ACW node.organisationalUnitId is forbidden on sealed domain containers (isDomainContainer === true).",
         );
       }
     }
@@ -499,6 +540,14 @@ export interface CreateNodeRequest {
   // generator (`acw/l3/l3Generator.ts`) is the only caller in
   // tree today; future palette tiles may also opt in.
   readonly lodRange?: readonly [number, number];
+  // EAStudio Path B Phase 3 — optional Organisational Unit
+  // binding. Forwarded onto the new node when present; absence
+  // persists no field. No caller wires this on creation today
+  // (the binding is set after the fact via the Properties panel
+  // or the right-click menu), but threading the field through
+  // the request type keeps the createNode contract additive and
+  // future-proof.
+  readonly organisationalUnitId?: string;
 }
 
 export interface CreateEdgeRequest {
@@ -573,6 +622,17 @@ export function createNode(req: CreateNodeRequest): CreateNodeResult {
         "domainTag, when supplied, must be one of: business, data, application, technology.",
     };
   }
+  if (
+    req.organisationalUnitId !== undefined &&
+    (typeof req.organisationalUnitId !== "string" ||
+      req.organisationalUnitId.length === 0)
+  ) {
+    return {
+      ok: false,
+      reason:
+        "organisationalUnitId, when supplied, must be a non-empty string.",
+    };
+  }
   if (req.id !== undefined) {
     if (typeof req.id !== "string" || req.id.length === 0) {
       return {
@@ -616,6 +676,9 @@ export function createNode(req: CreateNodeRequest): CreateNodeResult {
     // validator-gated mutators.
     ...(req.lodRange !== undefined
       ? { lodRange: Object.freeze([req.lodRange[0], req.lodRange[1]] as const) }
+      : {}),
+    ...(req.organisationalUnitId !== undefined
+      ? { organisationalUnitId: req.organisationalUnitId }
       : {}),
   });
   const next: AcwWorkspace = Object.freeze({
@@ -891,6 +954,12 @@ export interface UpdateNodePropertiesRequest {
   readonly status?: AcwNodeStatus | null;
   readonly maturity?: AcwNodeMaturity | null;
   readonly priority?: AcwNodePriority | null;
+  // EAStudio Path B Phase 3 — Organisational Unit binding. Pass
+  // `undefined` to leave unchanged; pass `null` to clear; pass a
+  // non-empty string to set. The validator has no opinion (the OU
+  // registry is a separate visual-overlay store), but the read-
+  // validation still rejects empty strings at the storage boundary.
+  readonly organisationalUnitId?: string | null;
 }
 
 export function updateNodeProperties(
@@ -959,6 +1028,18 @@ export function updateNodeProperties(
         "priority, when supplied, must be one of: low, medium, high, critical.",
     };
   }
+  if (req.organisationalUnitId !== undefined && req.organisationalUnitId !== null) {
+    if (
+      typeof req.organisationalUnitId !== "string" ||
+      req.organisationalUnitId.length === 0
+    ) {
+      return {
+        ok: false,
+        reason:
+          "organisationalUnitId, when supplied, must be a non-empty string.",
+      };
+    }
+  }
   const nextDescription =
     req.description === undefined ? prev.description : req.description ?? undefined;
   const nextOwner =
@@ -969,6 +1050,10 @@ export function updateNodeProperties(
     req.maturity === undefined ? prev.maturity : req.maturity ?? undefined;
   const nextPriority =
     req.priority === undefined ? prev.priority : req.priority ?? undefined;
+  const nextOrganisationalUnitId =
+    req.organisationalUnitId === undefined
+      ? prev.organisationalUnitId
+      : req.organisationalUnitId ?? undefined;
   const updated: AcwNode = Object.freeze({
     id: prev.id,
     type: prev.type,
@@ -989,6 +1074,10 @@ export function updateNodeProperties(
     ...(nextStatus !== undefined ? { status: nextStatus } : {}),
     ...(nextMaturity !== undefined ? { maturity: nextMaturity } : {}),
     ...(nextPriority !== undefined ? { priority: nextPriority } : {}),
+    ...(prev.lodRange !== undefined ? { lodRange: prev.lodRange } : {}),
+    ...(nextOrganisationalUnitId !== undefined
+      ? { organisationalUnitId: nextOrganisationalUnitId }
+      : {}),
   });
   const nodes = ws.structureGraph.nodes.slice();
   nodes[idx] = updated;

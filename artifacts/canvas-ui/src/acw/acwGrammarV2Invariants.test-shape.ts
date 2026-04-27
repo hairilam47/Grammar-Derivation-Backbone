@@ -1021,6 +1021,93 @@ try {
       );
     }
   }
+  // (12j) EAStudio Path B Phase 3 — `organisationalUnitId` must
+  // round-trip through both `updateNodeProperties` (the explicit
+  // forwarding path) and `updateNodeBinding` (the preservedRest
+  // auto-carry path). The field is the only point of coupling
+  // between the OU registry and the workspace document; if either
+  // mutator drops it on update the registry's overlay would
+  // silently disagree with the workspace it claims to colour.
+  {
+    const ouNode = createNode({
+      type: "Component",
+      parentId: sysId,
+      label: "ou-bound",
+      domainTag: "application",
+    });
+    if (!ouNode.ok) {
+      throw new Error(`${PREFIX}: phase 3 OU fixture refused createNode: ${ouNode.reason}`);
+    }
+    const setOu = updateNodeProperties(ouNode.id, {
+      organisationalUnitId: "ou-fixture-1",
+    });
+    if (setOu.ok !== true) {
+      throw new Error(
+        `${PREFIX}: updateNodeProperties refused a well-formed organisationalUnitId set: ${setOu.reason}`,
+      );
+    }
+    const afterSet = parseSnapshot(__acwStoreInternals.serializeForTest());
+    const setNode = afterSet.nodes.find((n) => n.id === ouNode.id) as
+      | (Record<string, unknown> & { id: string })
+      | undefined;
+    if (setNode === undefined) {
+      throw new Error(`${PREFIX}: updateNodeProperties removed the OU-bound node.`);
+    }
+    if (setNode["organisationalUnitId"] !== "ou-fixture-1") {
+      throw new Error(
+        `${PREFIX}: updateNodeProperties did not persist organisationalUnitId.`,
+      );
+    }
+    const reb = updateNodeBinding(ouNode.id, {
+      boundTechnologyCategory: "library",
+    });
+    if (reb.ok !== true) {
+      throw new Error(
+        `${PREFIX}: updateNodeBinding refused an OU-bearing node: ${reb.reason}`,
+      );
+    }
+    const afterBind = parseSnapshot(__acwStoreInternals.serializeForTest());
+    const bindNode = afterBind.nodes.find((n) => n.id === ouNode.id) as
+      | (Record<string, unknown> & { id: string })
+      | undefined;
+    if (bindNode === undefined) {
+      throw new Error(`${PREFIX}: updateNodeBinding removed the OU-bound node.`);
+    }
+    if (bindNode["organisationalUnitId"] !== "ou-fixture-1") {
+      throw new Error(
+        `${PREFIX}: updateNodeBinding dropped organisationalUnitId during binding swap.`,
+      );
+    }
+    const cleared = updateNodeProperties(ouNode.id, {
+      organisationalUnitId: null,
+    });
+    if (cleared.ok !== true) {
+      throw new Error(
+        `${PREFIX}: updateNodeProperties refused the OU clear: ${cleared.reason}`,
+      );
+    }
+    const afterClear = parseSnapshot(__acwStoreInternals.serializeForTest());
+    const clearedNode = afterClear.nodes.find((n) => n.id === ouNode.id) as
+      | (Record<string, unknown> & { id: string })
+      | undefined;
+    if (clearedNode === undefined) {
+      throw new Error(`${PREFIX}: clear of OU removed the node.`);
+    }
+    if ("organisationalUnitId" in clearedNode) {
+      throw new Error(
+        `${PREFIX}: updateNodeProperties did not strip organisationalUnitId on clear.`,
+      );
+    }
+    // Empty-string is a forbidden value; the validator must refuse.
+    const empty = updateNodeProperties(ouNode.id, {
+      organisationalUnitId: "" as unknown as string,
+    });
+    if (empty.ok !== false) {
+      throw new Error(
+        `${PREFIX}: updateNodeProperties accepted an empty organisationalUnitId.`,
+      );
+    }
+  }
 } finally {
   restoreLocalStorage(phase2Snapshot);
 }

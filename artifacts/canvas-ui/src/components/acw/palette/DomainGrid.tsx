@@ -73,8 +73,12 @@ import {
   setCurrentDomain,
   subscribeViewState,
   getActiveLod,
+  getShowOrgOverlay,
 } from "@/acw/acwViewState";
 import { isVisibleAtLod, type AcwDomainTag } from "@/acw/acwGrammar";
+import { NodeContextMenu } from "@/components/acw/studio/NodeContextMenu";
+import { cssForOu } from "@/acw/orgUnits/ouHue";
+import { getOu, subscribeOus } from "@/acw/orgUnits/ouStore";
 
 const SEAL_LABEL = "Sealed";
 const QUADRANT_HINT = "Drop a palette tile here.";
@@ -99,6 +103,38 @@ export function DomainGrid({ lensId }: DomainGridProps) {
   const [tick, setTick] = useState(0);
   useEffect(() => subscribeViewState(() => setTick((t) => t + 1)), []);
   void tick;
+  // Re-render when OU registry mutates (Add / Remove / rename) so
+  // the overlay tint and aria augmentation track the current store.
+  const [ouTick, setOuTick] = useState(0);
+  useEffect(() => subscribeOus(() => setOuTick((t) => t + 1)), []);
+  void ouTick;
+  // Phase 3 OU overlay slice — when ON we tint each NodeCard whose
+  // `organisationalUnitId` is set with `cssForOu(id)` (S=35%, L=22%).
+  // The slice is per-lens; the toggle lives in StudioTopBar.
+  const showOrgOverlay = getShowOrgOverlay(lensId);
+  // Phase 3 right-click "Swap technology" menu — host-owned popover
+  // state. The menu is portal-positioned at the cursor coordinates;
+  // outside-click and Escape both dismiss. The host owns the state
+  // so the menu component itself stays a presentational leaf and
+  // never reaches into the view-state singleton.
+  const [ctxMenu, setCtxMenu] = useState<{
+    nodeId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  useEffect(() => {
+    if (ctxMenu === null) return;
+    const onDocClick = () => setCtxMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setCtxMenu(null);
+    };
+    window.addEventListener("click", onDocClick);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("click", onDocClick);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [ctxMenu]);
   const selectedEdgeId = getSelectedEdgeId(lensId);
   const selectedNodeId = getSelectedNodeId(lensId);
   const connectOn = getConnectMode(lensId);
@@ -223,6 +259,10 @@ export function DomainGrid({ lensId }: DomainGridProps) {
               onNodeClick={onNodeClick}
               selectedNodeId={selectedNodeId}
               pendingSource={pendingSource}
+              showOrgOverlay={showOrgOverlay}
+              onNodeContextMenu={(id, x, y) =>
+                setCtxMenu({ nodeId: id, x, y })
+              }
             />
           );
         })}
@@ -235,6 +275,28 @@ export function DomainGrid({ lensId }: DomainGridProps) {
           onEdgeDelete={onEdgeOverlayDelete}
         />
       </div>
+      {/*
+        Phase 3 right-click "Swap technology" menu — anchored at the
+        cursor coordinates the host captured. The host listens for
+        outside-click and Escape and clears `ctxMenu`; the menu
+        component itself is a presentational leaf.
+      */}
+      {ctxMenu !== null
+        ? (() => {
+            const node = workspace.structureGraph.nodes.find(
+              (n) => n.id === ctxMenu.nodeId,
+            );
+            if (node === undefined) return null;
+            return (
+              <NodeContextMenu
+                node={node}
+                x={ctxMenu.x}
+                y={ctxMenu.y}
+                onClose={() => setCtxMenu(null)}
+              />
+            );
+          })()
+        : null}
     </div>
   );
 }
@@ -248,6 +310,12 @@ interface ZoneProps {
   readonly onNodeClick: (id: string, explicitConnect: boolean) => void;
   readonly selectedNodeId: string | null;
   readonly pendingSource: string | null;
+  readonly showOrgOverlay: boolean;
+  readonly onNodeContextMenu: (
+    nodeId: string,
+    x: number,
+    y: number,
+  ) => void;
 }
 
 function Zone(props: ZoneProps) {
@@ -260,6 +328,8 @@ function Zone(props: ZoneProps) {
     onNodeClick,
     selectedNodeId,
     pendingSource,
+    showOrgOverlay,
+    onNodeContextMenu,
   } = props;
   const Icon = ACW_DOMAIN_ICON[domain];
   const [isOver, setIsOver] = useState(false);
@@ -361,17 +431,35 @@ function Zone(props: ZoneProps) {
         {children.length === 0 ? (
           <p className="es-zone-empty">{QUADRANT_HINT}</p>
         ) : (
-          children.map((node) => (
-            <NodeCard
-              key={node.id}
-              node={node}
-              domain={domain}
-              isSelected={selectedNodeId === node.id}
-              isPendingSource={pendingSource === node.id}
-              onClick={() => onNodeClick(node.id, false)}
-              onConnect={() => onNodeClick(node.id, true)}
-            />
-          ))
+          children.map((node) => {
+            const ouId = node.organisationalUnitId;
+            const ouName =
+              ouId !== undefined ? getOu(ouId)?.name ?? null : null;
+            // Overlay tint is applied only when (a) the per-lens
+            // overlay slice is ON and (b) the node carries an OU id
+            // and (c) the id resolves to a present unit. A dangling
+            // id (the reading validator already rejects this on
+            // load, but a removed-then-undo race could theoretically
+            // surface one) silently skips tinting.
+            const overlayCss =
+              showOrgOverlay && ouId !== undefined && ouName !== null
+                ? cssForOu(ouId)
+                : null;
+            return (
+              <NodeCard
+                key={node.id}
+                node={node}
+                domain={domain}
+                isSelected={selectedNodeId === node.id}
+                isPendingSource={pendingSource === node.id}
+                overlayCss={overlayCss}
+                ouName={ouName}
+                onClick={() => onNodeClick(node.id, false)}
+                onConnect={() => onNodeClick(node.id, true)}
+                onContextMenu={(x, y) => onNodeContextMenu(node.id, x, y)}
+              />
+            );
+          })
         )}
       </div>
     </section>
@@ -383,8 +471,19 @@ interface NodeCardProps {
   readonly domain: AcwDomainTag;
   readonly isSelected: boolean;
   readonly isPendingSource: boolean;
+  // Phase 3 OU overlay — `null` means no tint (overlay off, or
+  // node has no OU bound). When set, the host has already resolved
+  // it through `cssForOu` (S=35%, L=22%, categorical-only).
+  readonly overlayCss: string | null;
+  // Phase 3 OU overlay — display name of the bound unit (when
+  // resolvable). Used to augment the card's aria-label so screen
+  // readers announce the assignment without depending on colour.
+  readonly ouName: string | null;
   readonly onClick: () => void;
   readonly onConnect: () => void;
+  // Phase 3 right-click "Swap technology" menu — receives the
+  // viewport coordinates the host should anchor the popover at.
+  readonly onContextMenu: (x: number, y: number) => void;
 }
 
 // Resolve which palette tile (if any) was used to materialise this
@@ -404,13 +503,34 @@ function resolveTile(node: AcwNode, domain: AcwDomainTag): PaletteItem {
 function NodeCard(p: NodeCardProps) {
   const tile = resolveTile(p.node, p.domain);
   const { Icon } = tile;
+  // ARIA augmentation for the OU overlay. Colour is categorical so
+  // the assistive label MUST carry the unit name independently —
+  // never rely on hue to convey membership. We always include the
+  // node label so the resulting string remains a valid name for
+  // the role="button" element.
+  const ariaLabel =
+    p.ouName !== null ? `${p.node.label} — ${p.ouName}` : undefined;
+  // The categorical hue lives on backgroundColor; CSS handles
+  // hover / selected affordances on its own classes. We do NOT
+  // touch foreground colour — the L=22% guarantees AA contrast
+  // against the inherited near-white text without further
+  // computation.
+  const cardStyle =
+    p.overlayCss !== null ? { backgroundColor: p.overlayCss } : undefined;
   return (
     <div
       role="button"
       tabIndex={0}
+      aria-label={ariaLabel}
+      style={cardStyle}
       onClick={(e) => {
         e.stopPropagation();
         p.onClick();
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        p.onContextMenu(e.clientX, e.clientY);
       }}
       onKeyDown={(e) => {
         // role="button" elements must respond to Enter and Space
@@ -427,6 +547,8 @@ function NodeCard(p: NodeCardProps) {
       data-domain={p.domain}
       data-selected={p.isSelected ? "true" : "false"}
       data-pending-source={p.isPendingSource ? "true" : "false"}
+      data-ou-id={p.node.organisationalUnitId ?? ""}
+      data-ou-overlay={p.overlayCss !== null ? "true" : "false"}
       className="es-cnode"
     >
       <span className="es-cnode-icon" aria-hidden="true">

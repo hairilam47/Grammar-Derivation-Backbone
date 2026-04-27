@@ -69,6 +69,12 @@ import {
   type AcwNodePriority,
   type AcwNodeStatus,
 } from "@/acw/acwNodeProperties";
+import {
+  createOu,
+  listOus,
+  removeOu,
+  subscribeOus,
+} from "@/acw/orgUnits/ouStore";
 
 const PANEL_TITLE = "Properties";
 const SEALED_NOTICE = "This is a sealed domain container and is not editable.";
@@ -86,6 +92,17 @@ const FIELD_MATURITY = "Maturity";
 // field on `AcwNode` is still `priority` and the enum values keep
 // their programmatic names. Only the user-facing label changes.
 const FIELD_PRIORITY = "Tier";
+// EAStudio Path B Phase 3 — categorical organisational-unit
+// overlay. Field label and the two action buttons live alongside
+// the existing enum dropdowns; the OU registry is a separate
+// store so adding / removing units does NOT mutate the workspace
+// graph (clearing assignments is a cascade in `removeOu`, gated
+// by the same validator as every other node mutation).
+const FIELD_ORG_UNIT = "Organisational unit";
+const ADD_UNIT_LABEL = "Add unit";
+const REMOVE_LABEL = "Remove";
+const ADD_UNIT_PROMPT = "Name of the new unit";
+const REMOVE_CONFIRM = "Remove this unit? Nodes carrying it will be cleared.";
 const NONE_LABEL = "—";
 const INCIDENT_TITLE = "Incident connections";
 const NO_EDGES = "No connections incident to this node.";
@@ -103,6 +120,11 @@ assertAllAcwPlaceholderLanguage([
   FIELD_STATUS,
   FIELD_MATURITY,
   FIELD_PRIORITY,
+  FIELD_ORG_UNIT,
+  ADD_UNIT_LABEL,
+  REMOVE_LABEL,
+  ADD_UNIT_PROMPT,
+  REMOVE_CONFIRM,
   NONE_LABEL,
   INCIDENT_TITLE,
   NO_EDGES,
@@ -206,6 +228,12 @@ export function NodePropertiesPanel({ lensId }: NodePropertiesPanelProps) {
   const [tick, setTick] = useState(0);
   useEffect(() => subscribeViewState(() => setTick((t) => t + 1)), []);
   void tick;
+  // Phase 3 — re-render when the OU registry mutates so the
+  // dropdown options and the disabled state of the Remove button
+  // track Add / Remove / rename in real time.
+  const [ouTick, setOuTick] = useState(0);
+  useEffect(() => subscribeOus(() => setOuTick((t) => t + 1)), []);
+  void ouTick;
 
   const selectedId = getSelectedNodeId(lensId);
   const node = useMemo(
@@ -393,6 +421,50 @@ export function NodePropertiesPanel({ lensId }: NodePropertiesPanelProps) {
     const r = updateNodeProperties(node.id, { priority: next });
     if (!r.ok) publishRefusal(r.reason);
   }
+  // Phase 3 — bind / unbind the node's organisationalUnitId. The
+  // empty-string sentinel from the native <select> maps to `null`
+  // (clear). The store's validator owns id existence; an unknown
+  // id is refused there, not pre-validated here.
+  function commitOrgUnit(value: string) {
+    if (node === null) return;
+    const r = updateNodeProperties(node.id, {
+      organisationalUnitId: value === "" ? null : value,
+    });
+    if (!r.ok) publishRefusal(r.reason);
+  }
+  // Phase 3 — Add unit. Uses window.prompt for the name; the
+  // store's validator rejects empty / whitespace-only names. We
+  // only auto-bind the new id to the currently-selected node when
+  // the create succeeded.
+  function onAddUnit() {
+    if (typeof window === "undefined" || node === null) return;
+    const raw = window.prompt(ADD_UNIT_PROMPT, "");
+    if (raw === null) return;
+    const name = raw.trim();
+    if (name.length === 0) return;
+    const r = createOu({ name });
+    if (!r.ok) {
+      publishRefusal(r.reason);
+      return;
+    }
+    const bind = updateNodeProperties(node.id, {
+      organisationalUnitId: r.id,
+    });
+    if (!bind.ok) publishRefusal(bind.reason);
+  }
+  // Phase 3 — Remove the currently-bound unit from the registry.
+  // Cascade-clears every node whose `organisationalUnitId` matched,
+  // and reassigns child units' parentId. Disabled when the node has
+  // no OU bound.
+  function onRemoveUnit() {
+    if (typeof window === "undefined" || node === null) return;
+    const id = node.organisationalUnitId;
+    if (id === undefined) return;
+    const ok = window.confirm(REMOVE_CONFIRM);
+    if (!ok) return;
+    const r = removeOu(id);
+    if (!r.ok) publishRefusal(r.reason);
+  }
 
   const incidentEdges = ws.structureGraph.edges.filter(
     (e) => e.fromId === node.id || e.toId === node.id,
@@ -461,6 +533,57 @@ export function NodePropertiesPanel({ lensId }: NodePropertiesPanelProps) {
         onChange={commitPriority}
         testIdPrefix="acw-studio-properties-priority"
       />
+
+      {/*
+        Phase 3 — categorical OU overlay binding. The dropdown lists
+        every unit currently in the registry; "—" clears the field.
+        Add unit prompts for a name and immediately binds it; Remove
+        is disabled unless the node currently carries an OU id.
+      */}
+      <div
+        className="es-props-field"
+        data-testid="acw-studio-properties-ou-field"
+      >
+        <label className="es-props-label">{FIELD_ORG_UNIT}</label>
+        <select
+          className="es-props-select"
+          value={node.organisationalUnitId ?? ""}
+          onChange={(e: ChangeEvent<HTMLSelectElement>) =>
+            commitOrgUnit(e.target.value)
+          }
+          data-testid="acw-studio-properties-ou-select"
+        >
+          <option value="">{NONE_LABEL}</option>
+          {listOus().map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.name}
+            </option>
+          ))}
+        </select>
+        <div
+          className="es-props-ou-actions"
+          style={{ display: "flex", gap: 6, marginTop: 4 }}
+        >
+          <button
+            type="button"
+            className="es-cnode-btn"
+            onClick={onAddUnit}
+            data-testid="acw-studio-properties-ou-add"
+          >
+            {ADD_UNIT_LABEL}
+          </button>
+          <button
+            type="button"
+            className="es-cnode-btn"
+            data-tone="danger"
+            disabled={node.organisationalUnitId === undefined}
+            onClick={onRemoveUnit}
+            data-testid="acw-studio-properties-ou-remove"
+          >
+            {REMOVE_LABEL}
+          </button>
+        </div>
+      </div>
 
       <section className="es-props-section">
         <h4>{INCIDENT_TITLE}</h4>

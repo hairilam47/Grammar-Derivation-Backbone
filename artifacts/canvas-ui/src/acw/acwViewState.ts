@@ -107,6 +107,16 @@ export interface AcwViewState {
   // documented default (L2 — the existing 2D canvas), so every
   // pre-Phase-2 document stays on its current surface.
   readonly activeLodByLens?: Readonly<Record<string, AcwLodLevel>>;
+  // EAStudio Path B Phase 3 — Organisational Unit overlay toggle
+  // per lens. When `true`, the Studio canvas tints each node with
+  // a categorical hue derived from its `organisationalUnitId`
+  // binding so the user can scan the layout for ownership at a
+  // glance. The toggle is pure visual state and never touches the
+  // workspace document or the OU registry. Mirrors the
+  // `connectModeByLens` shape (boolean values) so the validator
+  // stays one-line-per-slice. Optional and absent on every pre-
+  // Phase-3 document; absence reads as `false` (overlay off).
+  readonly showOrgOverlayByLens?: Readonly<Record<string, boolean>>;
 }
 
 // EAStudio Phase 3 — top-bar tab values. Closed set; the read-
@@ -138,6 +148,7 @@ const ALLOWED_TOP = [
   "selectedEdgeIdByLens",
   "viewTabByLens",
   "activeLodByLens",
+  "showOrgOverlayByLens",
 ] as const;
 
 function emptyView(): AcwViewState {
@@ -152,6 +163,7 @@ function emptyView(): AcwViewState {
     selectedEdgeIdByLens: Object.freeze({}),
     viewTabByLens: Object.freeze({}),
     activeLodByLens: Object.freeze({}),
+    showOrgOverlayByLens: Object.freeze({}),
   });
 }
 
@@ -341,6 +353,29 @@ function assertValid(raw: unknown): asserts raw is AcwViewState {
       }
     }
   }
+  // EAStudio Path B Phase 3 — showOrgOverlayByLens. Optional.
+  // When present each value must be a strict boolean. Mirrors the
+  // connectModeByLens validator branch; absence reads as "overlay
+  // off" so pre-Phase-3 documents validate identically.
+  if (r.showOrgOverlayByLens !== undefined) {
+    if (
+      r.showOrgOverlayByLens === null ||
+      typeof r.showOrgOverlayByLens !== "object"
+    ) {
+      throw new Error("ACW view-state showOrgOverlayByLens must be an object.");
+    }
+    const om = r.showOrgOverlayByLens as Record<string, unknown>;
+    for (const [lensId, on] of Object.entries(om)) {
+      if (typeof lensId !== "string" || lensId.length === 0) {
+        throw new Error("ACW view-state lens id must be a non-empty string.");
+      }
+      if (typeof on !== "boolean") {
+        throw new Error(
+          "ACW view-state showOrgOverlayByLens values must be booleans.",
+        );
+      }
+    }
+  }
   // EAStudio Phase 2 — selectedEdgeIdByLens. Optional. When present
   // each value must be a non-empty string (an edge id). Identical
   // shape to the node selection slice; absent entries mean "no edge
@@ -404,6 +439,7 @@ function normalize(raw: AcwViewState): AcwViewState {
     selectedEdgeIdByLens: raw.selectedEdgeIdByLens ?? Object.freeze({}),
     viewTabByLens: raw.viewTabByLens ?? Object.freeze({}),
     activeLodByLens: raw.activeLodByLens ?? Object.freeze({}),
+    showOrgOverlayByLens: raw.showOrgOverlayByLens ?? Object.freeze({}),
   });
 }
 
@@ -703,6 +739,35 @@ export function setActiveLod(lensId: string, level: AcwLodLevel): void {
     ...prev,
     schemaVersion: ACW_VIEW_SCHEMA_VERSION,
     activeLodByLens: Object.freeze({ ...prevMap, [lensId]: level }),
+  });
+  writeToStorage(next);
+  cache = next;
+  notify();
+}
+
+// EAStudio Path B Phase 3 — per-lens Organisational Unit overlay
+// toggle. Pure UI state. Mirrors `getConnectMode` / `setConnectMode`
+// shape: a lens not present in the map reads as `false` (overlay
+// off); flipping the toggle on tints every node on the canvas
+// using `acw/orgUnits/ouHue.ts`. Selection, connect-mode, and
+// every other slice are intentionally NOT touched here so the
+// overlay is freely composable with whatever else the user is
+// doing on the surface.
+export function getShowOrgOverlay(lensId: string): boolean {
+  const map = getViewState().showOrgOverlayByLens ?? {};
+  return map[lensId] === true;
+}
+
+export function setShowOrgOverlay(lensId: string, on: boolean): void {
+  const prev = getViewState();
+  const prevMap = prev.showOrgOverlayByLens ?? {};
+  const nextMap: Record<string, boolean> = { ...prevMap };
+  if (on) nextMap[lensId] = true;
+  else delete nextMap[lensId];
+  const next: AcwViewState = Object.freeze({
+    ...prev,
+    schemaVersion: ACW_VIEW_SCHEMA_VERSION,
+    showOrgOverlayByLens: Object.freeze(nextMap),
   });
   writeToStorage(next);
   cache = next;

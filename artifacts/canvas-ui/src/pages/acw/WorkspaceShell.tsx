@@ -25,6 +25,14 @@ import "@/acw/acwGrammarInvariants.test-shape";
 // schema, drag-to-reparent validator gating, cycle prevention,
 // and structural inertness of position / collapse operations.
 import "@/acw/acwGrammarV2Invariants.test-shape";
+// EAStudio Path B Phase 3 — categorical organisational-unit
+// overlay. The OU store invariant covers schema lock, validator
+// negatives, idempotent createOu, and the cascade-clear /
+// parent-reassign semantics of removeOu. The hue invariant
+// guards the categorical-only constants (S=35%, L=22%) and the
+// determinism of `hashHueForOu` / `cssForOu`.
+import "@/acw/orgUnits/ouStoreInvariants.test-shape";
+import "@/acw/orgUnits/ouHueInvariants.test-shape";
 
 const SHELL_TITLE = "Architecture Composition Workspace";
 const SHELL_HINT =
