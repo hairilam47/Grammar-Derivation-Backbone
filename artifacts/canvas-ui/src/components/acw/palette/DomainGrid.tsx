@@ -287,11 +287,23 @@ function Zone(props: ZoneProps) {
       );
       return;
     }
+    // EAStudio Path B Phase 1 (Task #113) — forward the palette
+    // tile's default semantic bindings onto the new node when the
+    // tile declares them. Spread is used so an undefined default
+    // stays absent on the request (and therefore on the persisted
+    // node), preserving byte-identical shape for tiles that do not
+    // ship a binding.
     const r = createNode({
       type: item.elementType,
       parentId: containerId,
       label: item.label,
       domainTag: domain,
+      ...(item.boundTechnologyCategory !== undefined
+        ? { boundTechnologyCategory: item.boundTechnologyCategory }
+        : {}),
+      ...(item.boundParam !== undefined
+        ? { boundParam: item.boundParam }
+        : {}),
     });
     if (!r.ok) publishRefusal(r.reason);
   };

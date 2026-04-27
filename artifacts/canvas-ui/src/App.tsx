@@ -50,6 +50,13 @@ import "@/acw/acwGrammarV2Invariants.test-shape";
 // the bundle if a brand / product name leaks into a registry entry
 // or if the vendor denylist is silently weakened.
 import "@/acw/icons/iconRegistryInvariants.test-shape";
+// EAStudio Path B Phase 1 (Task #113) — palette-registry invariants.
+// Fails the bundle if a tile-level `boundTechnologyCategory` no
+// longer resolves through the icon registry, if a `boundParam`
+// default ever lands with a malformed shape, or if Path B Phase 1
+// coverage (a tile-level binding present in each of the data /
+// application / technology domains) regresses.
+import "@/acw/palette/paletteRegistryInvariants.test-shape";
 // ACW v3 — structural-identity + forbidden-semantics invariants for
 // the 3D canvas. They fail the bundle if 2D and 3D ever diverge in
 // what they enumerate, or if the 3D renderer regresses toward

@@ -74,11 +74,23 @@ import {
   Zap,
 } from "lucide-react";
 import { assertAllAcwPlaceholderLanguage } from "../../governance/staticTextGuard";
+import { lookupIconForCategory } from "../icons/iconRegistry";
 import {
   ACW_DOMAIN_TAGS,
   type AcwDomainTag,
   type AcwElementType,
 } from "../acwGrammar";
+
+// EAStudio Path B Phase 1 (Task #113) — per-tile default semantic
+// binding shape. Mirrors the optional fields already accepted by
+// `createNode` and `AcwNode` since ACW Phase 5; declared locally here
+// rather than imported from `acwStore` so the palette registry stays
+// a leaf module that nothing in the store imports back into.
+export interface PaletteBoundParamDefault {
+  readonly sectionId: string;
+  readonly paramId: string;
+  readonly optionValue: string | null;
+}
 
 export interface PaletteItem {
   /** Stable id, unique across the whole palette. */
@@ -93,6 +105,30 @@ export interface PaletteItem {
   readonly subLabel: string;
   /** Vector icon — lucide-react component, no emoji. */
   readonly Icon: LucideIcon;
+  /**
+   * EAStudio Path B Phase 1 (Task #113) — default categorical icon
+   * binding the drop handler forwards onto the new node. When set,
+   * MUST be a category string the icon registry knows about; the
+   * module-load assertion at the bottom of this file fails the
+   * bundle if a tile names a category that does not resolve through
+   * `lookupIconForCategory`. The field is intentionally categorical
+   * (e.g. `"API gateway"`, `"Backend service"`) and never branded.
+   * When omitted, dropped nodes carry no default category and the
+   * renderer falls through to the palette tile's own `Icon`.
+   */
+  readonly boundTechnologyCategory?: string;
+  /**
+   * EAStudio Path B Phase 1 (Task #113) — default CTAD parameter
+   * binding the drop handler forwards onto the new node. Reserved
+   * for a follow-up phase (Path B Phase 2) — no Phase 1 tile sets
+   * this. When introduced, the binding's `(sectionId, paramId)`
+   * pair MUST resolve through the CTAD registry exactly as the
+   * runtime resolver `findSectionForParam` requires; the sibling
+   * `paletteRegistryInvariants.test-shape.ts` asserts the pair
+   * resolves so a typo fails the bundle rather than silently
+   * degrading to the node's own label at render time.
+   */
+  readonly boundParam?: PaletteBoundParamDefault;
 }
 
 // ---------------------------------------------------------------------------
@@ -226,6 +262,11 @@ export const ACW_PALETTE: readonly PaletteItem[] = Object.freeze([
     label: "Data Store",
     subLabel: "Logical entity",
     Icon: Database,
+    // Path B Phase 1 default binding — `Relational database` is the
+    // most common categorical home for an authored data store; the
+    // resolver still permits the user to rebind via the properties
+    // panel after the drop.
+    boundTechnologyCategory: "Relational database",
   }),
   Object.freeze({
     paletteKind: "data-stream",
@@ -300,6 +341,7 @@ export const ACW_PALETTE: readonly PaletteItem[] = Object.freeze([
     label: "API Gateway",
     subLabel: "Integration point",
     Icon: Plug,
+    boundTechnologyCategory: "API gateway",
   }),
   Object.freeze({
     paletteKind: "app-microservice",
@@ -308,6 +350,7 @@ export const ACW_PALETTE: readonly PaletteItem[] = Object.freeze([
     label: "Microservice",
     subLabel: "Bounded context",
     Icon: Radio,
+    boundTechnologyCategory: "Backend service",
   }),
   Object.freeze({
     paletteKind: "app-module",
@@ -324,6 +367,7 @@ export const ACW_PALETTE: readonly PaletteItem[] = Object.freeze([
     label: "Mobile App",
     subLabel: "Client endpoint",
     Icon: Smartphone,
+    boundTechnologyCategory: "Component-tree frontend",
   }),
   Object.freeze({
     paletteKind: "app-event-bus",
@@ -332,6 +376,7 @@ export const ACW_PALETTE: readonly PaletteItem[] = Object.freeze([
     label: "Event Bus",
     subLabel: "Async messaging",
     Icon: Zap,
+    boundTechnologyCategory: "Message broker",
   }),
   Object.freeze({
     paletteKind: "app-web-portal",
@@ -340,6 +385,7 @@ export const ACW_PALETTE: readonly PaletteItem[] = Object.freeze([
     label: "Web Portal",
     subLabel: "User interface",
     Icon: Globe,
+    boundTechnologyCategory: "Server-rendered frontend",
   }),
   Object.freeze({
     paletteKind: "app-integration",
@@ -374,6 +420,7 @@ export const ACW_PALETTE: readonly PaletteItem[] = Object.freeze([
     label: "Database",
     subLabel: "Persistent store",
     Icon: HardDrive,
+    boundTechnologyCategory: "Relational database",
   }),
   Object.freeze({
     paletteKind: "tech-runtime",
@@ -382,6 +429,7 @@ export const ACW_PALETTE: readonly PaletteItem[] = Object.freeze([
     label: "Runtime Engine",
     subLabel: "Execution env",
     Icon: Cog,
+    boundTechnologyCategory: "Managed runtime",
   }),
   Object.freeze({
     paletteKind: "tech-iam",
@@ -390,6 +438,7 @@ export const ACW_PALETTE: readonly PaletteItem[] = Object.freeze([
     label: "IAM Service",
     subLabel: "Auth & identity",
     Icon: KeyRound,
+    boundTechnologyCategory: "Identity provider",
   }),
   Object.freeze({
     paletteKind: "tech-monitoring",
@@ -484,5 +533,68 @@ assertAllAcwPlaceholderLanguage([
     throw new Error(
       "EAStudio palette registry: ACW_DOMAIN_LABEL contains a tag not present in ACW_DOMAIN_TAGS.",
     );
+  }
+}
+
+// EAStudio Path B Phase 1 (Task #113) — semantic-binding resolvability:
+//   - every tile that declares a `boundTechnologyCategory` MUST name
+//     a category the icon registry knows about. A typo (e.g. a future
+//     copy-edit that drifts `"API gateway"` to `"API-gateway"`) fails
+//     the bundle at module load rather than silently degrading to a
+//     blank icon at render time;
+//   - every tile that declares a `boundParam` MUST carry both
+//     `sectionId` and `paramId` as non-empty strings, with
+//     `optionValue` either `null` or a non-empty string. Phase 1
+//     ships no `boundParam` defaults — the loop below is therefore a
+//     no-op today, but the structural shape check is asserted now so
+//     a future Path B Phase 2 edit that introduces tile-level CTAD
+//     bindings cannot smuggle in a malformed shape.
+//
+// The deeper CTAD-registry lookup (the `(sectionId, paramId)` pair
+// must resolve through `findRegistryParam`) is intentionally NOT run
+// from this module — paletteRegistry is a leaf module that must not
+// import from the CTAD registry; the runtime resolver in
+// `acw/semantic/techNodeBinding.ts` already pair-validates and
+// no-ops on drift, and the test-shape probe at
+// `acwGrammarV2Invariants.test-shape.ts` will gain a Phase 2 entry
+// once tile-level `boundParam` defaults land.
+{
+  for (const item of ACW_PALETTE) {
+    if (item.boundTechnologyCategory !== undefined) {
+      if (
+        typeof item.boundTechnologyCategory !== "string" ||
+        item.boundTechnologyCategory.length === 0
+      ) {
+        throw new Error(
+          `EAStudio palette registry: item "${item.paletteKind}" declares a non-string / empty boundTechnologyCategory.`,
+        );
+      }
+      if (lookupIconForCategory(item.boundTechnologyCategory) === undefined) {
+        throw new Error(
+          `EAStudio palette registry: item "${item.paletteKind}" declares boundTechnologyCategory "${item.boundTechnologyCategory}" which is not a known category in iconRegistry.ts.`,
+        );
+      }
+    }
+    if (item.boundParam !== undefined) {
+      const bp = item.boundParam;
+      if (typeof bp.sectionId !== "string" || bp.sectionId.length === 0) {
+        throw new Error(
+          `EAStudio palette registry: item "${item.paletteKind}" declares a boundParam with empty sectionId.`,
+        );
+      }
+      if (typeof bp.paramId !== "string" || bp.paramId.length === 0) {
+        throw new Error(
+          `EAStudio palette registry: item "${item.paletteKind}" declares a boundParam with empty paramId.`,
+        );
+      }
+      if (
+        bp.optionValue !== null &&
+        (typeof bp.optionValue !== "string" || bp.optionValue.length === 0)
+      ) {
+        throw new Error(
+          `EAStudio palette registry: item "${item.paletteKind}" declares a boundParam.optionValue that is neither null nor a non-empty string.`,
+        );
+      }
+    }
   }
 }

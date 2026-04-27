@@ -238,6 +238,7 @@ Numbering reflects build order, not architectural priority.
 | ACW Track 3 — derived structural view decoupled from ADC bounds (Task #80) | The Track 3 derived view is re-anchored to standalone CTAD architectures, not ADS bindings | New route `/acw/derived/arch/:architectureId`; entry page lists CTAD architectures (no portfolio dependency); shell loads the architecture's CTAD state via `exportArchitectureState(architectureId)` and feeds it through `compileTrack3Specs(...)` so the diagram is recomputed on every render with no `projectBounds(entry)` projection; the retired bounds-projection helper is gone; Track 3 viewprefs widened to a `byArchitecture` map alongside the legacy `byBinding` map (back-compat preserved by the validator) | Reversible by deleting the new route + entry, removing `byArchitecture` from the viewprefs schema, restoring the bounds-projection helper, and re-anchoring the shell to ADS bindings |
 | ACW Track 3 — full-page architecture canvas + floating overlay (Task #81) | Track 3 gets a fullscreen mode with quadrant overlays mirroring future authored-lens work | New `Track3FloatingOverlay` component; when `prefs.isFullscreen === true` (the new default) the canvas mounts inside a `fixed inset-0 z-0` container under the route's sticky header (`z-10`) with controls shown as quadrants (top-left identity + refresh + exit; bottom-right collapsible mode/perspective/layers cluster; bottom-centre stratum-legend pill); pressing `Escape` toggles fullscreen in either direction (suppressed inside editable targets and when `defaultPrevented`); **viewprefs schema bumped from `acw-track3-viewprefs-1.0` to `acw-track3-viewprefs-1.1`** with a deterministic v1.0 → v1.1 read-time migration that injects `isFullscreen: true` into every entry | Reversible by lowering the schema version, dropping `isFullscreen` from each `PrefsEntry`, deleting the overlay component, and reverting the shell to its inline (non-fullscreen) layout |
 | ACW Phase 5 — Technology-aware semantic node binding (Task #82) | ACW nodes can carry an optional `boundParam = { sectionId, paramId, optionValue: string \| null }` and an optional `boundTechnologyCategory: string`; the renderer reads (never writes) the bound option label and a vendor-neutral `lucide-react` icon through helpers that gate every lookup against the frozen CTAD registry | New `acw/icons/iconRegistry.ts` (vendor-denylist invariant), `acw/semantic/techNodeBinding.ts` (the **only** ACW module permitted to import `@/ctad/ctadRegistry` — pair-validates `(sectionId, paramId)` via `findSectionForParam` and rejects optionValues not on the registry's option set, so stale / malformed bindings are no-ops that fall back to `node.label`), `acw/semantic/ctadToAcwSeed.ts` (pure deterministic seeder); `acw/acwStore.ts` widened with `updateNodeBinding` + read-validator acceptance of the new optional fields (probe (7) in `acwGrammarV2Invariants.test-shape.ts`); `components/acw/InteractiveCanvas2D.tsx` renders via `resolveLabel` / `resolveIcon`; `AuthoringPanel` gains a "Bound parameters" subsection; ACW isolation allowlist widened to permit the one-way registry read but the CTAD store remains forbidden; **ACW schema unchanged at `acw-1.0`** (the new fields are additive optional fields) | Reversible by deleting `acw/icons/`, `acw/semantic/`, the `boundParam` / `boundTechnologyCategory` fields on `AcwNode` and the `updateNodeBinding` mutator (and probe (7)), reverting `InteractiveCanvas2D` to read `n.label` directly, removing the AuthoringPanel subsection, and dropping `@/ctad/ctadRegistry` from the ACW isolation allowlist |
+| EAStudio Path B Phase 1 — palette tile-level technology bindings (Task #113) | Per-tile default semantic bindings on the EAStudio palette: 9 of the 32 tiles now declare a default `boundTechnologyCategory` (Data Store, API Gateway, Microservice, Mobile App, Event Bus, Web Portal, Database, Runtime Engine, IAM Service); on drop, `DomainGrid.onDrop` forwards the optional defaults onto `createNode` so the resulting node carries the same Phase-5 semantic shape a manual `updateNodeBinding` would produce. Drag-only `PalettePanel.tsx` is unchanged. The `PaletteItem` interface gains optional `boundTechnologyCategory?: string` and `boundParam?: PaletteBoundParamDefault` fields with a module-load assertion that every declared category resolves through `lookupIconForCategory` (a typo fails the bundle); a sibling `paletteRegistryInvariants.test-shape.ts` re-asserts uniqueness, resolvability, `boundParam` shape, and Phase-1 coverage breadth (data / application / technology domains each carry at least one bound tile). Five tiles (`data-etl`, `tech-cloud-region`, `tech-monitoring`, `tech-object-storage`, `tech-cicd`) are deliberately left unbound because the existing icon registry has no clean categorical home for "pipeline", "cloud region", "observability platform", "object storage", or "CI/CD pipeline"; widening the icon registry is reserved for a follow-up phase to keep this change set palette-only. No `boundParam` defaults ship in Phase 1 — that field is reserved for Path B Phase 2. **ACW schema unchanged at `acw-1.0`**, validator unchanged, refusal channel unchanged, isolation invariant unchanged | Reversible by deleting the new `boundTechnologyCategory` / `boundParam` fields from the 9 tile literals, removing the optional fields from the `PaletteItem` interface and the spread block in `DomainGrid.onDrop`, deleting `paletteRegistryInvariants.test-shape.ts` and its `App.tsx` import, and removing the resolvability / shape assertion block at the bottom of `paletteRegistry.ts`; persisted workspaces continue to load because no schema field was added |
 | ACW Authored Workspace — fullscreen lenses + floating overlay (Task #86) | The two canvas-heavy authored lenses (System Landscape, Deployment & Infrastructure) gain a per-lens fullscreen mode that mirrors Track 3's pattern without sharing code with it | New per-lens viewprefs slice `acw/acwWorkspaceViewPrefs.ts` (key `acw.workspace.viewprefs.v1`, schema `acw-workspace-viewprefs-1.0`, allow-listed shape `{ schemaVersion, byLens: { [lensPath]: { isFullscreen: boolean } } }`); new `components/acw/WorkspaceLensFloatingOverlay.tsx` (top-left identity + exit-fullscreen, right-edge collapsible authoring drawer, bottom-right collapsible structure drawer, bottom-centre depth breadcrumb pill, `top-28` clearance for the two sticky bars); `WorkspaceShell` gains a sticky lens sub-nav (`top-14 z-10`) and a `hideShellChrome` prop so the fullscreen branch can suppress its inline body chrome (hint paragraph + always-on `AuthoringPanel`); the System Landscape and Deployment lenses each render a fullscreen branch (`fixed inset-0 z-0` canvas + overlay) when `getLensPrefs(LENS_PATH).isFullscreen === true` and the prior inline branch otherwise; an `Escape` key handler toggles fullscreen in either direction, suppressed inside editable targets (input / textarea / select / contentEditable) and when `event.defaultPrevented` is set; the overlay is intentionally NOT abstracted with the Track 3 overlay despite visual similarity (authored vs derived isolation contract); test surface gains `tests/acwWorkspaceViewPrefs.test.ts` (schema validator + storage round-trip, 13 cases) and `tests/acwAuthoredFullscreenLens.test.tsx` (render-level branch swap, Escape toggle, editable-target Escape suppression for both lenses, 6 cases) — the Vitest config picks these up via a widened `include` glob (`tests/**/*.test.ts`, `tests/**/*.test.tsx`) and an added `esbuild.jsx: "automatic"` so the `.tsx` render-level tests compile under jsdom | Reversible by deleting the viewprefs slice, the overlay component, the `hideShellChrome` prop, the sticky sub-nav, the lens fullscreen branches, the `Escape` handler, the two new test files, and reverting the Vitest `include` glob + `esbuild.jsx` setting; the inline lens layout returns unchanged |
 
 The portfolio entry allow-list grew from 13 fields (Core) to 15 (Phase 1)
@@ -3559,6 +3560,145 @@ its prototype-aligned scope from §20C is preserved.
 
 The seven EAStudio prototype-parity items already deferred in
 §20C are still deferred and not addressed here.
+
+
+## 20D. EAStudio Path B Phase 1 — Palette tile-level technology bindings (Task #113)
+
+### Purpose
+
+Phase 20D is the first half of EAStudio Path B (the second half,
+Phase 2, lands the L3 generator that the bindings unlock). Phase 1
+attaches **default semantic bindings** to the EAStudio palette so a
+tile that materialises a `Database` system also stamps the new
+`AcwNode` with the categorical icon binding the renderer would
+otherwise wait for the user to author manually through the
+properties panel. The Phase-5 `boundTechnologyCategory` /
+`boundParam` infrastructure is unchanged: this phase only widens
+the palette plumbing that feeds it.
+
+### Scope of changes
+
+- **`PaletteItem` interface widening** (`src/acw/palette/paletteRegistry.ts`).
+  Two optional fields — `boundTechnologyCategory?: string` and
+  `boundParam?: PaletteBoundParamDefault` — are added with JSDoc.
+  No existing tile is required to declare either; the field stays
+  absent on every tile that does not opt in, so the on-disk and
+  in-memory shape of nodes materialised from un-opted tiles is
+  byte-identical to the pre-Phase-1 shape.
+
+- **9 of 32 tiles bound.** The Phase 1 mapping uses only category
+  strings the existing `acw/icons/iconRegistry.ts` already knows
+  about — a typo or a category not in the registry fails the
+  bundle at module load (see *Invariants* below). The mapping is:
+
+  | paletteKind | boundTechnologyCategory |
+  | --- | --- |
+  | `data-store` | `Relational database` |
+  | `app-api-gateway` | `API gateway` |
+  | `app-microservice` | `Backend service` |
+  | `app-mobile` | `Component-tree frontend` |
+  | `app-event-bus` | `Message broker` |
+  | `app-web-portal` | `Server-rendered frontend` |
+  | `tech-database` | `Relational database` |
+  | `tech-runtime` | `Managed runtime` |
+  | `tech-iam` | `Identity provider` |
+
+  Five tiles (`data-etl`, `tech-cloud-region`, `tech-monitoring`,
+  `tech-object-storage`, `tech-cicd`) are **deliberately left
+  unbound**. The categorical homes those tiles would point at
+  (a "Data pipeline" / "Cloud region" / "Observability platform" /
+  "Object storage" / "CI/CD pipeline" entry) do not yet exist in
+  `iconRegistry.ts`, and widening the icon registry is out of
+  scope for this phase. They drop as plain typed nodes — the
+  pre-Phase-1 behaviour — and become candidates for a Path B
+  Phase 2 widening.
+
+  The eight Business tiles intentionally carry no binding because
+  the existing icon registry has no clean home for strategic /
+  process surfaces (Strategy Map, Capability Map, Value Stream,
+  …). They also remain pre-Phase-1 plain typed nodes.
+
+- **Drop-handler plumbing** (`src/components/acw/palette/DomainGrid.tsx`).
+  The `onDrop` block that already calls `createNode({ type,
+  parentId, label, domainTag })` now spreads
+  `boundTechnologyCategory` and `boundParam` from the palette
+  item when the tile declares them. The spread keeps undefined
+  fields absent (rather than serialising as `null`), preserving
+  byte-identical shape for un-opted tiles.
+
+- **No `createNode` widening.** `createNode` already accepts both
+  optional fields with full defensive shape checks (added by ACW
+  Phase 5 / Task #82); no store change was needed.
+
+- **No `PalettePanel.tsx` change.** The panel only initiates the
+  HTML5 drag — the receiving `DomainGrid` is the single
+  validator-gated entry point that calls `createNode`. The earlier
+  Path B planning note that mentioned editing both files was
+  incorrect; only `DomainGrid` materialises the node.
+
+### Invariants
+
+- **Inline assertion in `paletteRegistry.ts`:** every tile that
+  declares a `boundTechnologyCategory` resolves through
+  `lookupIconForCategory`; every tile that declares a `boundParam`
+  carries a structurally well-formed shape (non-empty `sectionId`
+  / `paramId`, `optionValue` either `null` or non-empty string).
+  Phase 1 ships zero `boundParam` defaults so that loop is vacuous
+  today — the structural shape check is asserted now so a future
+  Phase 2 edit cannot smuggle in a malformed default. The deeper
+  CTAD-registry pair lookup (`(sectionId, paramId)` must resolve
+  through `findRegistryParam`) is intentionally NOT run from this
+  module — `paletteRegistry` is a leaf module and must not import
+  the CTAD registry; the runtime resolver in
+  `acw/semantic/techNodeBinding.ts` already pair-validates and
+  no-ops on drift.
+
+- **Sibling `paletteRegistryInvariants.test-shape.ts`**
+  (registered via side-effect import in `App.tsx` alongside
+  `iconRegistryInvariants.test-shape`). Re-asserts (1) paletteKind
+  uniqueness, (2) every declared `boundTechnologyCategory`
+  resolves through the icon registry, (3) every declared
+  `boundParam` shape is well-formed, and (4) Path B Phase 1
+  coverage holds — at least one tile in each of the **data**,
+  **application**, and **technology** domains carries a default
+  `boundTechnologyCategory`. Business is intentionally exempt
+  (no clean categorical home in the existing icon registry).
+
+### Constitutional compliance
+
+- **ACW schema unchanged at `acw-1.0`.** No on-disk migration; no
+  field added to `AcwNode` (Phase 5 already added the optional
+  fields the palette now stamps).
+- **No grammar / validator / refusal-channel change.** The
+  validator has no opinion about `boundTechnologyCategory` or
+  `boundParam`; both are still purely renderer concerns.
+- **No isolation widening.** `paletteRegistry` imports from
+  `iconRegistry` (intra-ACW); it does NOT import from the CTAD
+  registry, the decision pipeline, or the portfolio store.
+- **Iconography: `lucide-react` only.** No new vendor names
+  introduced; every Phase 1 binding string is one the icon
+  registry already validated against the vendor denylist.
+- **Vocabulary tier preserved.** No new surface text introduced
+  by this phase; the `boundTechnologyCategory` strings live
+  inside the `iconRegistry` whose `displayName` values are
+  already asserted against `ACW_PLACEHOLDER_FORBIDDEN`.
+
+### Reversal
+
+Removing this phase is a four-step delete:
+- delete the `boundTechnologyCategory` field from each of the 9
+  bound tile literals in `paletteRegistry.ts`,
+- delete the optional fields from the `PaletteItem` interface and
+  the `PaletteBoundParamDefault` type,
+- delete the resolvability / shape assertion block at the bottom
+  of `paletteRegistry.ts`,
+- delete the spread block in `DomainGrid.onDrop`, the
+  `paletteRegistryInvariants.test-shape.ts` file, and its
+  `App.tsx` import.
+
+The `acw-1.0` snapshot schema is unchanged, so persisted
+workspaces continue to load after rollback because no schema
+field was added.
 
 
 ## 22. Collapsible Left Sidebar (Task #108)
