@@ -27,6 +27,7 @@ import {
   createNode,
 } from "./acwStore";
 import { publishRefusal } from "./acwRefusalChannel";
+import { __l3GeneratorInternals } from "./l3/l3Generator";
 import {
   ACW_DOMAIN_CONTAINERS,
   ensureDomainContainers,
@@ -44,6 +45,13 @@ import type { AcwDomainTag } from "./acwGrammar";
 export function clearStudio(): void {
   clearWorkspace();
   ensureDomainContainers();
+  // EAStudio Phase 2 (LoS framework) — Clear flushes the L3
+  // generator's session memo so the next L3 entry re-mints any
+  // still-applicable children for the freshly-seeded workspace.
+  // Without this flush a Clear-then-L3 cycle would silently
+  // re-use the previous (now empty) memo result and project
+  // nothing.
+  __l3GeneratorInternals.resetMemoForTest();
 }
 
 // Sample data — verbatim from the prototype's `autoLayout` routine

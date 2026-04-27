@@ -63,6 +63,7 @@ import {
 import { subscribeRefusals } from "@/acw/acwRefusalChannel";
 import { getWorkspace, subscribe as subscribeAcwStore } from "@/acw/acwStore";
 import { runL3GeneratorForAllArchitectures } from "@/acw/l3/l3Generator";
+import { setActiveLod } from "@/acw/acwViewState";
 
 const REFUSAL_PREFIX = "Refused:";
 const DISMISS_LABEL = "Dismiss";
@@ -142,6 +143,14 @@ export default function StudioCanvas() {
   // suppressed when focus is in an editable field so typing Esc
   // inside the Properties panel inputs does not blow away the
   // user's pending selection.
+  //
+  // EAStudio Phase 2 (LoS framework) — when the active LoS is 3,
+  // Escape is repurposed to exit the L3 fullscreen surface back
+  // to L2 (the existing 2D shell). This mirrors the Track 3 /
+  // SystemLandscape Escape-to-exit-fullscreen pattern with the
+  // same editable-target suppression. Only AFTER L3 has been
+  // exited does Escape resume its connect / edge-selection
+  // dismissal duties.
   useEffect(() => {
     function onKeyDown(ev: KeyboardEvent): void {
       if (ev.key !== "Escape") return;
@@ -156,6 +165,10 @@ export default function StudioCanvas() {
         ) {
           return;
         }
+      }
+      if (getActiveLod(lensId) === 3) {
+        setActiveLod(lensId, 2);
+        return;
       }
       setConnectPendingSource(lensId, null);
       setConnectMode(lensId, false);
