@@ -373,10 +373,16 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
   };
   const onBgMouseMove = (e: MouseEvent<HTMLDivElement>) => {
     if (drag !== null) return;
-    if (panRef.current) {
-      const dx = e.clientX - panRef.current.startX;
-      const dy = e.clientY - panRef.current.startY;
-      setView((v) => ({ ...v, x: panRef.current!.vx + dx, y: panRef.current!.vy + dy }));
+    // Snapshot panRef.current into a local before calling setView. React
+    // may execute the state-updater asynchronously, by which time a
+    // mouseup handler can have cleared panRef.current to null — reading
+    // `.vx` off the ref inside the updater would then throw and crash
+    // the InteractiveCanvas2D subtree.
+    const pan = panRef.current;
+    if (pan) {
+      const dx = e.clientX - pan.startX;
+      const dy = e.clientY - pan.startY;
+      setView((v) => ({ ...v, x: pan.vx + dx, y: pan.vy + dy }));
       return;
     }
     if (marquee) {
