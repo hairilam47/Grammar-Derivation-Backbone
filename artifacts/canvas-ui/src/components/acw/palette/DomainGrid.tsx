@@ -84,12 +84,18 @@ const SEAL_LABEL = "Sealed";
 const QUADRANT_HINT = "Drop a palette tile here.";
 const CONNECT_HINT = "Connect from this node";
 const EDGE_DELETE_CONFIRM = "Delete this connection?";
+// Phase 3 — fragment used to compose the OU-augmented aria-label
+// (e.g. `"Postgres (organisational unit: Platform Tribe)"`).
+// Asserted against the placeholder vocabulary so the parenthetical
+// phrasing required by the brief cannot drift.
+const OU_ARIA_PREFIX = "(organisational unit:";
 
 assertAllAcwPlaceholderLanguage([
   SEAL_LABEL,
   QUADRANT_HINT,
   CONNECT_HINT,
   EDGE_DELETE_CONFIRM,
+  OU_ARIA_PREFIX,
 ]);
 
 export interface DomainGridProps {
@@ -292,6 +298,7 @@ export function DomainGrid({ lensId }: DomainGridProps) {
                 node={node}
                 x={ctxMenu.x}
                 y={ctxMenu.y}
+                activeLod={activeLod}
                 onClose={() => setCtxMenu(null)}
               />
             );
@@ -457,6 +464,7 @@ function Zone(props: ZoneProps) {
                 onClick={() => onNodeClick(node.id, false)}
                 onConnect={() => onNodeClick(node.id, true)}
                 onContextMenu={(x, y) => onNodeContextMenu(node.id, x, y)}
+                hasBoundParam={node.boundParam !== undefined}
               />
             );
           })
@@ -484,6 +492,10 @@ interface NodeCardProps {
   // Phase 3 right-click "Swap technology" menu — receives the
   // viewport coordinates the host should anchor the popover at.
   readonly onContextMenu: (x: number, y: number) => void;
+  // Phase 3 — gate the swap menu to nodes that actually carry a
+  // CTAD binding. For unbound nodes the host releases the native
+  // browser context menu rather than presenting an empty popover.
+  readonly hasBoundParam: boolean;
 }
 
 // Resolve which palette tile (if any) was used to materialise this
@@ -505,11 +517,17 @@ function NodeCard(p: NodeCardProps) {
   const { Icon } = tile;
   // ARIA augmentation for the OU overlay. Colour is categorical so
   // the assistive label MUST carry the unit name independently —
-  // never rely on hue to convey membership. We always include the
-  // node label so the resulting string remains a valid name for
-  // the role="button" element.
+  // never rely on hue to convey membership. The augmentation is
+  // applied ONLY when the overlay is actually rendered (overlayCss
+  // !== null) so an OU bound to a node while the overlay is OFF
+  // does not leak through assistive tech in a context where no
+  // visual signal accompanies it. Phrasing is parenthetical so
+  // screen readers announce the node label first, then the
+  // membership clause.
   const ariaLabel =
-    p.ouName !== null ? `${p.node.label} — ${p.ouName}` : undefined;
+    p.overlayCss !== null && p.ouName !== null
+      ? `${p.node.label} (organisational unit: ${p.ouName})`
+      : undefined;
   // The categorical hue lives on backgroundColor; CSS handles
   // hover / selected affordances on its own classes. We do NOT
   // touch foreground colour — the L=22% guarantees AA contrast
@@ -528,6 +546,12 @@ function NodeCard(p: NodeCardProps) {
         p.onClick();
       }}
       onContextMenu={(e) => {
+        // Phase 3: only intercept the native context menu when the
+        // node carries a CTAD binding — there is nothing to swap on
+        // an unbound node, so opening an empty popover would be a
+        // dead-end UX. For unbound nodes we let the browser show
+        // its default menu (or the host's parent handler take over).
+        if (!p.hasBoundParam) return;
         e.preventDefault();
         e.stopPropagation();
         p.onContextMenu(e.clientX, e.clientY);

@@ -368,6 +368,26 @@ export function runL3GeneratorForPersistedArchitectures(): readonly string[] {
 }
 
 /**
+ * Path B Phase 3 — public memo invalidation. Right-click "Swap
+ * technology" mutates an L2 origin's `boundParam` through the
+ * standard validator-gated `updateNodeBinding` path; that mutation
+ * does NOT change CTAD architecture state and therefore does NOT
+ * change `ctadStateHash`, so the per-architecture memo would skip
+ * the next `runL3Generator` call and the generator would not
+ * re-evaluate the now-changed L2 parent set. We invalidate the
+ * memo for ALL architectures (cheap, bounded by the persisted
+ * CTAD roster) so the next L3 entry — or the immediate
+ * regeneration call below when L3 is already active — performs a
+ * fresh walk. Architecture-scoped invalidation is intentionally
+ * not exposed: the swap callsite cannot know which architectures
+ * read the affected (sectionId, paramId) pair without
+ * re-implementing the generator's mapping resolution.
+ */
+export function invalidateL3Memo(): void {
+  L3_MEMO.clear();
+}
+
+/**
  * Test-only / Clear-only memo flush. The Studio canvas calls this
  * from the workspace `Clear` action so the next L3 entry mints
  * fresh children that reflect the now-empty workspace. Probes

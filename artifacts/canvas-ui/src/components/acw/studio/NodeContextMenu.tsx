@@ -19,7 +19,7 @@
 //   - Outside-click and Escape both close. Both behaviours live in
 //     the host so the menu component stays a presentational leaf.
 //
-// "No other options." is rendered in a disabled list item when the
+// "No other options available." is rendered in a disabled list item when the
 // bound parameter has only one option (or when the resolver returns
 // an empty list because the binding is stale). The empty-state copy
 // is intentionally neutral — no judgment, no instruction.
@@ -30,9 +30,13 @@ import type { AcwNode } from "@/acw/acwStore";
 import { updateNodeBinding } from "@/acw/acwStore";
 import { resolveBoundOption, resolveBoundOptions } from "@/acw/semantic/techNodeBinding";
 import { publishRefusal } from "@/acw/acwRefusalChannel";
+import {
+  invalidateL3Memo,
+  runL3GeneratorForPersistedArchitectures,
+} from "@/acw/l3/l3Generator";
 
 const MENU_TITLE = "Swap technology";
-const NO_OPTIONS = "No other options.";
+const NO_OPTIONS = "No other options available.";
 const CURRENT_SUFFIX = "current";
 const CANCEL_LABEL = "Cancel";
 
@@ -47,11 +51,21 @@ export interface NodeContextMenuProps {
   readonly node: AcwNode;
   readonly x: number;
   readonly y: number;
+  // Phase 3 — current LoS level. The Phase-2 L3 generator memoizes
+  // its output keyed on (architectureId, ctadStateHash); a swap
+  // changes the L2 origin's `boundParam` but does NOT change CTAD
+  // state, so the memo would skip the generator on the next entry
+  // and the L3 surface would render stale children. We invalidate
+  // unconditionally on every accepted swap so the next L3 entry
+  // always rebuilds, AND when activeLod === 3 we additionally
+  // re-run the persisted-roster entry point so the live surface
+  // reflects the swap immediately.
+  readonly activeLod: 1 | 2 | 3;
   readonly onClose: () => void;
 }
 
 export function NodeContextMenu(props: NodeContextMenuProps) {
-  const { node, x, y, onClose } = props;
+  const { node, x, y, activeLod, onClose } = props;
   const options = useMemo(() => resolveBoundOptions(node), [node]);
   const current = useMemo(() => resolveBoundOption(node, undefined), [node]);
 
@@ -71,7 +85,20 @@ export function NodeContextMenu(props: NodeContextMenuProps) {
         optionValue: value,
       },
     });
-    if (!r.ok) publishRefusal(r.reason);
+    if (!r.ok) {
+      publishRefusal(r.reason);
+      onClose();
+      return;
+    }
+    // Phase 3 contract: a successful swap MUST invalidate the L3
+    // memo so the next L3 entry rebuilds against the new boundParam.
+    // When the user is already at L3, immediately re-run the
+    // persisted-roster generator so the visible surface refreshes
+    // in the same gesture (no need to leave and re-enter L3).
+    invalidateL3Memo();
+    if (activeLod === 3) {
+      runL3GeneratorForPersistedArchitectures();
+    }
     onClose();
   };
 

@@ -103,7 +103,7 @@ const ADD_UNIT_LABEL = "Add unit";
 const REMOVE_LABEL = "Remove";
 const ADD_UNIT_PROMPT = "Name of the new unit";
 const REMOVE_CONFIRM = "Remove this unit? Nodes carrying it will be cleared.";
-const NONE_LABEL = "—";
+const NONE_LABEL = "Not specified";
 const INCIDENT_TITLE = "Incident connections";
 const NO_EDGES = "No connections incident to this node.";
 const CONNECT_FROM = "from";
@@ -536,7 +536,7 @@ export function NodePropertiesPanel({ lensId }: NodePropertiesPanelProps) {
 
       {/*
         Phase 3 — categorical OU overlay binding. The dropdown lists
-        every unit currently in the registry; "—" clears the field.
+        every unit currently in the registry; selecting "Not specified" clears the field.
         Add unit prompts for a name and immediately binds it; Remove
         is disabled unless the node currently carries an OU id.
       */}
@@ -554,11 +554,22 @@ export function NodePropertiesPanel({ lensId }: NodePropertiesPanelProps) {
           data-testid="acw-studio-properties-ou-select"
         >
           <option value="">{NONE_LABEL}</option>
-          {listOus().map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.name}
-            </option>
-          ))}
+          {/*
+            Phase 3 — sort the OU options alphabetically by name so
+            the dropdown order is stable and human-scannable
+            regardless of registry insertion order. Sort uses the
+            user's locale and is case-insensitive (`sensitivity:
+            "base"`) to match the rest of the panel's textual UX.
+          */}
+          {[...listOus()]
+            .sort((a, b) =>
+              a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+            )
+            .map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
         </select>
         <div
           className="es-props-ou-actions"
