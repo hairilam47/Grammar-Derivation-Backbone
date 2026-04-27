@@ -238,7 +238,7 @@ Numbering reflects build order, not architectural priority.
 | ACW Track 3 — derived structural view decoupled from ADC bounds (Task #80) | The Track 3 derived view is re-anchored to standalone CTAD architectures, not ADS bindings | New route `/acw/derived/arch/:architectureId`; entry page lists CTAD architectures (no portfolio dependency); shell loads the architecture's CTAD state via `exportArchitectureState(architectureId)` and feeds it through `compileTrack3Specs(...)` so the diagram is recomputed on every render with no `projectBounds(entry)` projection; the retired bounds-projection helper is gone; Track 3 viewprefs widened to a `byArchitecture` map alongside the legacy `byBinding` map (back-compat preserved by the validator) | Reversible by deleting the new route + entry, removing `byArchitecture` from the viewprefs schema, restoring the bounds-projection helper, and re-anchoring the shell to ADS bindings |
 | ACW Track 3 — full-page architecture canvas + floating overlay (Task #81) | Track 3 gets a fullscreen mode with quadrant overlays mirroring future authored-lens work | New `Track3FloatingOverlay` component; when `prefs.isFullscreen === true` (the new default) the canvas mounts inside a `fixed inset-0 z-0` container under the route's sticky header (`z-10`) with controls shown as quadrants (top-left identity + refresh + exit; bottom-right collapsible mode/perspective/layers cluster; bottom-centre stratum-legend pill); pressing `Escape` toggles fullscreen in either direction (suppressed inside editable targets and when `defaultPrevented`); **viewprefs schema bumped from `acw-track3-viewprefs-1.0` to `acw-track3-viewprefs-1.1`** with a deterministic v1.0 → v1.1 read-time migration that injects `isFullscreen: true` into every entry | Reversible by lowering the schema version, dropping `isFullscreen` from each `PrefsEntry`, deleting the overlay component, and reverting the shell to its inline (non-fullscreen) layout |
 | ACW Phase 5 — Technology-aware semantic node binding (Task #82) | ACW nodes can carry an optional `boundParam = { sectionId, paramId, optionValue: string \| null }` and an optional `boundTechnologyCategory: string`; the renderer reads (never writes) the bound option label and a vendor-neutral `lucide-react` icon through helpers that gate every lookup against the frozen CTAD registry | New `acw/icons/iconRegistry.ts` (vendor-denylist invariant), `acw/semantic/techNodeBinding.ts` (the **only** ACW module permitted to import `@/ctad/ctadRegistry` — pair-validates `(sectionId, paramId)` via `findSectionForParam` and rejects optionValues not on the registry's option set, so stale / malformed bindings are no-ops that fall back to `node.label`), `acw/semantic/ctadToAcwSeed.ts` (pure deterministic seeder); `acw/acwStore.ts` widened with `updateNodeBinding` + read-validator acceptance of the new optional fields (probe (7) in `acwGrammarV2Invariants.test-shape.ts`); `components/acw/InteractiveCanvas2D.tsx` renders via `resolveLabel` / `resolveIcon`; `AuthoringPanel` gains a "Bound parameters" subsection; ACW isolation allowlist widened to permit the one-way registry read but the CTAD store remains forbidden; **ACW schema unchanged at `acw-1.0`** (the new fields are additive optional fields) | Reversible by deleting `acw/icons/`, `acw/semantic/`, the `boundParam` / `boundTechnologyCategory` fields on `AcwNode` and the `updateNodeBinding` mutator (and probe (7)), reverting `InteractiveCanvas2D` to read `n.label` directly, removing the AuthoringPanel subsection, and dropping `@/ctad/ctadRegistry` from the ACW isolation allowlist |
-| EAStudio Path B Phase 2 — Level of Specification (LoS) framework + L3 generator (Task #114) | The Studio canvas gains a per-lens LoS toggle (L1 Business / L2 Application / L3 Technology) and an L3 surface that mounts a fullscreen 3D structural canvas mechanically derived from each architecture's CTAD selections | New `ACW_LOD_LEVELS` / `AcwLodLevel` / `isAcwLodLevel` / `isAcwLodRangeShape` / `isVisibleAtLod` in `acw/acwGrammar.ts`; optional `lodRange?: readonly [AcwLodLevel, AcwLodLevel]` field on `AcwNode` (read-validator + create-API + defensive shape-check + node allowlist all extended; **schema stays `acw-1.0`** because the field is optional and absent on legacy nodes); `acwLensStructure.enumerateLensVisibility` accepts an optional `currentLodLevel` and filters direct siblings + child-refs through `isVisibleAtLod`; per-lens `activeLodByLens?: Record<string, AcwLodLevel>` slice on view-state with `getActiveLod` (default `2`) / `setActiveLod` accessors (**view-state schema stays `acw-view-1.0`**, top allow-list extended); new `StudioTopBar` LoS button group gated to `lensId === "/workspace/studio"`; `StudioCanvas` mounts `Canvas3DStructural` inside `position: fixed; inset: 0; z-0` (Track 3 fullscreen parity) when LoS=3 and runs the L3 generator once on each "edge" entry into L3 (ref-gated); new isolated module `acw/l3/l3Generator.ts` with a closed mapping table (`infrastructure.hostingModel → ComputeNode`, `infrastructure.databaseClass → Component`), stable id `l3:<archId>:<sectionId>:<paramId>`, deterministic layout in the technology quadrant, mints `lodRange: [3, 3]` so the nodes are visible only at L3, never deletes anything, and no-ops if the sealed `domain-technology` container is missing (no orphan recreate); two new build-time invariants — `acwL3IsolationInvariants.test-shape.ts` (allowlist + denylist + CTAD named-import scan with self-test, `/src/acw/l3/` added to ACW isolation EXCLUDED prefix list) and `acwL3GeneratorInvariants.test-shape.ts` (snapshot-and-restore probes for idempotency, no-orphan-recreate, and the `lodRange: [3, 3]` contract). **L3 carve-out drift**: spec said the L3 module may import only `exportArchitectureState`; we widened to `exportArchitectureState` + `listArchitectures` + the matching read-only types `CtadArchitectureDoc` / `CtadArchitectureStateExport` because the singleton acwStore at `/workspace/studio` carries no architectureId mapping — the generator must enumerate the CTAD architecture roster itself. Both helpers are read-only; the L3 isolation invariant pins the named-import allowlist so any further widening fails the bundle | Reversible by deleting `acw/l3/`, the two App.tsx side-effect imports, the LoS toggle block in `StudioTopBar`, the L3 surface block + the generator-trigger ref + the workspace-tick subscription in `StudioCanvas`, the optional `lodRange` field everywhere it was added (interface, allowlist, validator branch, createNode shape-check, conditional spread), the `currentLodLevel` parameter on `enumerateLensVisibility`, the `activeLodByLens` slice on view-state (allow-list entry + emptyView + normalize + validator branch + accessors), and the `ACW_LOD_LEVELS` / `AcwLodLevel` / `isAcwLodLevel` / `isAcwLodRangeShape` / `isVisibleAtLod` exports from `acwGrammar.ts`; persisted workspaces and view-state documents continue to load because no schema field was made required |
+| EAStudio Path B Phase 2 — Level of Specification (LoS) framework + L3 generator (Task #114) | The Studio canvas gains a per-lens LoS toggle (L1 Business / L2 Application / L3 Technology) and an L3 surface that mounts a fullscreen 3D structural canvas mechanically derived from each architecture's CTAD selections | New `ACW_LOD_LEVELS` / `AcwLodLevel` / `isAcwLodLevel` / `isAcwLodRangeShape` / `isVisibleAtLod` in `acw/acwGrammar.ts`; optional `lodRange?: readonly [AcwLodLevel, AcwLodLevel]` field on `AcwNode` (read-validator + create-API + defensive shape-check + node allowlist all extended; **schema stays `acw-1.0`** because the field is optional and absent on legacy nodes); `acwLensStructure.enumerateLensVisibility` accepts an optional `currentLodLevel` and filters direct siblings + child-refs through `isVisibleAtLod`; per-lens `activeLodByLens?: Record<string, AcwLodLevel>` slice on view-state with `getActiveLod` (default `2`) / `setActiveLod` accessors (**view-state schema stays `acw-view-1.0`**, top allow-list extended); new `StudioTopBar` LoS button group gated to `lensId === "/workspace/studio"`; `StudioCanvas` mounts `Canvas3DStructural` as a sibling of `.es-shell` inside `position: fixed; inset: 0; z-0` (Track 3 fullscreen parity) when LoS=3 with the topbar lifted to `position: relative; z-index: 10` so the L1/L2/L3 toggle remains reachable, and edge-triggers `runL3GeneratorForPersistedArchitectures` once per session entry into L3 (ref-gated); new isolated module `acw/l3/l3Generator.ts` with a closed mapping table (`(infrastructure, hostingModel="kubernetes") → ComputeNode "Kubernetes cluster"`; any other `hostingModel` value mints nothing — no fallback; `(infrastructure, databaseClass) → Component` labelled with the chosen option value VERBATIM), stable id `l3:<parentId>:<sectionId>:<paramId>` parented to the L2 origin node carrying the `boundParam` reference (no specific container required), per-architecture session memo keyed by a CTAD state hash, mints `lodRange: [3, 3]` so the nodes are visible only at L3, never deletes anything, and does not orphan-recreate when an L2 origin is pruned; two new build-time invariants — `acwL3IsolationInvariants.test-shape.ts` pinning the L3 module's CTAD-store named-import surface to a SINGLE symbol (`exportArchitectureState`) with explicit denylist self-test rejecting `listArchitectures` and re-exported types (`/src/acw/l3/` added to ACW isolation EXCLUDED prefix list) and `acwL3GeneratorInvariants.test-shape.ts` (snapshot-and-restore probes for idempotency, no-orphan-recreate, the `lodRange: [3, 3]` contract, and the closed mapping table including the "On-prem hostingModel mints nothing while Document databaseClass mints 'Document' verbatim" fixture). The Studio shell carries no architectureId mapping, so the entry point reads the CTAD storage key (`ctad.state.v1`) directly through `localStorage` — a global runtime affordance that the import-only L3 isolation invariant does not restrict — and delegates each id to `exportArchitectureState`; the snapshot shape is derived locally via `ReturnType<typeof exportArchitectureState>` so no CTAD type re-export is required. **Deviation**: the original brief described a cascading `deleteNode` in `acwStore`, but the store ships only `deleteEdge`; the orphan-recreate invariant therefore prunes the L2 origin via direct test-fixture storage manipulation and the generator's contract is "no orphan re-mint" rather than the brief's broader "cascade with parent" framing | Reversible by deleting `acw/l3/`, the two App.tsx side-effect imports, the LoS toggle block in `StudioTopBar`, the L3 surface block + the generator-trigger ref + the workspace-tick subscription in `StudioCanvas`, the optional `lodRange` field everywhere it was added (interface, allowlist, validator branch, createNode shape-check, conditional spread), the `currentLodLevel` parameter on `enumerateLensVisibility`, the `activeLodByLens` slice on view-state (allow-list entry + emptyView + normalize + validator branch + accessors), and the `ACW_LOD_LEVELS` / `AcwLodLevel` / `isAcwLodLevel` / `isAcwLodRangeShape` / `isVisibleAtLod` exports from `acwGrammar.ts`; persisted workspaces and view-state documents continue to load because no schema field was made required |
 | EAStudio Path B Phase 1 — palette tile-level technology bindings (Task #113) | Per-tile default semantic bindings on the EAStudio palette: 9 of the 32 tiles now declare a default `boundTechnologyCategory` (Data Store, API Gateway, Microservice, Mobile App, Event Bus, Web Portal, Database, Runtime Engine, IAM Service); on drop, `DomainGrid.onDrop` forwards the optional defaults onto `createNode` so the resulting node carries the same Phase-5 semantic shape a manual `updateNodeBinding` would produce. Drag-only `PalettePanel.tsx` is unchanged. The `PaletteItem` interface gains optional `boundTechnologyCategory?: string` and `boundParam?: PaletteBoundParamDefault` fields with a module-load assertion that every declared category resolves through `lookupIconForCategory` (a typo fails the bundle); a sibling `paletteRegistryInvariants.test-shape.ts` re-asserts uniqueness, resolvability, `boundParam` shape, and Phase-1 coverage breadth (data / application / technology domains each carry at least one bound tile). Five tiles (`data-etl`, `tech-cloud-region`, `tech-monitoring`, `tech-object-storage`, `tech-cicd`) are deliberately left unbound because the existing icon registry has no clean categorical home for "pipeline", "cloud region", "observability platform", "object storage", or "CI/CD pipeline"; widening the icon registry is reserved for a follow-up phase to keep this change set palette-only. No `boundParam` defaults ship in Phase 1 — that field is reserved for Path B Phase 2. **ACW schema unchanged at `acw-1.0`**, validator unchanged, refusal channel unchanged, isolation invariant unchanged | Reversible by deleting the new `boundTechnologyCategory` / `boundParam` fields from the 9 tile literals, removing the optional fields from the `PaletteItem` interface and the spread block in `DomainGrid.onDrop`, deleting `paletteRegistryInvariants.test-shape.ts` and its `App.tsx` import, and removing the resolvability / shape assertion block at the bottom of `paletteRegistry.ts`; persisted workspaces continue to load because no schema field was added |
 | ACW Authored Workspace — fullscreen lenses + floating overlay (Task #86) | The two canvas-heavy authored lenses (System Landscape, Deployment & Infrastructure) gain a per-lens fullscreen mode that mirrors Track 3's pattern without sharing code with it | New per-lens viewprefs slice `acw/acwWorkspaceViewPrefs.ts` (key `acw.workspace.viewprefs.v1`, schema `acw-workspace-viewprefs-1.0`, allow-listed shape `{ schemaVersion, byLens: { [lensPath]: { isFullscreen: boolean } } }`); new `components/acw/WorkspaceLensFloatingOverlay.tsx` (top-left identity + exit-fullscreen, right-edge collapsible authoring drawer, bottom-right collapsible structure drawer, bottom-centre depth breadcrumb pill, `top-28` clearance for the two sticky bars); `WorkspaceShell` gains a sticky lens sub-nav (`top-14 z-10`) and a `hideShellChrome` prop so the fullscreen branch can suppress its inline body chrome (hint paragraph + always-on `AuthoringPanel`); the System Landscape and Deployment lenses each render a fullscreen branch (`fixed inset-0 z-0` canvas + overlay) when `getLensPrefs(LENS_PATH).isFullscreen === true` and the prior inline branch otherwise; an `Escape` key handler toggles fullscreen in either direction, suppressed inside editable targets (input / textarea / select / contentEditable) and when `event.defaultPrevented` is set; the overlay is intentionally NOT abstracted with the Track 3 overlay despite visual similarity (authored vs derived isolation contract); test surface gains `tests/acwWorkspaceViewPrefs.test.ts` (schema validator + storage round-trip, 13 cases) and `tests/acwAuthoredFullscreenLens.test.tsx` (render-level branch swap, Escape toggle, editable-target Escape suppression for both lenses, 6 cases) — the Vitest config picks these up via a widened `include` glob (`tests/**/*.test.ts`, `tests/**/*.test.tsx`) and an added `esbuild.jsx: "automatic"` so the `.tsx` render-level tests compile under jsdom | Reversible by deleting the viewprefs slice, the overlay component, the `hideShellChrome` prop, the sticky sub-nav, the lens fullscreen branches, the `Escape` handler, the two new test files, and reverting the Vitest `include` glob + `esbuild.jsx` setting; the inline lens layout returns unchanged |
 
@@ -3582,7 +3582,8 @@ ladder:
 - **L3 Technology** — fullscreen 3D structural canvas. The L3
   generator mechanically projects each CTAD architecture's
   hosting / database choices into ACW nodes parented to the
-  sealed `domain-technology` container.
+  L2 origin node that carries the corresponding `boundParam`
+  reference (no specific container is required).
 
 The toggle is per-lens (a `getActiveLod` / `setActiveLod` slice
 on the existing view-state singleton, default `2`) and is only
@@ -3598,28 +3599,36 @@ unchanged because their top-bar branch never reaches the toggle.
   Persisted documents from before Phase 2 load without
   migration.
 - The L3 generator is **pure, idempotent, deterministic** and
-  carries a stable id `l3:<archId>:<sectionId>:<paramId>` so
-  re-runs short-circuit through the store's id-collision rule.
+  carries a stable id `l3:<parentId>:<sectionId>:<paramId>`
+  (where `parentId` is the L2 origin node carrying the
+  `boundParam` reference, NOT the architecture id) so re-runs
+  short-circuit through the store's id-collision rule.
   Re-running with no CTAD change is a byte-identical no-op
   (verified by `acwL3GeneratorInvariants.test-shape.ts`).
-- The generator never deletes anything, never minted nodes
-  carry `lodRange: [3, 3]` (so L1 / L2 stay pixel-identical to
-  pre-Phase-2 behaviour), and the generator no-ops if the
-  sealed `domain-technology` container is missing — it will
-  not synthesise its own root.
+- The generator never deletes anything, every minted node
+  carries `lodRange: [3, 3]` (so L1 / L2 stay pixel-identical to
+  pre-Phase-2 behaviour), and the generator does not require
+  any specific parent container — it walks the existing L2
+  nodes that carry a `boundParam` reference and parents the
+  minted child to that origin. If the origin is later pruned
+  the child is not orphan-recreated on re-entry.
 - The L3 module is the only file under `/src/acw/l3/` permitted
   to touch the CTAD store. The dedicated isolation invariant
-  (`acwL3IsolationInvariants.test-shape.ts`) pins the named
-  imports to a closed allowlist (`exportArchitectureState`,
-  `listArchitectures`, plus the read-only types
-  `CtadArchitectureDoc` / `CtadArchitectureStateExport`) and
-  rejects namespace imports, dynamic imports, and any other
-  CTAD-store entry. The widening from the spec's
-  single-import wording to the two-helper allowlist is
-  documented under reversibility (§2A) and exists because the
-  singleton acwStore at `/workspace/studio` carries no
-  architectureId mapping — the generator must enumerate the
-  CTAD architecture roster itself.
+  (`acwL3IsolationInvariants.test-shape.ts`) pins the
+  CTAD-store named-import surface to a SINGLE symbol —
+  `exportArchitectureState` — and explicitly rejects every
+  other named import (including `listArchitectures` and any
+  re-exported type), as well as namespace and dynamic
+  imports. The Studio shell carries no architectureId mapping,
+  so the generator's `runL3GeneratorForPersistedArchitectures`
+  entry point enumerates the architecture roster by reading
+  the CTAD storage key (`ctad.state.v1`) directly through
+  `localStorage` — a global runtime affordance that the
+  import-only L3 isolation invariant does not restrict — and
+  hands each id to the allowlisted `exportArchitectureState`
+  for the snapshot. The snapshot shape is derived locally via
+  `ReturnType<typeof exportArchitectureState>` so no CTAD
+  type re-export is required.
 
 ### Mapping table
 
@@ -3629,10 +3638,11 @@ derived from the option value. Adding a new mapping means
 adding a row in `acw/l3/l3Generator.ts`; the generator does not
 invent mappings on the fly.
 
-| CTAD section | CTAD parameter | ACW element type | Label suffix |
-| --- | --- | --- | --- |
-| `infrastructure` | `hostingModel` | `ComputeNode` | "<value> hosting" |
-| `infrastructure` | `databaseClass` | `Component` | "<value> database" |
+| CTAD section | CTAD parameter | Triggering value | ACW element type | Label |
+| --- | --- | --- | --- | --- |
+| `infrastructure` | `hostingModel` | `"kubernetes"` only | `ComputeNode` | `"Kubernetes cluster"` (literal) |
+| `infrastructure` | `hostingModel` | any other value | — | nothing minted (no fallback) |
+| `infrastructure` | `databaseClass` | any registry option | `Component` | the chosen option value VERBATIM (no suffix, no transform) |
 
 Other CTAD parameters are reserved for later phases.
 
@@ -3642,16 +3652,24 @@ Other CTAD parameters are reserved for later phases.
   `lensId === "/workspace/studio"`) using the same `.es-vtab`
   visual primitives as the existing view-tab cluster, with
   `aria-pressed` reflecting the active level.
-- `StudioCanvas` mounts `Canvas3DStructural` inside
-  `position: fixed; inset: 0; z-0` (Track 3 fullscreen parity)
-  when LoS=3; the route header (`z-10`) and the `StudioTopBar`
-  remain interactive on top so the user can leave L3 by
-  clicking L1 or L2.
-- The L3 generator is invoked once on each "edge" entry into L3
-  via a ref-gated effect. Re-runs would be safe (the generator
-  is constitutionally idempotent) but the edge-trigger keeps
-  call counts predictable and matches the spec's
-  "session-memoized" wording.
+- `StudioCanvas` mounts `Canvas3DStructural` as a sibling of
+  `.es-shell` inside `position: fixed; inset: 0; z-0` (Track 3
+  fullscreen parity) when LoS=3; the body of `.es-shell` is
+  suppressed in this branch. The `StudioTopBar` is lifted to
+  `position: relative; z-index: 10` so the L1/L2/L3 toggle
+  remains interactive on top of the fixed canvas — it is the
+  only above-canvas chrome at L3, and clicking L1 or L2 (or
+  pressing Escape) is how the user leaves L3.
+- The L3 generator is edge-triggered once per session entry
+  into L3 (`activeLod !== 3` → `activeLod === 3`) by a
+  ref-gated effect in `StudioCanvas` that calls
+  `runL3GeneratorForPersistedArchitectures`. Re-runs would be
+  safe (the generator is constitutionally idempotent and
+  carries a per-architecture session memo keyed by a CTAD
+  state hash) but the edge-trigger keeps call counts
+  predictable. The `clearStudio` action additionally flushes
+  the session memo via `__l3GeneratorInternals.resetMemoForTest`
+  so a Clear → re-enter L3 cycle re-mints applicable children.
 - The L3 surface subscribes to the acwStore so the 3D canvas
   re-renders the moment the generator mints (or refreshes) its
   nodes.

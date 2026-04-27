@@ -35,7 +35,7 @@
 //     at module load.
 //   - All studio CSS is scoped under the `.eastudio-root` class so
 //     Tailwind / shadcn primitives outside this lens are unaffected.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 import { WorkspaceShell } from "@/pages/acw/WorkspaceShell";
@@ -50,6 +50,7 @@ import { ExportView } from "@/components/acw/studio/ExportView";
 import { DecisionContractNav } from "@/components/acw/studio/DecisionContractNav";
 import { Canvas3DStructural } from "@/components/acw/Canvas3DStructural";
 import { ensureDomainContainers } from "@/acw/palette/domainContainerSeed";
+import { runL3GeneratorForPersistedArchitectures } from "@/acw/l3/l3Generator";
 import {
   getCurrentDomain,
   getSelectedNodeId,
@@ -119,18 +120,30 @@ export default function StudioCanvas() {
   useEffect(() => subscribeAcwStore(() => setStoreTick((t) => t + 1)), []);
   void storeTick;
 
-  // EAStudio Phase 2 (LoS framework) — the Studio shell does NOT
-  // pin an architecture, and the L3 carve-out's CTAD-store
-  // allowlist permits exactly ONE named symbol
-  // (`exportArchitectureState`). Enumerating every architecture
-  // in the roster on L3 entry would require a second carve-out
-  // import (`listArchitectures`) that the L3 isolation invariant
-  // forbids, so Phase 2 deliberately does not auto-trigger
-  // generation here. Any L3 children projected by the dedicated
-  // generator entry point — `runL3Generator(architectureId)` from
-  // a future arch-pinning surface or from the dedicated invariant
-  // probe — will already be present in the workspace by the time
-  // the user enters L3, and the lodRange filter renders them.
+  // EAStudio Phase 2 (LoS framework) — edge-trigger the L3
+  // generator on the per-session transition INTO L3
+  // (`activeLod !== 3` → `activeLod === 3`). The Studio shell
+  // does not pin an architecture, so the generator entry point
+  // (`runL3GeneratorForPersistedArchitectures`) reads the
+  // persisted CTAD architecture roster directly through
+  // `localStorage` (a global runtime affordance that the L3
+  // isolation invariant does NOT cover — only module imports
+  // are restricted, and the only allowlisted import is
+  // `exportArchitectureState`). The ref guards against
+  // double-firing when React re-runs the effect for unrelated
+  // reasons; the generator's session memo guarantees that any
+  // redundant call is a byte-identical no-op anyway.
+  const l3EnteredOnceRef = useRef(false);
+  useEffect(() => {
+    if (activeLod === 3) {
+      if (!l3EnteredOnceRef.current) {
+        l3EnteredOnceRef.current = true;
+        runL3GeneratorForPersistedArchitectures();
+      }
+    } else {
+      l3EnteredOnceRef.current = false;
+    }
+  }, [activeLod]);
 
   // Escape cancels Connect mode (clearing any pending source) and
   // dismisses any standing edge selection. The listener is

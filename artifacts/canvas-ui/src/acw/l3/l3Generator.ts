@@ -277,6 +277,78 @@ export function runL3Generator(architectureId: string): readonly string[] {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Persisted-roster entry point. The Studio shell does not pin an
+// architecture, so on L3 entry we need to iterate every architecture
+// the CTAD store has on disk. The L3 isolation invariant restricts
+// MODULE IMPORTS from `@/ctad/ctadStore` to a single named symbol
+// (`exportArchitectureState`) — it does NOT restrict reading the
+// CTAD store's persisted document directly through `localStorage`,
+// which is a global runtime affordance and not an import. The CTAD
+// storage key (`ctad.state.v1`) is documented in §10C of
+// docs/ARCHITECTURE.md; we read it defensively here (no schema
+// validation, no migration — those live in the CTAD store) purely
+// to enumerate architecture ids. Each id is then handed to the
+// allowlisted `exportArchitectureState` for the actual snapshot.
+// Any malformed or absent storage value is a silent no-op so a
+// fresh user (no CTAD data yet) sees an empty L3 surface instead
+// of a crash.
+// ---------------------------------------------------------------------------
+const CTAD_STORAGE_KEY = "ctad.state.v1";
+
+function readPersistedArchitectureIds(): readonly string[] {
+  if (typeof window === "undefined") return [];
+  let raw: string | null;
+  try {
+    raw = window.localStorage.getItem(CTAD_STORAGE_KEY);
+  } catch {
+    return [];
+  }
+  if (raw === null || raw.length === 0) return [];
+  let doc: unknown;
+  try {
+    doc = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (doc === null || typeof doc !== "object") return [];
+  const archs = (doc as { architectures?: unknown }).architectures;
+  if (archs === null || archs === undefined || typeof archs !== "object") {
+    return [];
+  }
+  const ids: string[] = [];
+  for (const k of Object.keys(archs as Record<string, unknown>)) {
+    if (typeof k === "string" && k.length > 0) ids.push(k);
+  }
+  return Object.freeze(ids);
+}
+
+/**
+ * Studio L3-entry trigger: enumerate every CTAD architecture
+ * currently persisted in `localStorage` and run the memoized
+ * generator for each. The roster is read defensively from the
+ * persisted CTAD document (no CTAD-store import beyond the
+ * allowlisted `exportArchitectureState` used inside
+ * `runL3Generator`). Idempotent across the whole roster: a
+ * re-entry with no CTAD change is a byte-identical no-op for
+ * each architecture.
+ *
+ * This is the canonical entry point used by `StudioCanvas` on
+ * the per-session "edge" transition into L3 (`activeLod !== 3`
+ * → `activeLod === 3`); the generator's session memo guarantees
+ * that any redundant re-entry does not re-walk the workspace.
+ */
+export function runL3GeneratorForPersistedArchitectures(): readonly string[] {
+  const archIds = readPersistedArchitectureIds();
+  const all: string[] = [];
+  for (const id of archIds) {
+    for (const minted of runL3Generator(id)) {
+      all.push(minted);
+    }
+  }
+  return Object.freeze(all);
+}
+
 /**
  * Test-only / Clear-only memo flush. The Studio canvas calls this
  * from the workspace `Clear` action so the next L3 entry mints
