@@ -12,10 +12,15 @@
 //
 // Constitutional discipline:
 //   - Pure, idempotent, deterministic. Stable id
-//     `l3:<parentNodeId>:<sectionId>:<paramId>` short-circuits on
-//     re-run via the store's id-collision shortcut, so calling the
-//     generator N times produces the same workspace as calling it
-//     once.
+//     `l3:<architectureId>:<parentNodeId>:<sectionId>:<paramId>`
+//     short-circuits on re-run via the store's id-collision
+//     shortcut, so calling the generator N times produces the same
+//     workspace as calling it once. The `architectureId` segment
+//     is required because the Studio shell may project multiple
+//     architectures into the same ACW workspace; without the
+//     discriminator a second architecture's mints would collide
+//     silently with the first's at any shared (parent, section,
+//     param) tuple.
 //   - For every L2 ACW node that carries a `boundParam`, the
 //     generator creates exactly ONE L3 child parented to that L2
 //     node, with `lodRange: [3, 3]` so the child is visible only
@@ -204,7 +209,7 @@ export function generateL3Nodes(architectureId: string): readonly string[] {
     const label = mapping.labelOf(value);
     if (label === null) continue;
 
-    const id = `l3:${parent.id}:${bp.sectionId}:${bp.paramId}`;
+    const id = `l3:${architectureId}:${parent.id}:${bp.sectionId}:${bp.paramId}`;
     considered.push(id);
     // Idempotency: createNode short-circuits on id collision (same
     // mechanism the four sealed domain containers rely on). A

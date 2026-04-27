@@ -12,7 +12,7 @@
 //      L2 ACW node that carried the originating `boundParam`. The
 //      generator never invents a parent.
 //   4. Stable id contract — every minted node id matches
-//      `l3:<parentNodeId>:<sectionId>:<paramId>`, so re-running
+//      `l3:<architectureId>:<parentNodeId>:<sectionId>:<paramId>`, so re-running
 //      after a CTAD value flip produces the same id set (and the
 //      collision shortcut keeps the workspace byte-stable).
 //   5. No orphan recreate — when an L2 origin is deleted between
@@ -267,8 +267,8 @@ if (typeof window !== "undefined") {
       parsed.structureGraph.nodes.map((n) => [n.id, n] as const),
     );
     // Stable id contract per spec.
-    const expectedHostId = "l3:l2-host:infrastructure:hostingModel";
-    const expectedDbId = "l3:l2-db:infrastructure:databaseClass";
+    const expectedHostId = `l3:${ARCH_ID}:l2-host:infrastructure:hostingModel`;
+    const expectedDbId = `l3:${ARCH_ID}:l2-db:infrastructure:databaseClass`;
     if (!byId.has(expectedHostId)) {
       throw new Error(
         `${PREFIX}: missing host L3 node at id "${expectedHostId}".`,

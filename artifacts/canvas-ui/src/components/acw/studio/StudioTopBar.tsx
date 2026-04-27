@@ -63,11 +63,20 @@ const CLEAR_LABEL = "Clear";
 const CONNECT_LABEL = "Connect";
 const CLEAR_CONFIRM =
   "Remove every node and connection? Sealed domain containers stay.";
-// EAStudio Phase 2 (LoS framework) — neutral, descriptive labels for
-// the L1 / L2 / L3 toggle. The first letter doubles as the visible
-// glyph; the suffix names the level so the affordance reads as a
-// view selector and not an icon-only puzzle. No emoji.
+// EAStudio Phase 2 (LoS framework) — short, plain labels for the
+// L1 / L2 / L3 toggle (per spec wording). The level itself is
+// surfaced separately to assistive tech via the per-button title
+// attribute below; the visible label is the disciplinary scope only.
 const LOD_LABELS: Readonly<Record<AcwLodLevel, string>> = Object.freeze({
+  1: "Business",
+  2: "Application",
+  3: "Technology",
+});
+// Per-level title attribute (visible on hover, read by screen
+// readers as supplementary text) prefixes the disciplinary label
+// with its specification level so the toggle still discloses the
+// "L1 / L2 / L3" ladder.
+const LOD_TITLES: Readonly<Record<AcwLodLevel, string>> = Object.freeze({
   1: "L1 Business",
   2: "L2 Application",
   3: "L3 Technology",
@@ -90,6 +99,10 @@ assertAllAcwPlaceholderLanguage([
   LOD_LABELS[1],
   LOD_LABELS[2],
   LOD_LABELS[3],
+  LOD_TITLES[1],
+  LOD_TITLES[2],
+  LOD_TITLES[3],
+  LOD_GROUP_LABEL,
 ]);
 
 const TAB_LABELS: Readonly<Record<AcwStudioViewTab, string>> = Object.freeze({
@@ -184,7 +197,8 @@ export function StudioTopBar({ lensId }: StudioTopBarProps) {
                 data-active={activeLod === lvl ? "true" : "false"}
                 data-testid={`acw-studio-lod-button-${lvl}`}
                 className="es-vtab"
-                title={LOD_LABELS[lvl]}
+                title={LOD_TITLES[lvl]}
+                aria-label={LOD_TITLES[lvl]}
               >
                 <span>{LOD_LABELS[lvl]}</span>
               </button>
