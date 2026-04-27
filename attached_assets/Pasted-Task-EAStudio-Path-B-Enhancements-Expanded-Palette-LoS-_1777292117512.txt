@@ -1,0 +1,252 @@
+Task: EAStudio Path B Enhancements – Expanded Palette, LoS Framework, Swap & Org Overlay
+You are working on the project Grammar‑Derivation‑Backbone. The EAStudio surface at /workspace/studio is functional (Phase 1‑3 + visual alignment) but needs richer content and interactive depth. Your goal is to implement three additive enhancements that fully realise the “plug‑and‑play” interactive architecture canvas.
+
+Critical constraints (do not regress):
+
+ACW schema stays acw‑1.0 – all new fields must be optional and additive.
+
+ACW isolation invariant – no imports from the decision pipeline (portfolioStore, adsBuilder, signalsStore, exposure*, etc.) in any new file.
+
+Grammar engine (lib/architecture‑grammar) untouched.
+
+lib/cncf‑catalog untouched.
+
+All existing build‑time invariants must continue to pass. New probes may be added but none may be removed.
+
+Lucide‑react icons only (no emoji). All static labels must be asserted against assertAllAcwPlaceholderLanguage.
+
+Every mutation must remain validator‑gated via the existing ACW store functions (createNode, updateNodePosition, updateNodeProperties, createEdge, deleteEdge, updateNodeBinding, etc.).
+
+Phase 1 – Expanded Palette Catalog
+Goal
+Replace the minimal Phase 1 palette (4+3+3+4 tiles) with the full 32‑archetype catalog from your HTML prototype, each with a proper lucide icon, a canonical domainTag, and an optional boundTechnologyCategory (and boundParam where appropriate).
+
+Steps
+Extend the palette registry (src/acw/palette/paletteRegistry.ts).
+
+Replace the current DOMAIN_PALETTE object entry for each domain with the full list below. Each item must have:
+
+paletteKind – a unique string id (e.g., biz-strategy-map, data-database, app-web-app, tech-firewall).
+
+elementType – the ACW element type (Zone, System, Component, ComputeNode, etc.) according to the table.
+
+domain – the domain tag ('business', 'data', 'application', 'technology').
+
+label – exact prototype label (e.g., “Strategy Map”).
+
+subLabel – short description (e.g., “Vision & goals”).
+
+icon – a React.FC from lucide‑react (see mapping below).
+
+boundTechnologyCategory – optional (e.g., 'frontend', 'backend', 'database', 'load-balancer').
+
+boundParam – optional (e.g., { sectionId: 'infrastructure', paramId: 'databaseClass', optionValue: 'relational-sql' } – only where a direct CTAD parameter binding makes sense, like “Database” archetype defaulting to a specific DB class).
+
+The subLabel field must be added to PaletteItem type.
+
+All new labels, subLabels, and paletteKind values must be asserted against ACW_PLACEHOLDER_FORBIDDEN via assertAllAcwPlaceholderLanguage.
+
+Palette items (list exactly as in prototype):
+
+Business Domain:
+
+Strategy Map (biz-strategy-map, System, icon=Target, sub “Vision & goals”)
+
+Business Process (biz-business-process, System, icon=Workflow, sub “Workflow model”)
+
+Governance Model (biz-governance-model, System, icon=Gavel, sub “Policy & control”)
+
+Capability Map (biz-capability-map, System, icon=Puzzle, sub “Business capabilities”)
+
+Value Stream (biz-value-stream, System, icon=ArrowRightLeft, sub “End‑to‑end value”)
+
+Org Unit (biz-org-unit, Zone, icon=FolderKanban, sub “Business unit”)
+
+KPI Dashboard (biz-kpi-dashboard, Component, icon=BarChart, sub “Metrics & OKRs”)
+
+Compliance (biz-compliance, Component, icon=ShieldAlert, sub “Regulatory control”)
+
+Data Domain:
+
+Data Store (data-data-store, Component, icon=Database, sub “Logical entity”, boundTechnologyCategory 'database')
+
+Data Flow (data-data-flow, Component, icon=ArrowLeftRight, sub “Integration pipe”)
+
+Data Model (data-data-model, Component, icon=Ruler, sub “Schema & structure”)
+
+Data Product (data-data-product, System, icon=Container, sub “Consumable dataset”)
+
+Master Data (data-master-data, Component, icon=Key, sub “Golden record”)
+
+Data Catalog (data-data-catalog, Component, icon=BookOpen, sub “Metadata registry”)
+
+Data Policy (data-data-policy, Component, icon=Shield, sub “Governance rules”)
+
+ETL Pipeline (data-etl-pipeline, Component, icon=GitBranch, sub “Transform & load”, boundTechnologyCategory 'pipeline')
+
+Application Domain:
+
+Application (app-application, System, icon=Monitor, sub “System component”)
+
+API Gateway (app-api-gateway, Component, icon=Router, sub “Integration point”, boundTechnologyCategory 'gateway')
+
+Microservice (app-microservice, System, icon=Radio, sub “Bounded context”, boundTechnologyCategory 'backend')
+
+Module (app-module, Component, icon=Puzzle, sub “App subsystem”)
+
+Mobile App (app-mobile-app, System, icon=Smartphone, sub “Client endpoint”, boundTechnologyCategory 'frontend')
+
+Event Bus (app-event-bus, Component, icon=Zap, sub “Async messaging”, boundTechnologyCategory 'message-queue')
+
+Web Portal (app-web-portal, System, icon=Globe, sub “User interface”, boundTechnologyCategory 'frontend')
+
+Integration (app-integration, Component, icon=RefreshCw, sub “System connector”)
+
+Technology Domain:
+
+Cloud Region (tech-cloud-region, Zone, icon=Cloud, sub “Compute zone”, boundTechnologyCategory 'cloud')
+
+Network Layer (tech-network-layer, Zone, icon=Network, sub “Topology segment”)
+
+Database (tech-database, Component, icon=Database, sub “Persistent store”, boundTechnologyCategory 'database')
+
+Runtime Engine (tech-runtime-engine, Component, icon=Settings, sub “Execution env”, boundTechnologyCategory 'backend')
+
+IAM Service (tech-iam-service, Component, icon=ShieldCheck, sub “Auth & identity”, boundTechnologyCategory 'identity')
+
+Monitoring (tech-monitoring, Component, icon=TrendingUp, sub “Observability”, boundTechnologyCategory 'observability')
+
+Object Storage (tech-object-storage, Component, icon=Container, sub “Blob tier”, boundTechnologyCategory 'storage')
+
+CI/CD Pipeline (tech-cicd-pipeline, Component, icon=Wrench, sub “DevOps toolchain”, boundTechnologyCategory 'cicd')
+
+Update the drag‑and‑drop handler in PalettePanel.tsx and DomainGrid.tsx to forward boundTechnologyCategory and boundParam from the palette item to the createNode call, so they are set on the new node.
+
+Update the rendering in InteractiveCanvas2D.tsx (or the EAStudio drop‑zone card renderer) so that any node with boundTechnologyCategory receives its icon from iconRegistry.ts (the resolveIcon function) and any node with boundParam gets its label from resolveLabel. Already partially done in Task #82; ensure it works for all new archetypes.
+
+Update invariants – in acwGrammarInvariants.test-shape.ts (or a new palette‑specific invariant probe) assert that every paletteKind is unique across all domains and that every icon is a lucide component.
+
+Phase 2 – Level of Specification (LoS) Framework
+Goal
+Introduce three architectural levels (L1 Business, L2 Application, L3 Technology) that the user can toggle. The canvas automatically switches between 2D and 3D, and when moving to L3, it generates deployment‑level children from CTAD parameter bindings.
+
+Steps
+Expand the ACW grammar (acw/acwGrammar.ts):
+
+Add an optional field lodRange?: [number, number] to AcwNode. Default if absent is [1, 3] (visible on all levels).
+
+Widen the store’s ALLOWED_NODE and read‑validator to accept lodRange.
+
+Do not change the schema version; it stays acw‑1.0.
+
+Modify enumerateLensVisibility (in acw/acwLensStructure.ts) to accept an optional currentLodLevel parameter (1, 2, or 3) and filter nodes whose lodRange does not include that level. Edges are only visible if both endpoints are visible at the current LoS.
+
+Add LoS selector UI to the EAStudio top bar (or as a floating overlay):
+
+Three buttons: “Business” (L1), “Application” (L2), “Technology” (L3).
+
+Active state stored in acwViewState as a new per‑lens field activeLodByLens (default 2 for EAStudio).
+
+The selector is visible only when the EAStudio lens is active.
+
+Canvas mode switching:
+
+When currentLod is 1 or 2, render the 2D canvas (the existing domain grid).
+
+When currentLod is 3, instantiate the 3D structural canvas (Canvas3DStructural) in the Technology domain quadrant, replacing its 2D embed. The other quadrants (Business, Data, Application) remain 2D but are filtered to show only nodes with lodRange covering level 3 (e.g., they may show their high‑level containers).
+
+Alternatively, for simplicity, when switching to L3, the entire view could switch to a full‑screen 3D canvas that shows all L3‑visible nodes across all domains, but the per‑quadrant approach better matches the EAStudio layout. We'll go with a full‑screen 3D for L3 as the first implementation: L3 shows a single 3D canvas occupying the whole window, with all L3‑visible nodes from all domains rendered in 3D. The quadrant grid is hidden. This is easier and more dramatic.
+
+Auto‑generation of L3 nodes (acw/semantic/ctadToAcwSeed.ts):
+
+Create a pure function generateL3Nodes(architectureId: string): void that reads the architecture’s CTAD state (through getArchitecture or exportArchitectureState from ctadStore), examines all L2 nodes with boundParam, and creates corresponding L3 child nodes if they don’t already exist.
+
+Example rule: If a System node has boundParam referencing hostingModel: kubernetes, create a ComputeNode (Kubernetes Cluster) as a child, and inside it a Component (Container) representing the runtime instance.
+
+The generated nodes carry lodRange: [3, 3] so they only appear at L3.
+
+The function must be called when the user switches to L3 for the first time for that architecture. On subsequent L3 switches, only new missing nodes are added (idempotent based on stable ID derivation from the parent + param).
+
+The generated nodes are persistent (store‑created) so they survive navigations.
+
+Update invariants – add probes to acwGrammarV2Invariants.test-shape.ts:
+
+Accept nodes with lodRange: [1, 2], lodRange: [2, 3], etc., and absence.
+
+Reject invalid lodRange (negative, out of bounds, non‑array).
+
+Verify that generateL3Nodes does not produce cycles or illegal containment.
+
+Ensure ACW isolation still passes.
+
+Phase 3 – Swap Technology & Organisational Overlay
+Goal
+Add two interaction capabilities: right‑click a technology‑bound node to quickly swap its CTAD parameter value, and add an organisational unit (OU) registry with a toggleable colour overlay.
+
+Steps
+Swap Technology (right‑click menu):
+
+In the EAStudio canvas, when a node with a boundParam is right‑clicked, show a context menu listing alternative options for that parameter (read from the CTAD registry via techNodeBinding.ts).
+
+Selecting an option calls updateNodeBinding(nodeId, { optionValue: newValue }) (already exists).
+
+The node’s label and icon update instantly because the canvas already renders via resolveLabel/resolveIcon.
+
+If the current level is L3, also trigger generateL3Nodes to rebuild the deployment children based on the new technology.
+
+Organisational Unit Registry:
+
+Create a new store governance/ouStore.ts with key adc.organisational-units.v1 and schema ou‑1.0. Shapes:
+
+ts
+interface OuEntry {
+  id: string; // user‑provided slug
+  name: string;
+  description?: string;
+  parentId?: string; // for nesting departments
+}
+Functions: createOu, removeOu, updateOuName, listOus, getOu.
+
+Add an optional field organisationalUnitId?: string to AcwNode (via the existing additive widening pattern). Update the store read‑validator to accept it.
+
+OU assignment UI:
+
+In the NodePropertiesPanel, add an “Organisational Unit” dropdown (or a searchable select) that lists all OUs from the registry. Changing it updates the node via updateNodeProperties.
+
+Org Overlay toggle:
+
+Add a toggle button in the EAStudio header “Org View”.
+
+When enabled, each node in the domain grid (and the 3D canvas) gets a subtle background colour based on its organisationalUnitId. Use a colour mapping function that associates a hue to each OU id.
+
+Nodes without an OU remain neutral.
+
+The toggle state is stored in acwViewState (per‑lens showOrgOverlay).
+
+Update invariants:
+
+ouStore.ts must have an invariant module (governance/ouStoreInvariants.test-shape.ts) asserting the schema version is ou‑1.0 and that removeOu cleans up child references (optional).
+
+The ACW isolation invariant continues to check that no ACW file imports from governance/ouStore except the panel that does the binding (which we must allow in the import list – add ouStore to the ACW allowlist with named imports listOus, OuEntry).
+
+Add a probe to acwGrammarV2Invariants accepting the new optional organisationalUnitId field.
+
+General Implementation Notes
+Keep the changes additive. All existing files should be widened, not rewritten.
+
+Run the full build and vitest suites after each phase. Ensure all existing invariants pass.
+
+If a phase requires a new import that might violate isolation, carefully update the corresponding invariant to add the new import path to the allowlist (with minimal permissions).
+
+Use the existing acro.workspace.view.v1 view‑state key for all new UI‑only slices; do not create new localStorage keys unless a new store (like OU) is introduced.
+
+After implementation, update replit.md and ARCHITECTURE.md with brief notes about the new features (add a timeline row for each phase in §2A).
+
+Acceptance Criteria
+Phase 1: Dragging any of 32 palette tiles onto the domain grid creates a node with the correct icon, label, sub‑label, domain tag, and optional technology binding. The palette matches the prototype.
+
+Phase 2: A three‑button LoS selector in the top bar switches the view. L1/L2 show the 2D grid; L3 shows a full‑screen 3D canvas with all L3‑visible nodes. CTAD‑driven L3 children appear automatically when switching to L3 the first time.
+
+Phase 3: Right‑clicking a technology‑bound node offers a “Swap Technology” menu; choosing an option updates the node and refreshes L3 if needed. The OU registry works: create OUs, assign them to nodes, and toggle an overlay that colour‑codes by OU.
+
+All build‑time invariants pass. No emoji, no forbidden vocabulary, no decision‑pipeline leakage.
