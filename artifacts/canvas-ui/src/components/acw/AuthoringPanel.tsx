@@ -3,16 +3,32 @@
 // Single shared surface mounted by WorkspaceShell so every lens
 // observes the same authoring affordances over the same workspace.
 //
-// Two forms (add element / add relationship) and one inline refusal
-// banner (`data-testid="acw-refusal-banner"`). Every authoring path
-// goes through the validator; refusals are displayed as plain
-// neutral text.
+// Two stepwise flows (add element / add relationship) and one inline
+// refusal banner (`data-testid="acw-refusal-banner"`). Every authoring
+// path goes through the validator; refusals are displayed as plain
+// neutral text. Each flow walks the user through one blank at a time,
+// and every choice is offered as a selectable card rather than a
+// dropdown menu — clicking a card both selects the value and reveals
+// the continue control for that step.
 //
 // Vocabulary: every label asserted against ACW_PLACEHOLDER_FORBIDDEN.
 // "Destination" replaces "target" (banned). "Permitted" / "not
 // permitted" replaces "allowed" / "not allowed" (banned via the
 // substring "low" inside "allowed").
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  Layers,
+  Network,
+  Workflow,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,15 +64,25 @@ const KIND_LABEL = "Kind";
 const FROM_LABEL = "From";
 const TO_LABEL = "Destination";
 const ROOT_OPTION = "Workspace root";
-const NONE_OPTION = "— pick a node —";
+const NO_PARENTS_HINT =
+  "No permitted parent for this type. Pick a different type.";
+const NO_NODES_PICKER_HINT =
+  "No element exists yet. Use the form on the left to add one.";
 const SUBMIT_LABEL = "Add";
 const REFUSAL_PREFIX = "Refused:";
 const DISMISS_LABEL = "Dismiss";
 const NO_NODES_HINT = "No nodes exist yet. Add an element first.";
+// Stepwise flow labels (Phase: card-based authoring).
+const STEP_PREFIX = "Step";
+const STEP_OF_JOIN = "of";
+const CONTINUE_LABEL = "Continue";
+const BACK_LABEL = "Back";
+const LABEL_HINT =
+  "Defaults to the type label if left blank.";
 // Phase 5 — bound-bindings subsection labels.
 const BINDINGS_TITLE = "Bound parameters";
 const BINDINGS_HINT =
-  "Nodes seeded from a CTAD architecture carry a bound parameter. Changing the option here updates the node label in place.";
+  "Nodes seeded from a CTAD architecture carry a bound parameter. Pick a card here to update the node label in place.";
 const NO_BOUND_NODES_HINT = "No bound nodes in this workspace.";
 const SECTION_LABEL = "Section";
 const PARAM_LABEL = "Parameter";
@@ -75,11 +101,17 @@ assertAllAcwPlaceholderLanguage([
   FROM_LABEL,
   TO_LABEL,
   ROOT_OPTION,
-  NONE_OPTION,
+  NO_PARENTS_HINT,
+  NO_NODES_PICKER_HINT,
   SUBMIT_LABEL,
   REFUSAL_PREFIX,
   DISMISS_LABEL,
   NO_NODES_HINT,
+  STEP_PREFIX,
+  STEP_OF_JOIN,
+  CONTINUE_LABEL,
+  BACK_LABEL,
+  LABEL_HINT,
   BINDINGS_TITLE,
   BINDINGS_HINT,
   NO_BOUND_NODES_HINT,
@@ -89,8 +121,177 @@ assertAllAcwPlaceholderLanguage([
   NOT_SPECIFIED_LABEL,
 ]);
 
-const SELECT_CLASS =
-  "w-full text-xs bg-background border border-border/60 rounded px-2 py-1 font-mono";
+// ---- Generic step / card primitives ----------------------------------
+
+interface StepHeaderProps {
+  index: number;
+  total: number;
+  title: string;
+  testIdPrefix: string;
+}
+
+function StepHeader({ index, total, title, testIdPrefix }: StepHeaderProps) {
+  return (
+    <div className="flex items-center justify-between">
+      <span
+        className="text-[10px] uppercase tracking-widest text-muted-foreground"
+        data-testid={`${testIdPrefix}-step-counter`}
+      >
+        {STEP_PREFIX} {index} {STEP_OF_JOIN} {total}
+      </span>
+      <Label
+        className="text-[10px] uppercase tracking-widest"
+        data-testid={`${testIdPrefix}-step-title`}
+      >
+        {title}
+      </Label>
+    </div>
+  );
+}
+
+interface StepDotsProps {
+  total: number;
+  current: number;
+  testIdPrefix: string;
+}
+
+function StepDots({ total, current, testIdPrefix }: StepDotsProps) {
+  const dots = Array.from({ length: total }, (_, i) => i);
+  return (
+    <div
+      className="flex items-center gap-1.5"
+      aria-hidden="true"
+      data-testid={`${testIdPrefix}-step-dots`}
+    >
+      {dots.map((i) => {
+        const state =
+          i < current ? "done" : i === current ? "current" : "upcoming";
+        return (
+          <span
+            key={i}
+            data-state={state}
+            className={[
+              "h-1.5 rounded-full transition-all",
+              state === "current" ? "w-6 bg-primary" : "w-1.5",
+              state === "done" ? "bg-primary/70" : "",
+              state === "upcoming" ? "bg-border" : "",
+            ].join(" ")}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+interface OptionCardProps {
+  selected: boolean;
+  onClick: () => void;
+  primary: ReactNode;
+  secondary?: ReactNode;
+  icon?: ReactNode;
+  testId?: string;
+  disabled?: boolean;
+}
+
+function OptionCard({
+  selected,
+  onClick,
+  primary,
+  secondary,
+  icon,
+  testId,
+  disabled,
+}: OptionCardProps) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={onClick}
+      disabled={disabled}
+      data-testid={testId}
+      data-selected={selected ? "true" : "false"}
+      className={[
+        "group relative w-full text-left rounded-md border px-3 py-2 transition-colors",
+        "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        selected
+          ? "border-primary bg-primary/5 text-foreground"
+          : "border-border/60 bg-background hover:border-primary/60 hover:bg-accent/40",
+        disabled ? "opacity-50 cursor-not-allowed" : "",
+      ].join(" ")}
+    >
+      <div className="flex items-start gap-2">
+        {icon ? (
+          <span className="mt-0.5 text-muted-foreground group-hover:text-foreground">
+            {icon}
+          </span>
+        ) : null}
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-mono leading-tight truncate">
+            {primary}
+          </div>
+          {secondary ? (
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground mt-0.5 truncate">
+              {secondary}
+            </div>
+          ) : null}
+        </div>
+        {selected ? (
+          <Check
+            className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5"
+            aria-hidden="true"
+          />
+        ) : null}
+      </div>
+    </button>
+  );
+}
+
+interface OptionPillProps {
+  selected: boolean;
+  onClick: () => void;
+  label: ReactNode;
+  testId?: string;
+}
+
+function OptionPill({ selected, onClick, label, testId }: OptionPillProps) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={onClick}
+      data-testid={testId}
+      data-selected={selected ? "true" : "false"}
+      className={[
+        "shrink-0 rounded-full border px-3 py-1 text-[11px] font-mono transition-colors",
+        "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        selected
+          ? "border-primary bg-primary/10 text-foreground"
+          : "border-border/60 bg-background text-muted-foreground hover:border-primary/60 hover:text-foreground",
+      ].join(" ")}
+    >
+      {label}
+    </button>
+  );
+}
+
+// ---- Element type icon hint ------------------------------------------
+// Lightweight visual mnemonic. Not a substitute for the type label.
+
+function iconForElementType(type: AcwElementType): ReactNode {
+  switch (type) {
+    case "Zone":
+      return <Layers className="w-3.5 h-3.5" aria-hidden="true" />;
+    case "System":
+    case "Subsystem":
+      return <Network className="w-3.5 h-3.5" aria-hidden="true" />;
+    default:
+      return <Workflow className="w-3.5 h-3.5" aria-hidden="true" />;
+  }
+}
+
+// ---- Main panel ------------------------------------------------------
 
 export function AuthoringPanel() {
   const workspace = useAcwWorkspace();
@@ -105,14 +306,16 @@ export function AuthoringPanel() {
     return subscribeRefusals((message) => setRefusal(message));
   }, []);
 
-  // ---- Add-node form state ---------------------------------------------
+  // ---- Add-node stepwise state ---------------------------------------
+  const [nodeStep, setNodeStep] = useState<0 | 1 | 2>(0);
   const [nodeType, setNodeType] = useState<AcwElementType>("Zone");
   const [nodeParent, setNodeParent] = useState<string>("");
+  const [nodeParentTouched, setNodeParentTouched] = useState<boolean>(false);
   const [nodeLabel, setNodeLabel] = useState<string>("");
 
   const candidateParents = useMemo(() => {
     const permitted = permittedParentsFor(nodeType);
-    const result: { id: string; label: string }[] = [];
+    const result: { id: string; label: string; secondary?: string }[] = [];
     if (permitted.includes(null)) {
       result.push({ id: "", label: ROOT_OPTION });
     }
@@ -120,20 +323,20 @@ export function AuthoringPanel() {
       if (permitted.includes(n.type)) {
         result.push({
           id: n.id,
-          label: `${ACW_ELEMENT_TYPE_LABEL[n.type]}: ${n.label}`,
+          label: n.label,
+          secondary: ACW_ELEMENT_TYPE_LABEL[n.type],
         });
       }
     }
     return result;
   }, [nodeType, workspace]);
 
-  // Keep `nodeParent` aligned with what the <select> visibly shows.
-  // When candidateParents changes (e.g. the user switched Type), the
+  // Keep `nodeParent` aligned with what's currently visible. When
+  // candidateParents changes (e.g. the user switched Type), the
   // previous parent id may no longer be a permitted option. Without
-  // this snap-back, the <select> renders its first option visually
-  // but state stays at the stale value, so submission would carry
-  // the wrong parentId (in particular, an empty parentId resolves to
-  // null/root and triggers a spurious ROOT_ONLY refusal).
+  // this snap-back, submission would carry the wrong parentId (in
+  // particular, an empty parentId resolves to null/root and triggers
+  // a spurious ROOT_ONLY refusal).
   useEffect(() => {
     if (candidateParents.length === 0) {
       if (nodeParent !== "") setNodeParent("");
@@ -141,9 +344,28 @@ export function AuthoringPanel() {
     }
     const current = candidateParents.find((c) => c.id === nodeParent);
     if (!current) {
+      // Default to the first option but mark the parent as untouched
+      // so the wizard still requires an explicit confirmation when
+      // multiple parents are permitted.
       setNodeParent(candidateParents[0].id);
+      setNodeParentTouched(false);
     }
   }, [candidateParents, nodeParent]);
+
+  const onPickNodeType = (t: AcwElementType) => {
+    setNodeType(t);
+    setNodeParent("");
+    setNodeParentTouched(false);
+  };
+
+  const onPickNodeParent = (id: string) => {
+    setNodeParent(id);
+    setNodeParentTouched(true);
+  };
+
+  const canAdvanceFromParent =
+    candidateParents.length > 0 &&
+    (nodeParentTouched || candidateParents.length === 1);
 
   const onSubmitNode = () => {
     const parentId = nodeParent === "" ? null : nodeParent;
@@ -158,35 +380,40 @@ export function AuthoringPanel() {
     }
     setRefusal(null);
     setNodeLabel("");
+    setNodeStep(0);
+    setNodeParentTouched(false);
   };
 
-  // ---- Add-edge form state ---------------------------------------------
+  // ---- Add-edge stepwise state ---------------------------------------
+  const [edgeStep, setEdgeStep] = useState<0 | 1 | 2>(0);
   const [edgeKind, setEdgeKind] = useState<AcwExplicitEdgeKind>("CONNECTS");
+  const [edgeKindTouched, setEdgeKindTouched] = useState<boolean>(false);
   const [edgeFrom, setEdgeFrom] = useState<string>("");
   const [edgeTo, setEdgeTo] = useState<string>("");
 
+  const onPickEdgeKind = (k: AcwExplicitEdgeKind) => {
+    setEdgeKind(k);
+    setEdgeKindTouched(true);
+  };
+
   const onSubmitEdge = () => {
-    // Endpoint pickers must be set before we hand off to the
-    // validator-gated store. Submit is disabled in this state below
-    // (see `disabled={...}` on the submit button), so this guard is
-    // a defensive no-op rather than a UI-local refusal path; it
-    // therefore does not need to surface in `acw-refusal-banner`,
-    // which is reserved for validator-sourced refusals.
-    if (edgeFrom === "" || edgeTo === "") {
-      return;
-    }
+    if (edgeFrom === "" || edgeTo === "") return;
     const result = createEdge({ kind: edgeKind, fromId: edgeFrom, toId: edgeTo });
     if (!result.ok) {
       setRefusal(result.reason);
       return;
     }
     setRefusal(null);
+    setEdgeStep(0);
+    setEdgeFrom("");
+    setEdgeTo("");
+    setEdgeKindTouched(false);
   };
 
   const allNodes = workspace.structureGraph.nodes;
 
   // Phase 5 — bound nodes (those carrying a `boundParam`). The
-  // dropdown below routes through `updateNodeBinding` which
+  // option pickers below route through `updateNodeBinding` which
   // re-validates the resulting workspace; CTAD itself is never
   // mutated from this surface.
   const boundNodes = useMemo(
@@ -211,6 +438,8 @@ export function AuthoringPanel() {
     }
     setRefusal(null);
   };
+
+  const enoughNodesForEdge = allNodes.length >= 2;
 
   return (
     <Card data-testid="acw-authoring-panel">
@@ -244,148 +473,184 @@ export function AuthoringPanel() {
       ) : null}
 
       <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Add element form */}
-        <div className="space-y-2" data-testid="acw-authoring-add-node">
-          <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-            {ADD_NODE_TITLE}
-          </h3>
-          <div className="space-y-1">
-            <Label className="text-[10px] uppercase tracking-widest" htmlFor="acw-node-type">
-              {TYPE_LABEL}
-            </Label>
-            <select
-              id="acw-node-type"
-              data-testid="acw-node-type-select"
-              className={SELECT_CLASS}
-              value={nodeType}
-              onChange={(e) => {
-                setNodeType(e.target.value as AcwElementType);
-                setNodeParent("");
-              }}
-            >
-              {ACW_ELEMENT_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {ACW_ELEMENT_TYPE_LABEL[t]}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-[10px] uppercase tracking-widest" htmlFor="acw-node-parent">
-              {PARENT_LABEL}
-            </Label>
-            <select
-              id="acw-node-parent"
-              data-testid="acw-node-parent-select"
-              className={SELECT_CLASS}
-              value={nodeParent}
-              onChange={(e) => setNodeParent(e.target.value)}
-            >
-              {candidateParents.length === 0 ? (
-                <option value="">{NONE_OPTION}</option>
-              ) : (
-                candidateParents.map((p) => (
-                  <option key={p.id || "root"} value={p.id}>
-                    {p.label}
-                  </option>
-                ))
-              )}
-            </select>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-[10px] uppercase tracking-widest" htmlFor="acw-node-label">
-              {LABEL_LABEL}
-            </Label>
-            <Input
-              id="acw-node-label"
-              data-testid="acw-node-label-input"
-              value={nodeLabel}
-              onChange={(e) => setNodeLabel(e.target.value)}
-              className="text-xs font-mono"
+        {/* Add element flow */}
+        <div
+          className="space-y-3 p-3 rounded-md border border-border/40 bg-muted/5"
+          data-testid="acw-authoring-add-node"
+        >
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              {ADD_NODE_TITLE}
+            </h3>
+            <StepDots
+              total={3}
+              current={nodeStep}
+              testIdPrefix="acw-node"
             />
           </div>
-          <Button
-            type="button"
-            size="sm"
-            onClick={onSubmitNode}
-            data-testid="acw-node-submit"
-            disabled={candidateParents.length === 0}
-          >
-            {SUBMIT_LABEL}
-          </Button>
+
+          {nodeStep === 0 && (
+            <div
+              className="space-y-2"
+              data-testid="acw-node-type-step"
+              role="radiogroup"
+              aria-label={TYPE_LABEL}
+            >
+              <StepHeader
+                index={1}
+                total={3}
+                title={TYPE_LABEL}
+                testIdPrefix="acw-node-type"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                {ACW_ELEMENT_TYPES.map((t) => (
+                  <OptionCard
+                    key={t}
+                    selected={nodeType === t}
+                    onClick={() => onPickNodeType(t)}
+                    primary={ACW_ELEMENT_TYPE_LABEL[t]}
+                    icon={iconForElementType(t)}
+                    testId={`acw-node-type-card-${t}`}
+                  />
+                ))}
+              </div>
+              <div className="flex justify-end pt-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setNodeStep(1)}
+                  data-testid="acw-node-step-1-continue"
+                >
+                  {CONTINUE_LABEL}
+                  <ArrowRight className="w-3.5 h-3.5 ml-1" aria-hidden="true" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {nodeStep === 1 && (
+            <div
+              className="space-y-2"
+              data-testid="acw-node-parent-step"
+              role="radiogroup"
+              aria-label={PARENT_LABEL}
+            >
+              <StepHeader
+                index={2}
+                total={3}
+                title={PARENT_LABEL}
+                testIdPrefix="acw-node-parent"
+              />
+              {candidateParents.length === 0 ? (
+                <p
+                  className="text-[11px] italic text-muted-foreground"
+                  data-testid="acw-node-parent-empty-hint"
+                >
+                  {NO_PARENTS_HINT}
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 gap-2 max-h-56 overflow-auto pr-1">
+                  {candidateParents.map((p) => (
+                    <OptionCard
+                      key={p.id || "root"}
+                      selected={nodeParent === p.id && nodeParentTouched}
+                      onClick={() => onPickNodeParent(p.id)}
+                      primary={p.label}
+                      secondary={p.secondary}
+                      testId={`acw-node-parent-card-${p.id || "root"}`}
+                    />
+                  ))}
+                </div>
+              )}
+              <div className="flex items-center justify-between pt-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setNodeStep(0)}
+                  data-testid="acw-node-step-2-back"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5 mr-1" aria-hidden="true" />
+                  {BACK_LABEL}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setNodeStep(2)}
+                  disabled={!canAdvanceFromParent}
+                  data-testid="acw-node-step-2-continue"
+                >
+                  {CONTINUE_LABEL}
+                  <ArrowRight className="w-3.5 h-3.5 ml-1" aria-hidden="true" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {nodeStep === 2 && (
+            <div className="space-y-2" data-testid="acw-node-label-step">
+              <StepHeader
+                index={3}
+                total={3}
+                title={LABEL_LABEL}
+                testIdPrefix="acw-node-label"
+              />
+              <Input
+                id="acw-node-label"
+                data-testid="acw-node-label-input"
+                value={nodeLabel}
+                onChange={(e) => setNodeLabel(e.target.value)}
+                className="text-xs font-mono"
+                placeholder={ACW_ELEMENT_TYPE_LABEL[nodeType]}
+                autoFocus
+              />
+              <p className="text-[11px] italic text-muted-foreground">
+                {LABEL_HINT}
+              </p>
+              <div className="flex items-center justify-between pt-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setNodeStep(1)}
+                  data-testid="acw-node-step-3-back"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5 mr-1" aria-hidden="true" />
+                  {BACK_LABEL}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={onSubmitNode}
+                  data-testid="acw-node-submit"
+                  disabled={candidateParents.length === 0}
+                >
+                  {SUBMIT_LABEL}
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Add edge form */}
-        <div className="space-y-2" data-testid="acw-authoring-add-edge">
-          <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-            {ADD_EDGE_TITLE}
-          </h3>
-          <div className="space-y-1">
-            <Label className="text-[10px] uppercase tracking-widest" htmlFor="acw-edge-kind">
-              {KIND_LABEL}
-            </Label>
-            <select
-              id="acw-edge-kind"
-              data-testid="acw-edge-kind-select"
-              className={SELECT_CLASS}
-              value={edgeKind}
-              onChange={(e) => setEdgeKind(e.target.value as AcwExplicitEdgeKind)}
-            >
-              {ACW_EXPLICIT_EDGE_KINDS.map((k) => (
-                <option key={k} value={k}>
-                  {ACW_EDGE_KIND_LABEL[k]}
-                </option>
-              ))}
-            </select>
+        {/* Add relationship flow */}
+        <div
+          className="space-y-3 p-3 rounded-md border border-border/40 bg-muted/5"
+          data-testid="acw-authoring-add-edge"
+        >
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              {ADD_EDGE_TITLE}
+            </h3>
+            <StepDots
+              total={3}
+              current={edgeStep}
+              testIdPrefix="acw-edge"
+            />
           </div>
-          <div className="space-y-1">
-            <Label className="text-[10px] uppercase tracking-widest" htmlFor="acw-edge-from">
-              {FROM_LABEL}
-            </Label>
-            <select
-              id="acw-edge-from"
-              data-testid="acw-edge-from-select"
-              className={SELECT_CLASS}
-              value={edgeFrom}
-              onChange={(e) => setEdgeFrom(e.target.value)}
-            >
-              <option value="">{NONE_OPTION}</option>
-              {allNodes.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {ACW_ELEMENT_TYPE_LABEL[n.type]}: {n.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-[10px] uppercase tracking-widest" htmlFor="acw-edge-to">
-              {TO_LABEL}
-            </Label>
-            <select
-              id="acw-edge-to"
-              data-testid="acw-edge-to-select"
-              className={SELECT_CLASS}
-              value={edgeTo}
-              onChange={(e) => setEdgeTo(e.target.value)}
-            >
-              <option value="">{NONE_OPTION}</option>
-              {allNodes.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {ACW_ELEMENT_TYPE_LABEL[n.type]}: {n.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <Button
-            type="button"
-            size="sm"
-            onClick={onSubmitEdge}
-            data-testid="acw-edge-submit"
-            disabled={allNodes.length < 2 || edgeFrom === "" || edgeTo === ""}
-          >
-            {SUBMIT_LABEL}
-          </Button>
-          {allNodes.length < 2 ? (
+
+          {!enoughNodesForEdge ? (
             <p
               className="text-[11px] italic text-muted-foreground"
               data-testid="acw-authoring-no-nodes-hint"
@@ -393,12 +658,170 @@ export function AuthoringPanel() {
               {NO_NODES_HINT}
             </p>
           ) : null}
+
+          {edgeStep === 0 && (
+            <div
+              className="space-y-2"
+              data-testid="acw-edge-kind-step"
+              role="radiogroup"
+              aria-label={KIND_LABEL}
+            >
+              <StepHeader
+                index={1}
+                total={3}
+                title={KIND_LABEL}
+                testIdPrefix="acw-edge-kind"
+              />
+              <div className="grid grid-cols-1 gap-2">
+                {ACW_EXPLICIT_EDGE_KINDS.map((k) => (
+                  <OptionCard
+                    key={k}
+                    selected={edgeKind === k && edgeKindTouched}
+                    onClick={() => onPickEdgeKind(k)}
+                    primary={ACW_EDGE_KIND_LABEL[k]}
+                    testId={`acw-edge-kind-card-${k}`}
+                  />
+                ))}
+              </div>
+              <div className="flex justify-end pt-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setEdgeStep(1)}
+                  disabled={!enoughNodesForEdge || !edgeKindTouched}
+                  data-testid="acw-edge-step-1-continue"
+                >
+                  {CONTINUE_LABEL}
+                  <ArrowRight className="w-3.5 h-3.5 ml-1" aria-hidden="true" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {edgeStep === 1 && (
+            <div
+              className="space-y-2"
+              data-testid="acw-edge-from-step"
+              role="radiogroup"
+              aria-label={FROM_LABEL}
+            >
+              <StepHeader
+                index={2}
+                total={3}
+                title={FROM_LABEL}
+                testIdPrefix="acw-edge-from"
+              />
+              {allNodes.length === 0 ? (
+                <p
+                  className="text-[11px] italic text-muted-foreground"
+                  data-testid="acw-edge-from-empty-hint"
+                >
+                  {NO_NODES_PICKER_HINT}
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 gap-2 max-h-56 overflow-auto pr-1">
+                  {allNodes.map((n) => (
+                    <OptionCard
+                      key={n.id}
+                      selected={edgeFrom === n.id}
+                      onClick={() => setEdgeFrom(n.id)}
+                      primary={n.label}
+                      secondary={ACW_ELEMENT_TYPE_LABEL[n.type]}
+                      testId={`acw-edge-from-card-${n.id}`}
+                    />
+                  ))}
+                </div>
+              )}
+              <div className="flex items-center justify-between pt-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setEdgeStep(0)}
+                  data-testid="acw-edge-step-2-back"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5 mr-1" aria-hidden="true" />
+                  {BACK_LABEL}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setEdgeStep(2)}
+                  disabled={edgeFrom === ""}
+                  data-testid="acw-edge-step-2-continue"
+                >
+                  {CONTINUE_LABEL}
+                  <ArrowRight className="w-3.5 h-3.5 ml-1" aria-hidden="true" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {edgeStep === 2 && (
+            <div
+              className="space-y-2"
+              data-testid="acw-edge-to-step"
+              role="radiogroup"
+              aria-label={TO_LABEL}
+            >
+              <StepHeader
+                index={3}
+                total={3}
+                title={TO_LABEL}
+                testIdPrefix="acw-edge-to"
+              />
+              {allNodes.length === 0 ? (
+                <p
+                  className="text-[11px] italic text-muted-foreground"
+                  data-testid="acw-edge-to-empty-hint"
+                >
+                  {NO_NODES_PICKER_HINT}
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 gap-2 max-h-56 overflow-auto pr-1">
+                  {allNodes.map((n) => (
+                    <OptionCard
+                      key={n.id}
+                      selected={edgeTo === n.id}
+                      onClick={() => setEdgeTo(n.id)}
+                      primary={n.label}
+                      secondary={ACW_ELEMENT_TYPE_LABEL[n.type]}
+                      testId={`acw-edge-to-card-${n.id}`}
+                      disabled={n.id === edgeFrom}
+                    />
+                  ))}
+                </div>
+              )}
+              <div className="flex items-center justify-between pt-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setEdgeStep(1)}
+                  data-testid="acw-edge-step-3-back"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5 mr-1" aria-hidden="true" />
+                  {BACK_LABEL}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={onSubmitEdge}
+                  data-testid="acw-edge-submit"
+                  disabled={!enoughNodesForEdge || edgeFrom === "" || edgeTo === ""}
+                >
+                  {SUBMIT_LABEL}
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Phase 5 — bound parameters subsection. Visible whenever
-            the workspace contains at least one node with a
-            boundParam; lists each bound node with a dropdown
-            sourced from the CTAD registry's option set. */}
+        {/* Phase 5 — bound parameters subsection. Each option set is
+            rendered as a horizontally-scrollable row of selectable
+            pill cards rather than a dropdown. */}
         <div
           className="space-y-2 md:col-span-2"
           data-testid="acw-authoring-bound-bindings"
@@ -445,24 +868,32 @@ export function AuthoringPanel() {
                     <div className="space-y-1">
                       <Label
                         className="text-[10px] uppercase tracking-widest"
-                        htmlFor={`acw-bound-option-${node.id}`}
+                        id={`acw-bound-option-label-${node.id}`}
                       >
                         {OPTION_LABEL}
                       </Label>
-                      <select
-                        id={`acw-bound-option-${node.id}`}
-                        data-testid={`acw-bound-option-select-${node.id}`}
-                        className={SELECT_CLASS}
-                        value={bp.optionValue ?? ""}
-                        onChange={(e) => onChangeBinding(node.id, e.target.value)}
+                      <div
+                        role="radiogroup"
+                        aria-labelledby={`acw-bound-option-label-${node.id}`}
+                        className="flex flex-wrap gap-1.5"
+                        data-testid={`acw-bound-option-cards-${node.id}`}
                       >
-                        <option value="">{NOT_SPECIFIED_LABEL}</option>
+                        <OptionPill
+                          selected={(bp.optionValue ?? null) === null}
+                          onClick={() => onChangeBinding(node.id, "")}
+                          label={NOT_SPECIFIED_LABEL}
+                          testId={`acw-bound-option-card-${node.id}-none`}
+                        />
                         {options.map((o) => (
-                          <option key={o} value={o}>
-                            {o}
-                          </option>
+                          <OptionPill
+                            key={o}
+                            selected={bp.optionValue === o}
+                            onClick={() => onChangeBinding(node.id, o)}
+                            label={o}
+                            testId={`acw-bound-option-card-${node.id}-${o}`}
+                          />
                         ))}
-                      </select>
+                      </div>
                     </div>
                   </li>
                 );
