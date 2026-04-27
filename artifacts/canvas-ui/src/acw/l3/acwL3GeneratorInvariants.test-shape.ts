@@ -153,7 +153,7 @@ function seedWorkspace(): void {
           boundParam: {
             sectionId: "infrastructure",
             paramId: "databaseClass",
-            optionValue: "Postgres",
+            optionValue: "Relational",
           },
         },
       ],
@@ -172,7 +172,7 @@ function seedWorkspace(): void {
         architectureName: "Probe",
         params: {
           hostingModel: "kubernetes",
-          databaseClass: "Postgres",
+          databaseClass: "Relational",
         },
         environments: [],
         createdAt: "",
@@ -209,7 +209,7 @@ if (typeof window !== "undefined") {
           architectureName: "Probe",
           params: {
             hostingModel: "kubernetes",
-            databaseClass: "Postgres",
+            databaseClass: "Relational",
           },
           environments: [],
           createdAt: "",
@@ -257,6 +257,7 @@ if (typeof window !== "undefined") {
       readonly id: string;
       readonly parentId: string | null;
       readonly type: string;
+      readonly label: string;
       readonly lodRange?: readonly [number, number];
     }
     const parsed = JSON.parse(afterFirst) as {
@@ -275,6 +276,33 @@ if (typeof window !== "undefined") {
     }
     if (!byId.has(expectedDbId)) {
       throw new Error(`${PREFIX}: missing db L3 node at id "${expectedDbId}".`);
+    }
+    // Closed mapping table — element type and label.
+    //   * (infrastructure, hostingModel="kubernetes") → ComputeNode
+    //     "Kubernetes cluster". Any other value emits nothing.
+    //   * (infrastructure, databaseClass) → Component labelled with
+    //     the chosen option value VERBATIM.
+    const hostNode = byId.get(expectedHostId)!;
+    if (hostNode.type !== "ComputeNode") {
+      throw new Error(
+        `${PREFIX}: host L3 node has wrong type "${hostNode.type}" (expected "ComputeNode").`,
+      );
+    }
+    if (hostNode.label !== "Kubernetes cluster") {
+      throw new Error(
+        `${PREFIX}: host L3 node has wrong label "${hostNode.label}" (expected "Kubernetes cluster" for hostingModel="kubernetes").`,
+      );
+    }
+    const dbNode = byId.get(expectedDbId)!;
+    if (dbNode.type !== "Component") {
+      throw new Error(
+        `${PREFIX}: db L3 node has wrong type "${dbNode.type}" (expected "Component").`,
+      );
+    }
+    if (dbNode.label !== "Relational") {
+      throw new Error(
+        `${PREFIX}: db L3 node label "${dbNode.label}" must equal the chosen databaseClass option verbatim ("Relational"); no suffix or transformation is permitted.`,
+      );
     }
     // L2 parentage + lodRange contract.
     for (const id of considered1) {
@@ -399,6 +427,69 @@ if (typeof window !== "undefined") {
     if (!byIdAfterDelete.has(expectedDbId)) {
       throw new Error(
         `${PREFIX}: db L3 child disappeared after pruning a different L2 origin.`,
+      );
+    }
+
+    // ------------------------------------------------------------
+    // Fixture E — closed-mapping skip. Re-seed with a hostingModel
+    // value OUTSIDE the closed set ("On-prem", a registered option
+    // but not "kubernetes"). The host L2 origin still carries a
+    // boundParam, but the mapping table refuses to mint anything
+    // for it, so no host L3 child must appear in the workspace
+    // and the considered set must NOT include the host id.
+    // ------------------------------------------------------------
+    window.localStorage.removeItem(ACW_STORE_KEY);
+    window.localStorage.removeItem(CTAD_STORE_KEY);
+    __acwStoreInternals.reloadFromStorageForTest();
+    seedWorkspace();
+    const ctadDocSkip = {
+      schemaVersion: "ctad-1.0",
+      bindings: {},
+      architectures: {
+        [ARCH_ID]: {
+          architectureId: ARCH_ID,
+          architectureName: "Probe",
+          params: {
+            hostingModel: "On-prem",
+            databaseClass: "Document",
+          },
+          environments: [],
+          createdAt: "",
+          updatedAt: "",
+        },
+      },
+    };
+    window.localStorage.setItem(CTAD_STORE_KEY, JSON.stringify(ctadDocSkip));
+    __l3GeneratorInternals.resetMemoForTest();
+    const consideredSkip = generateL3Nodes(ARCH_ID);
+    const afterSkip = __acwStoreInternals.serializeForTest();
+    const parsedSkip = JSON.parse(afterSkip) as {
+      structureGraph: { nodes: ReadonlyArray<NodeShape> };
+    };
+    const byIdSkip = new Map(
+      parsedSkip.structureGraph.nodes.map((n) => [n.id, n] as const),
+    );
+    if (byIdSkip.has(expectedHostId)) {
+      throw new Error(
+        `${PREFIX}: closed-mapping skip — host L3 child was minted despite hostingModel="On-prem" (only "kubernetes" is in the closed set).`,
+      );
+    }
+    if (consideredSkip.includes(expectedHostId)) {
+      throw new Error(
+        `${PREFIX}: closed-mapping skip — generator returned the host id even though the mapping refused to label it.`,
+      );
+    }
+    // The db mapping projects ANY databaseClass option verbatim,
+    // so "Document" must mint a Component labelled "Document".
+    const dbSkip = byIdSkip.get(expectedDbId);
+    if (dbSkip === undefined) {
+      throw new Error(
+        `${PREFIX}: closed-mapping skip — db L3 child missing for databaseClass="Document".`,
+      );
+    }
+    if (dbSkip.label !== "Document") {
+      throw new Error(
+        `${PREFIX}: closed-mapping skip — db L3 child label "${dbSkip.label}" must equal "Document" verbatim.`,
       );
     }
   } finally {

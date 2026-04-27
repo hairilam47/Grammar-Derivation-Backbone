@@ -7,14 +7,16 @@
 // the two invariants do not contradict; this module enforces the
 // stricter contract that applies inside the carve-out.
 //
-// Allowed reads from `@/ctad/ctadStore` are limited to:
+// Allowed reads from `@/ctad/ctadStore` are limited to a SINGLE
+// named symbol:
 //   - `exportArchitectureState`            — frozen per-arch snapshot
-//   - `listArchitectures`                  — the architecture roster
-//   - type CtadArchitectureDoc             — roster entry shape
-//   - type CtadArchitectureStateExport     — snapshot shape
-// Any other named import (write helper, mutator, internal state),
-// any namespace import, default import, side-effect import, or
-// dynamic import fails the bundle at load time.
+// No other named import (write helper, mutator, internal state,
+// roster enumerator, OR re-exported type), no namespace import,
+// no default import, no side-effect import, no dynamic import.
+// Generator code that needs the snapshot's shape must derive it
+// locally from `ReturnType<typeof exportArchitectureState>` rather
+// than re-importing a CTAD type. Any deviation fails the bundle
+// at load time.
 //
 // File suffix `.test-shape.ts` mirrors the established negative-
 // shape pattern: removing this file plus its side-effect import in
@@ -70,24 +72,19 @@ const ALLOWED_IMPORT_PREFIXES: readonly string[] = [
   // Vocabulary guard — read-only assertion utility.
   "@/governance/staticTextGuard",
   // The L3 carve-out: read-only CTAD store. The named-import scan
-  // below further constrains the carve-out to the four allowed
-  // names + types.
+  // below further constrains the carve-out to the SINGLE allowed
+  // symbol `exportArchitectureState` (no roster enumerator, no
+  // re-exported type).
   "@/ctad/ctadStore",
 ];
 
-// Read-only named-import allowlist for the CTAD store. Spec
-// strictly limits the carve-out to `exportArchitectureState`; the
-// generator additionally needs `listArchitectures` so the Studio
-// canvas can drive the projector across every architecture without
-// the host needing an architectureId mapping the singleton store
-// does not carry. The two matching read-only types are also
-// admitted so the generator can declare its parameter shapes
-// without re-asserting the structure inline.
+// Read-only named-import allowlist for the CTAD store. The spec
+// strictly limits the carve-out to a SINGLE named symbol —
+// `exportArchitectureState`. No roster enumerator, no re-exported
+// type. Generator code that needs the snapshot's shape derives it
+// locally from `ReturnType<typeof exportArchitectureState>`.
 const CTAD_STORE_ALLOWED_NAMED_IMPORTS: readonly string[] = [
   "exportArchitectureState",
-  "listArchitectures",
-  "CtadArchitectureDoc",
-  "CtadArchitectureStateExport",
 ];
 
 function isAllowedSpecifier(specifier: string): boolean {
@@ -213,6 +210,14 @@ function selfTest(): void {
       src: `import { getCtadState } from "@/ctad/ctadStore";`,
     },
     {
+      label: "ctad roster enumerator (formerly allowed, now denied)",
+      src: `import { listArchitectures } from "@/ctad/ctadStore";`,
+    },
+    {
+      label: "ctad re-exported type (formerly allowed, now denied)",
+      src: `import { type CtadArchitectureStateExport } from "@/ctad/ctadStore";`,
+    },
+    {
       label: "decision-pipeline import",
       src: `import { freezeAds } from "@/governance/adsBuilder";`,
     },
@@ -240,7 +245,7 @@ function selfTest(): void {
   }
   // Positive controls — approved import shapes must NOT throw.
   const okSources = [
-    `import { exportArchitectureState, listArchitectures, type CtadArchitectureDoc, type CtadArchitectureStateExport } from "@/ctad/ctadStore";`,
+    `import { exportArchitectureState } from "@/ctad/ctadStore";`,
     `import { createNode } from "../acwStore";`,
   ];
   for (const ok of okSources) {

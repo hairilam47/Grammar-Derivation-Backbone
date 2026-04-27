@@ -35,7 +35,7 @@
 //     at module load.
 //   - All studio CSS is scoped under the `.eastudio-root` class so
 //     Tailwind / shadcn primitives outside this lens are unaffected.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 import { WorkspaceShell } from "@/pages/acw/WorkspaceShell";
@@ -62,7 +62,6 @@ import {
 } from "@/acw/acwViewState";
 import { subscribeRefusals } from "@/acw/acwRefusalChannel";
 import { getWorkspace, subscribe as subscribeAcwStore } from "@/acw/acwStore";
-import { runL3GeneratorForAllArchitectures } from "@/acw/l3/l3Generator";
 import { setActiveLod } from "@/acw/acwViewState";
 
 const REFUSAL_PREFIX = "Refused:";
@@ -120,23 +119,18 @@ export default function StudioCanvas() {
   useEffect(() => subscribeAcwStore(() => setStoreTick((t) => t + 1)), []);
   void storeTick;
 
-  // EAStudio Phase 2 — Run the L3 generator once per "edge" entry
-  // into L3 (transition from a non-3 LoS to LoS=3). The generator
-  // is constitutionally idempotent, so re-running on every render
-  // would be safe, but the ref-gated edge-trigger keeps the call
-  // count predictable and matches the spec's "session-memoized"
-  // wording. Resets to false whenever the user leaves L3 so a
-  // subsequent re-entry triggers a fresh run.
-  const ranForCurrentEntryRef = useRef<boolean>(false);
-  useEffect(() => {
-    if (activeLod !== 3) {
-      ranForCurrentEntryRef.current = false;
-      return;
-    }
-    if (ranForCurrentEntryRef.current) return;
-    ranForCurrentEntryRef.current = true;
-    runL3GeneratorForAllArchitectures();
-  }, [activeLod]);
+  // EAStudio Phase 2 (LoS framework) — the Studio shell does NOT
+  // pin an architecture, and the L3 carve-out's CTAD-store
+  // allowlist permits exactly ONE named symbol
+  // (`exportArchitectureState`). Enumerating every architecture
+  // in the roster on L3 entry would require a second carve-out
+  // import (`listArchitectures`) that the L3 isolation invariant
+  // forbids, so Phase 2 deliberately does not auto-trigger
+  // generation here. Any L3 children projected by the dedicated
+  // generator entry point — `runL3Generator(architectureId)` from
+  // a future arch-pinning surface or from the dedicated invariant
+  // probe — will already be present in the workspace by the time
+  // the user enters L3, and the lodRange filter renders them.
 
   // Escape cancels Connect mode (clearing any pending source) and
   // dismisses any standing edge selection. The listener is
@@ -186,7 +180,23 @@ export default function StudioCanvas() {
         data-lens-id={lensId}
       >
         <div className="es-shell">
-          <StudioTopBar lensId={lensId} />
+          {/*
+            EAStudio Phase 2 (LoS framework) — the topbar is the
+            sole surface above the fullscreen L3 canvas (it carries
+            the L1/L2/L3 toggle that lets the user exit L3). Since
+            the L3 mount below uses `fixed inset-0 z-0` and the
+            topbar is its DOM-order predecessor inside the same
+            stacking context, the topbar would be overpainted by
+            the later-painted fixed sibling without an explicit
+            stacking context. Lifting it to `relative` with
+            `z-10` matches the Track-3 fullscreen pattern (the
+            route header sits at `z-10`, the canvas at `z-0`).
+            Local positioning only — no global CSS leak because
+            inline style is scoped to this element.
+           */}
+          <div style={{ position: "relative", zIndex: 10 }}>
+            <StudioTopBar lensId={lensId} />
+          </div>
 
           {activeTab === "design" && activeLod !== 3 ? (
             <DomainTabBar lensId={lensId} />
@@ -217,13 +227,15 @@ export default function StudioCanvas() {
           {/*
             EAStudio Phase 2 (LoS framework) — at L1 / L2 the
             existing design / matrix / export tabs render normally.
-            At L3 the body is replaced by the 3D surface (sibling
-            to those tabs) so the StudioTopBar stays visible above
-            it and the user can switch back to L1 / L2 by clicking
-            the LoS toggle. We render the L3 surface as a normal
-            in-flow block (`flex: 1`) rather than as a fixed
-            overlay so the topbar / status-bar layout is preserved
-            and no z-index gymnastics are needed.
+            At L3 the body is suppressed entirely; the L3 3D
+            surface mounts as a `fixed inset-0 z-0` sibling
+            OUTSIDE the .es-shell flex column (see below) so it
+            covers the entire viewport while the topbar (lifted
+            to z-10 above) remains the only above-canvas chrome.
+            This mirrors the Track-3 fullscreen pattern — the
+            route header is the only surface that sits over the
+            full-page canvas, and Escape exits back to L2 (handled
+            by the keydown listener above).
            */}
           {activeLod !== 3 ? (
             <>
@@ -239,27 +251,39 @@ export default function StudioCanvas() {
               ) : null}
               {activeTab === "matrix" ? <MatrixView lensId={lensId} /> : null}
               {activeTab === "export" ? <ExportView lensId={lensId} /> : null}
+              <StatusBar lensId={lensId} />
             </>
-          ) : (
-            <div
-              className="es-body"
-              data-testid="acw-studio-l3-surface"
-              style={{ display: "block", padding: 0 }}
-            >
-              <Canvas3DStructural
-                lensId={lensId}
-                nodes={getWorkspace().structureGraph.nodes}
-                edges={getWorkspace().structureGraph.edges}
-                focusedParentId={null}
-                emptyHint={L3_EMPTY_HINT}
-                height="100%"
-                testId="acw-studio-l3-canvas"
-              />
-            </div>
-          )}
-
-          <StatusBar lensId={lensId} />
+          ) : null}
         </div>
+
+        {/*
+         * EAStudio Phase 2 (LoS framework) — fullscreen L3 canvas.
+         * Mounted as a sibling of .es-shell so its `fixed inset-0`
+         * positioning escapes the flex layout above. `z-0`
+         * intentionally sits BELOW the topbar's `z-10` (see the
+         * stacking-context note next to StudioTopBar above) so the
+         * user can always reach the L1/L2/L3 toggle to exit L3.
+         * The Track-3 shell uses the identical pattern — see the
+         * "ACCEPTED DEVIATION FROM TASK #81 SPEC" note in
+         * Track3Shell.tsx for the rationale on z-0 vs z-10.
+         */}
+        {activeLod === 3 ? (
+          <div
+            className="fixed inset-0 z-0 bg-background"
+            data-testid="acw-studio-l3-surface"
+          >
+            <Canvas3DStructural
+              lensId={lensId}
+              nodes={getWorkspace().structureGraph.nodes}
+              edges={getWorkspace().structureGraph.edges}
+              focusedParentId={null}
+              emptyHint={L3_EMPTY_HINT}
+              height="100%"
+              testId="acw-studio-l3-canvas"
+            />
+          </div>
+        ) : null}
+
         <DecisionContractNav />
       </div>
     </WorkspaceShell>
