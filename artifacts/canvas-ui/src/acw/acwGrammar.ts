@@ -360,6 +360,60 @@ export function isAcwBoundParamShape(value: unknown): value is AcwBoundParam {
 }
 
 // ---------------------------------------------------------------------------
+// Level of Specification (LoS) — Phase 2 helpers
+// ---------------------------------------------------------------------------
+//
+// EAStudio Phase 2 introduces three Levels of Specification:
+//   L1 — Business     coarse business view
+//   L2 — Application  the existing 2D EAStudio canvas
+//   L3 — Technology   full-screen 3D structural canvas + L3 children
+//
+// The grammar's role is to declare the SHAPE of a node's optional
+// `lodRange` field and the visibility predicate the lens filter
+// uses. The framework is intentionally additive: pre-Phase-2
+// nodes have no `lodRange` and are visible at every level, so
+// every existing graph reads cleanly.
+//
+// The shape predicate sits in the grammar (not the store) so the
+// store, the read-validator, and the L3 generator all consult a
+// single canonical shape check.
+export const ACW_LOD_LEVELS = [1, 2, 3] as const;
+export type AcwLodLevel = (typeof ACW_LOD_LEVELS)[number];
+
+export function isAcwLodLevel(value: unknown): value is AcwLodLevel {
+  return value === 1 || value === 2 || value === 3;
+}
+
+export function isAcwLodRangeShape(
+  value: unknown,
+): value is readonly [AcwLodLevel, AcwLodLevel] {
+  if (!Array.isArray(value)) return false;
+  if (value.length !== 2) return false;
+  const [a, b] = value;
+  if (!isAcwLodLevel(a)) return false;
+  if (!isAcwLodLevel(b)) return false;
+  if (a > b) return false;
+  return true;
+}
+
+// `isVisibleAtLod` is the single predicate every consumer uses to
+// decide whether a given node participates in a given LoS view.
+// Absent `lodRange` is the documented default (visible everywhere).
+//
+// Imported by the lens visibility filter and the L3 generator
+// (via re-export through `acwLensStructure`); the store does not
+// need it because the validator only checks the shape, not the
+// per-level visibility.
+export function isVisibleAtLod(
+  node: { readonly lodRange?: readonly [number, number] },
+  level: AcwLodLevel,
+): boolean {
+  const range = node.lodRange;
+  if (range === undefined) return true;
+  return level >= range[0] && level <= range[1];
+}
+
+// ---------------------------------------------------------------------------
 // Registry summary (what the rest of the app reads)
 // ---------------------------------------------------------------------------
 //

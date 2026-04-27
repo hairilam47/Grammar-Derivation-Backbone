@@ -91,6 +91,15 @@ import "@/acw/track3/acwTrack3ForbiddenSemantics.test-shape";
 import "@/acw/track3/acwTrack3RendererIsolationInvariants.test-shape";
 import "@/acw/track3/acwTrack3FocusIsolationInvariants.test-shape";
 import "@/acw/track3/acwTrack3ViewPrefsInvariants.test-shape";
+// EAStudio Path B Phase 2 (LoS framework) — module-load side
+// effects for the L3 carve-out: a build-time isolation invariant
+// that limits `/src/acw/l3/` to a single named import from the
+// CTAD store (plus types), and a generator-behaviour invariant
+// that hard-fails the bundle if the L3 projector regresses on
+// idempotency, on the no-orphan-recreate guarantee, or on the
+// `lodRange: [3, 3]` contract every minted node must carry.
+import "@/acw/l3/acwL3IsolationInvariants.test-shape";
+import "@/acw/l3/acwL3GeneratorInvariants.test-shape";
 
 function DarkModeApplier() {
   useEffect(() => {

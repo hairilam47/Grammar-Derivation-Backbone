@@ -35,7 +35,7 @@
 //     at module load.
 //   - All studio CSS is scoped under the `.eastudio-root` class so
 //     Tailwind / shadcn primitives outside this lens are unaffected.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 import { WorkspaceShell } from "@/pages/acw/WorkspaceShell";
@@ -48,6 +48,7 @@ import { StudioTopBar } from "@/components/acw/studio/StudioTopBar";
 import { MatrixView } from "@/components/acw/studio/MatrixView";
 import { ExportView } from "@/components/acw/studio/ExportView";
 import { DecisionContractNav } from "@/components/acw/studio/DecisionContractNav";
+import { Canvas3DStructural } from "@/components/acw/Canvas3DStructural";
 import { ensureDomainContainers } from "@/acw/palette/domainContainerSeed";
 import {
   getCurrentDomain,
@@ -57,13 +58,21 @@ import {
   setConnectPendingSource,
   setSelectedEdgeId,
   subscribeViewState,
+  getActiveLod,
 } from "@/acw/acwViewState";
 import { subscribeRefusals } from "@/acw/acwRefusalChannel";
+import { getWorkspace, subscribe as subscribeAcwStore } from "@/acw/acwStore";
+import { runL3GeneratorForAllArchitectures } from "@/acw/l3/l3Generator";
 
 const REFUSAL_PREFIX = "Refused:";
 const DISMISS_LABEL = "Dismiss";
+// EAStudio Phase 2 (LoS framework) — empty hint shown when L3 has
+// nothing to render (no architectures bound, or no CTAD options
+// chosen). Vector glyph in the 3D surface only; this label is plain
+// text so it threads through the placeholder-language guard.
+const L3_EMPTY_HINT = "Bind an architecture to see L3 detail";
 
-assertAllAcwPlaceholderLanguage([REFUSAL_PREFIX, DISMISS_LABEL]);
+assertAllAcwPlaceholderLanguage([REFUSAL_PREFIX, DISMISS_LABEL, L3_EMPTY_HINT]);
 
 export default function StudioCanvas() {
   const [location] = useLocation();
@@ -94,6 +103,39 @@ export default function StudioCanvas() {
   const activeDomain = getCurrentDomain(lensId);
   const activeTab = getViewTab(lensId);
   const selectedNodeId = getSelectedNodeId(lensId);
+  // EAStudio Phase 2 (LoS framework) — current Level of Specification
+  // for this lens. The L3 surface mounts only when this is `3`; the
+  // L1 / L2 surfaces are still served by the existing 2D grid (the
+  // `lodRange` filter inside `enumerateLensVisibility` decides which
+  // nodes are visible at each level).
+  const activeLod = getActiveLod(lensId);
+
+  // EAStudio Phase 2 — re-render the L3 3D surface whenever the
+  // workspace changes (e.g. the generator just minted nodes).
+  // Pre-Phase-2 surfaces did not need this because they composed
+  // smaller, store-aware children; the L3 surface here pulls
+  // `getWorkspace()` directly to feed Canvas3DStructural.
+  const [storeTick, setStoreTick] = useState(0);
+  useEffect(() => subscribeAcwStore(() => setStoreTick((t) => t + 1)), []);
+  void storeTick;
+
+  // EAStudio Phase 2 — Run the L3 generator once per "edge" entry
+  // into L3 (transition from a non-3 LoS to LoS=3). The generator
+  // is constitutionally idempotent, so re-running on every render
+  // would be safe, but the ref-gated edge-trigger keeps the call
+  // count predictable and matches the spec's "session-memoized"
+  // wording. Resets to false whenever the user leaves L3 so a
+  // subsequent re-entry triggers a fresh run.
+  const ranForCurrentEntryRef = useRef<boolean>(false);
+  useEffect(() => {
+    if (activeLod !== 3) {
+      ranForCurrentEntryRef.current = false;
+      return;
+    }
+    if (ranForCurrentEntryRef.current) return;
+    ranForCurrentEntryRef.current = true;
+    runL3GeneratorForAllArchitectures();
+  }, [activeLod]);
 
   // Escape cancels Connect mode (clearing any pending source) and
   // dismisses any standing edge selection. The listener is
@@ -133,7 +175,9 @@ export default function StudioCanvas() {
         <div className="es-shell">
           <StudioTopBar lensId={lensId} />
 
-          {activeTab === "design" ? <DomainTabBar lensId={lensId} /> : null}
+          {activeTab === "design" && activeLod !== 3 ? (
+            <DomainTabBar lensId={lensId} />
+          ) : null}
 
           {refusal !== null ? (
             <div
@@ -157,18 +201,49 @@ export default function StudioCanvas() {
             </div>
           ) : null}
 
-          {activeTab === "design" ? (
+          {/*
+            EAStudio Phase 2 (LoS framework) — at L1 / L2 the
+            existing design / matrix / export tabs render normally.
+            At L3 the body is replaced by the 3D surface (sibling
+            to those tabs) so the StudioTopBar stays visible above
+            it and the user can switch back to L1 / L2 by clicking
+            the LoS toggle. We render the L3 surface as a normal
+            in-flow block (`flex: 1`) rather than as a fixed
+            overlay so the topbar / status-bar layout is preserved
+            and no z-index gymnastics are needed.
+           */}
+          {activeLod !== 3 ? (
+            <>
+              {activeTab === "design" ? (
+                <div
+                  className="es-body"
+                  data-properties={selectedNodeId !== null ? "shown" : "hidden"}
+                >
+                  <PalettePanel activeDomain={activeDomain} />
+                  <DomainGrid lensId={lensId} />
+                  <NodePropertiesPanel lensId={lensId} />
+                </div>
+              ) : null}
+              {activeTab === "matrix" ? <MatrixView lensId={lensId} /> : null}
+              {activeTab === "export" ? <ExportView lensId={lensId} /> : null}
+            </>
+          ) : (
             <div
               className="es-body"
-              data-properties={selectedNodeId !== null ? "shown" : "hidden"}
+              data-testid="acw-studio-l3-surface"
+              style={{ display: "block", padding: 0 }}
             >
-              <PalettePanel activeDomain={activeDomain} />
-              <DomainGrid lensId={lensId} />
-              <NodePropertiesPanel lensId={lensId} />
+              <Canvas3DStructural
+                lensId={lensId}
+                nodes={getWorkspace().structureGraph.nodes}
+                edges={getWorkspace().structureGraph.edges}
+                focusedParentId={null}
+                emptyHint={L3_EMPTY_HINT}
+                height="100%"
+                testId="acw-studio-l3-canvas"
+              />
             </div>
-          ) : null}
-          {activeTab === "matrix" ? <MatrixView lensId={lensId} /> : null}
-          {activeTab === "export" ? <ExportView lensId={lensId} /> : null}
+          )}
 
           <StatusBar lensId={lensId} />
         </div>

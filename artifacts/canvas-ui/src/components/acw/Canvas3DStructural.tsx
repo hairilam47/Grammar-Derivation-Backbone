@@ -34,6 +34,7 @@ import { Canvas3D } from "./Canvas3D";
 import type { AcwNode, AcwEdge } from "@/acw/acwStore";
 import { enumerateLensVisibility } from "@/acw/acwLensStructure";
 import {
+  getActiveLod,
   getCollapsedIds,
   subscribeViewState,
 } from "@/acw/acwViewState";
@@ -123,9 +124,22 @@ export function Canvas3DStructural(props: Canvas3DStructuralProps) {
     [lensId, viewTick],
   );
 
+  // EAStudio Phase 2 (LoS framework) — pass the lens-active LoS
+  // through to the shared enumerator so the 3D renderer drops
+  // nodes whose `lodRange` does not include the active level. The
+  // L3 surface uses this to show ONLY `[3, 3]` nodes; legacy
+  // (lodRange-less) nodes always pass.
+  const activeLod = getActiveLod(lensId);
   const visibility = useMemo(
-    () => enumerateLensVisibility(nodes, edges, focusedParentId, collapsedIds),
-    [nodes, edges, focusedParentId, collapsedIds],
+    () =>
+      enumerateLensVisibility(
+        nodes,
+        edges,
+        focusedParentId,
+        collapsedIds,
+        activeLod,
+      ),
+    [nodes, edges, focusedParentId, collapsedIds, activeLod],
   );
 
   // Map node id → world position (centre). For direct siblings, x/y

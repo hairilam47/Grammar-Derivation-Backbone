@@ -34,8 +34,10 @@ import {
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 import {
   ACW_STUDIO_VIEW_TABS,
+  getActiveLod,
   getConnectMode,
   getViewTab,
+  setActiveLod,
   setConnectMode,
   setConnectPendingSource,
   setSelectedEdgeId,
@@ -43,7 +45,13 @@ import {
   subscribeViewState,
   type AcwStudioViewTab,
 } from "@/acw/acwViewState";
+import { ACW_LOD_LEVELS, type AcwLodLevel } from "@/acw/acwGrammar";
 import { clearStudio, seedStudioSample } from "@/acw/studioActions";
+
+// EAStudio Phase 2 (LoS framework) — the LoS toggle is only
+// surfaced inside the Studio canvas. Other lenses keep the
+// pre-Phase-2 top-bar exactly as it was.
+const STUDIO_LENS_ID = "/workspace/studio";
 
 const BRAND_LABEL = "EA Studio";
 const BRAND_SUB = "Architecture Decision Canvas";
@@ -55,6 +63,19 @@ const CLEAR_LABEL = "Clear";
 const CONNECT_LABEL = "Connect";
 const CLEAR_CONFIRM =
   "Remove every node and connection? Sealed domain containers stay.";
+// EAStudio Phase 2 (LoS framework) — neutral, descriptive labels for
+// the L1 / L2 / L3 toggle. The first letter doubles as the visible
+// glyph; the suffix names the level so the affordance reads as a
+// view selector and not an icon-only puzzle. No emoji.
+const LOD_LABELS: Readonly<Record<AcwLodLevel, string>> = Object.freeze({
+  1: "L1 Business",
+  2: "L2 Application",
+  3: "L3 Technology",
+});
+// Stable group label for the LoS toggle so screen readers announce
+// the affordance's role rather than the currently-selected option
+// (which is already exposed via `aria-pressed` on the inner buttons).
+const LOD_GROUP_LABEL = "Level of Specification";
 
 assertAllAcwPlaceholderLanguage([
   BRAND_LABEL,
@@ -66,6 +87,9 @@ assertAllAcwPlaceholderLanguage([
   CLEAR_LABEL,
   CONNECT_LABEL,
   CLEAR_CONFIRM,
+  LOD_LABELS[1],
+  LOD_LABELS[2],
+  LOD_LABELS[3],
 ]);
 
 const TAB_LABELS: Readonly<Record<AcwStudioViewTab, string>> = Object.freeze({
@@ -92,6 +116,11 @@ export function StudioTopBar({ lensId }: StudioTopBarProps) {
 
   const active = getViewTab(lensId);
   const connectOn = getConnectMode(lensId);
+  // EAStudio Phase 2 (LoS framework) — only the Studio canvas owns
+  // the L1 / L2 / L3 toggle. Other lenses fall through with the
+  // toggle hidden so their existing top-bar layout is unchanged.
+  const showLodToggle = lensId === STUDIO_LENS_ID;
+  const activeLod = getActiveLod(lensId);
 
   const onClear = () => {
     if (typeof window !== "undefined" && !window.confirm(CLEAR_CONFIRM)) return;
@@ -138,6 +167,30 @@ export function StudioTopBar({ lensId }: StudioTopBarProps) {
       </div>
 
       <div className="es-actions">
+        {showLodToggle ? (
+          <div
+            role="group"
+            aria-label={LOD_GROUP_LABEL}
+            data-testid="acw-studio-lod-toggle"
+            data-active-lod={String(activeLod)}
+            className="es-vtabs"
+          >
+            {ACW_LOD_LEVELS.map((lvl) => (
+              <button
+                key={lvl}
+                type="button"
+                onClick={() => setActiveLod(lensId, lvl)}
+                aria-pressed={activeLod === lvl}
+                data-active={activeLod === lvl ? "true" : "false"}
+                data-testid={`acw-studio-lod-button-${lvl}`}
+                className="es-vtab"
+                title={LOD_LABELS[lvl]}
+              >
+                <span>{LOD_LABELS[lvl]}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
         <button
           type="button"
           onClick={() => seedStudioSample()}

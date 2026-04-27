@@ -531,6 +531,41 @@ if (ACW_SCHEMA_VERSION !== "acw-1.0") {
   if (__acwStoreInternals.isValidWorkspace(baseGood({ owner: 42 }))) {
     throw new Error(`${PREFIX}: read-validator accepted a non-string owner.`);
   }
+  // EAStudio Phase 2 (LoS framework) — `lodRange` shape probes.
+  // The validator must accept absence and every well-formed
+  // 2-tuple in [1,3] with min<=max; it must reject every other
+  // shape so the L3 carve-out cannot be smuggled into a
+  // pre-Phase-2 document via a hand-edited JSON blob.
+  for (const ok of [
+    [1, 1] as const,
+    [1, 2] as const,
+    [1, 3] as const,
+    [2, 2] as const,
+    [2, 3] as const,
+    [3, 3] as const,
+  ]) {
+    if (!__acwStoreInternals.isValidWorkspace(baseGood({ lodRange: ok }))) {
+      throw new Error(
+        `${PREFIX}: read-validator refused a well-formed lodRange [${ok[0]}, ${ok[1]}].`,
+      );
+    }
+  }
+  for (const bad of [
+    [0, 3] as const,         // below permitted minimum
+    [1, 4] as const,         // above permitted maximum
+    [2, 1] as const,         // min > max
+    [1] as unknown as readonly [number, number], // wrong arity
+    [1, 2, 3] as unknown as readonly [number, number], // wrong arity
+    [1.5, 3] as unknown as readonly [number, number], // non-integer
+    "1,3" as unknown,        // non-array
+    null as unknown,         // null
+  ]) {
+    if (__acwStoreInternals.isValidWorkspace(baseGood({ lodRange: bad }))) {
+      throw new Error(
+        `${PREFIX}: read-validator accepted a malformed lodRange ${JSON.stringify(bad)}.`,
+      );
+    }
+  }
 }
 
 // (11) EAStudio Phase 2 — view-state read-validator accepts the

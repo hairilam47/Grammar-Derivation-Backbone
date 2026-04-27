@@ -39,6 +39,7 @@ import type { AcwNode, AcwEdge } from "@/acw/acwStore";
 import { updateNodePosition, updateNodeParent, createNode } from "@/acw/acwStore";
 import { publishRefusal } from "@/acw/acwRefusalChannel";
 import {
+  getActiveLod,
   getCollapsedIds,
   isCollapsed,
   subscribeViewState,
@@ -254,9 +255,22 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
   // renderers consume this helper, which is the build-time
   // guarantee that they cannot diverge on what is shown at a
   // given depth + collapse state.
+  // EAStudio Phase 2 (LoS framework) — pass the lens-active LoS
+  // through so `enumerateLensVisibility` filters out nodes whose
+  // declared `lodRange` does not include the active level. Pre-Phase-2
+  // nodes carry no `lodRange` and always pass; this keeps every
+  // existing lens (Track 3, authored 2D lenses) pixel-identical.
+  const activeLod = getActiveLod(lensId);
   const visibility = useMemo(
-    () => enumerateLensVisibility(nodes, edges, focusedParentId, collapsedIds),
-    [nodes, edges, focusedParentId, collapsedIds],
+    () =>
+      enumerateLensVisibility(
+        nodes,
+        edges,
+        focusedParentId,
+        collapsedIds,
+        activeLod,
+      ),
+    [nodes, edges, focusedParentId, collapsedIds, activeLod],
   );
   const directSiblings = visibility.directSiblings;
 

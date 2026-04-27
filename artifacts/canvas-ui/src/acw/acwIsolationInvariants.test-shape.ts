@@ -65,6 +65,14 @@ const EXCLUDED_PATH_PREFIXES: readonly string[] = [
   "/src/acw/track3/",
   "/src/components/acw/track3/",
   "/src/pages/acw/track3/",
+  // EAStudio Phase 2 (LoS framework) — the L3 generator carve-out.
+  // Files under `/src/acw/l3/` are allowed to read the CTAD store
+  // through a strict named-import allowlist (so the generator can
+  // mint L3 children from a frozen architecture export). Their
+  // dedicated `acwL3IsolationInvariants.test-shape.ts` enforces
+  // that stricter contract; we exclude them here so the two
+  // invariants do not contradict each other.
+  "/src/acw/l3/",
 ];
 
 // Positive allowlist (PH-ACW-3): ACW source files may import ONLY

@@ -21,12 +21,17 @@
 // invoked from invariants without touching React, the store, or
 // localStorage.
 import type { AcwNode, AcwEdge } from "./acwStore";
+import { isVisibleAtLod, type AcwLodLevel } from "./acwGrammar";
 
 // Re-export the structurally-relevant types so downstream readers
 // (notably ACW Track 3, which is forbidden from importing the
 // authored ACW store) can obtain the AcwNode / AcwEdge type
 // shapes through a single read-only entry point.
 export type { AcwNode, AcwEdge } from "./acwStore";
+// Re-export the LoS level type so downstream lenses (and probes)
+// can refer to a single canonical type without crossing into the
+// grammar module directly.
+export type { AcwLodLevel } from "./acwGrammar";
 
 export interface LensDrawable {
   readonly node: AcwNode;
@@ -61,8 +66,18 @@ export function enumerateLensVisibility(
   edges: readonly AcwEdge[],
   focusedParentId: string | null,
   collapsedIds: ReadonlySet<string>,
+  // EAStudio Phase 2 (LoS framework) — when supplied, nodes whose
+  // optional `lodRange` excludes the level are filtered out of the
+  // result. Edges are kept only when both endpoints survive — the
+  // same predicate the collapse-filter already uses below. Absent
+  // (the v3 default) preserves pre-Phase-2 behaviour exactly.
+  currentLodLevel?: AcwLodLevel,
 ): LensVisibility {
-  const directSiblings = nodes.filter((n) => n.parentId === focusedParentId);
+  const lodFilter = (n: AcwNode): boolean =>
+    currentLodLevel === undefined ? true : isVisibleAtLod(n, currentLodLevel);
+  const directSiblings = nodes
+    .filter((n) => n.parentId === focusedParentId)
+    .filter(lodFilter);
 
   // Pre-compute children-by-parent for O(n) container detection.
   const childCount = new Map<string, number>();
@@ -77,7 +92,7 @@ export function enumerateLensVisibility(
     const collapsedHere = collapsedIds.has(sib.id);
     const childRefs =
       hasChildren && !collapsedHere
-        ? nodes.filter((n) => n.parentId === sib.id)
+        ? nodes.filter((n) => n.parentId === sib.id).filter(lodFilter)
         : [];
     return {
       node: sib,

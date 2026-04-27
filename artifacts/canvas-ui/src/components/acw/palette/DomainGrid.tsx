@@ -72,8 +72,9 @@ import {
   setSelectedEdgeId,
   setCurrentDomain,
   subscribeViewState,
+  getActiveLod,
 } from "@/acw/acwViewState";
-import type { AcwDomainTag } from "@/acw/acwGrammar";
+import { isVisibleAtLod, type AcwDomainTag } from "@/acw/acwGrammar";
 
 const SEAL_LABEL = "Sealed";
 const QUADRANT_HINT = "Drop a palette tile here.";
@@ -102,6 +103,11 @@ export function DomainGrid({ lensId }: DomainGridProps) {
   const selectedNodeId = getSelectedNodeId(lensId);
   const connectOn = getConnectMode(lensId);
   const pendingSource = getConnectPendingSource(lensId);
+  // EAStudio Phase 2 (LoS framework) — current Level of Specification
+  // for this lens. Used below to drop nodes whose declared `lodRange`
+  // does not include the active level (e.g. L3-only generated nodes
+  // must not appear in the L1 / L2 flat grids).
+  const activeLod = getActiveLod(lensId);
   const gridRef = useRef<HTMLDivElement | null>(null);
 
   const nodeById = useMemo(() => {
@@ -189,6 +195,12 @@ export function DomainGrid({ lensId }: DomainGridProps) {
           const descendants = allNodes.filter((n) => {
             if (n.id === spec.id) return false;
             if (n.isDomainContainer === true) return false;
+            // EAStudio Phase 2 (LoS framework) — drop nodes whose
+            // declared `lodRange` does not include the active LoS.
+            // L3-only generated nodes (`lodRange: [3, 3]`) must
+            // never leak into the L1 / L2 flat grids; legacy nodes
+            // without a `lodRange` always pass.
+            if (!isVisibleAtLod(n, activeLod)) return false;
             let cursor: string | null = n.parentId;
             let guard = 0;
             while (cursor !== null && guard < 1024) {

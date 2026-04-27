@@ -24,7 +24,12 @@
 // returns the default ("2d"). No "acw-view-2.0" version is
 // introduced; per the task brief, v3 introduces no new schema.
 import { assertAllAcwPlaceholderLanguage } from "../governance/staticTextGuard";
-import { isAcwDomainTag, type AcwDomainTag } from "./acwGrammar";
+import {
+  isAcwDomainTag,
+  isAcwLodLevel,
+  type AcwDomainTag,
+  type AcwLodLevel,
+} from "./acwGrammar";
 
 export const ACW_VIEW_SCHEMA_VERSION = "acw-view-1.0" as const;
 const STORAGE_KEY = "acw.workspace.view.v1";
@@ -93,6 +98,15 @@ export interface AcwViewState {
   // existing canvas remains the landing surface for every
   // pre-Phase-3 document.
   readonly viewTabByLens?: Readonly<Record<string, AcwStudioViewTab>>;
+  // EAStudio Phase 2 (LoS framework) — per-lens active Level of
+  // Specification. The Studio top bar L1 / L2 / L3 buttons toggle
+  // this slice; the Studio canvas reads it to decide whether to
+  // render the 2D authoring surface (L1/L2) or the full-screen
+  // 3D structural canvas (L3). Optional, additive, lens-keyed in
+  // line with every other Phase 2 slice; absence reads as the
+  // documented default (L2 — the existing 2D canvas), so every
+  // pre-Phase-2 document stays on its current surface.
+  readonly activeLodByLens?: Readonly<Record<string, AcwLodLevel>>;
 }
 
 // EAStudio Phase 3 — top-bar tab values. Closed set; the read-
@@ -123,6 +137,7 @@ const ALLOWED_TOP = [
   "selectedNodeIdByLens",
   "selectedEdgeIdByLens",
   "viewTabByLens",
+  "activeLodByLens",
 ] as const;
 
 function emptyView(): AcwViewState {
@@ -136,6 +151,7 @@ function emptyView(): AcwViewState {
     selectedNodeIdByLens: Object.freeze({}),
     selectedEdgeIdByLens: Object.freeze({}),
     viewTabByLens: Object.freeze({}),
+    activeLodByLens: Object.freeze({}),
   });
 }
 
@@ -303,6 +319,28 @@ function assertValid(raw: unknown): asserts raw is AcwViewState {
       }
     }
   }
+  // EAStudio Phase 2 (LoS framework) — activeLodByLens. Optional.
+  // When present each value must be one of the closed AcwLodLevel
+  // literals (1, 2, or 3). Mirrors the viewTabByLens shape but
+  // for the L1/L2/L3 toggle. Absent entries read as the documented
+  // default (L2), so pre-Phase-2 documents stay on the existing
+  // 2D canvas with no migration.
+  if (r.activeLodByLens !== undefined) {
+    if (r.activeLodByLens === null || typeof r.activeLodByLens !== "object") {
+      throw new Error("ACW view-state activeLodByLens must be an object.");
+    }
+    const lm = r.activeLodByLens as Record<string, unknown>;
+    for (const [lensId, level] of Object.entries(lm)) {
+      if (typeof lensId !== "string" || lensId.length === 0) {
+        throw new Error("ACW view-state lens id must be a non-empty string.");
+      }
+      if (!isAcwLodLevel(level)) {
+        throw new Error(
+          "ACW view-state activeLodByLens value must be one of 1 | 2 | 3.",
+        );
+      }
+    }
+  }
   // EAStudio Phase 2 — selectedEdgeIdByLens. Optional. When present
   // each value must be a non-empty string (an edge id). Identical
   // shape to the node selection slice; absent entries mean "no edge
@@ -365,6 +403,7 @@ function normalize(raw: AcwViewState): AcwViewState {
     selectedNodeIdByLens: raw.selectedNodeIdByLens ?? Object.freeze({}),
     selectedEdgeIdByLens: raw.selectedEdgeIdByLens ?? Object.freeze({}),
     viewTabByLens: raw.viewTabByLens ?? Object.freeze({}),
+    activeLodByLens: raw.activeLodByLens ?? Object.freeze({}),
   });
 }
 
@@ -631,6 +670,39 @@ export function setViewTab(lensId: string, tab: AcwStudioViewTab): void {
     ...prev,
     schemaVersion: ACW_VIEW_SCHEMA_VERSION,
     viewTabByLens: Object.freeze({ ...prevTab, [lensId]: tab }),
+  });
+  writeToStorage(next);
+  cache = next;
+  notify();
+}
+
+// EAStudio Phase 2 (LoS framework) — per-lens active LoS.
+//
+// Pure UI state. The Studio top bar L1/L2/L3 buttons call
+// `setActiveLod`; the Studio canvas reads `getActiveLod` to decide
+// whether to render the 2D authoring surface (L1 / L2) or the
+// full-screen 3D structural canvas (L3). The default (2) matches
+// the existing landing surface so every pre-Phase-2 lens reads
+// identically to before.
+const DEFAULT_LOD: AcwLodLevel = 2;
+
+export function getActiveLod(lensId: string): AcwLodLevel {
+  const map = getViewState().activeLodByLens ?? {};
+  return map[lensId] ?? DEFAULT_LOD;
+}
+
+export function setActiveLod(lensId: string, level: AcwLodLevel): void {
+  if (!isAcwLodLevel(level)) {
+    throw new Error(
+      `ACW view-state setActiveLod rejected level "${String(level)}". Permitted: 1 | 2 | 3.`,
+    );
+  }
+  const prev = getViewState();
+  const prevMap = prev.activeLodByLens ?? {};
+  const next: AcwViewState = Object.freeze({
+    ...prev,
+    schemaVersion: ACW_VIEW_SCHEMA_VERSION,
+    activeLodByLens: Object.freeze({ ...prevMap, [lensId]: level }),
   });
   writeToStorage(next);
   cache = next;
