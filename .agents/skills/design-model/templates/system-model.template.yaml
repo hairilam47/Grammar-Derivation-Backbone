@@ -1,0 +1,135 @@
+# designs/system-model.yaml
+#
+# Shared design model. Every design skill (erd-design, bpmn-design,
+# system-design, code-structure-design, enterprise-architecture) reads
+# and writes this file. Keep IDs stable — diagrams reference them.
+#
+# Schema reference: .agents/skills/design-model/SKILL.md
+# Validator:        node .agents/skills/design-model/scripts/validate.mjs designs/system-model.yaml
+
+metadata:
+  name: Example Project
+  version: 0.1.0
+  description: >
+    Starter model showing one object of every kind, all cross-linked.
+    Replace or delete these examples as the real model grows.
+
+# ─── Actors ───────────────────────────────────────────────────────────────
+# People or external systems that participate in processes.
+actors:
+  - id: actor:Customer
+    name: Customer
+    type: person                # person | system | external
+    description: End user who places orders.
+
+# ─── Entities ─────────────────────────────────────────────────────────────
+# Things the system stores. Owned by erd-design; safe to scaffold here.
+entities:
+  - id: entity:Customer
+    name: Customer
+    description: A registered buyer.
+    attributes:
+      - { name: id,     type: uuid,   required: true, primaryKey: true }
+      - { name: email,  type: string, required: true, unique: true }
+      - { name: name,   type: string, required: true }
+
+  - id: entity:Order
+    name: Order
+    description: A purchase placed by a customer.
+    attributes:
+      - { name: id,         type: uuid,    required: true, primaryKey: true }
+      - { name: customerId, type: uuid,    required: true, foreignKey: "entity:Customer.id" }
+      - { name: total,      type: decimal, required: true }
+      - { name: placedAt,   type: timestamp, required: true }
+    relationships:
+      - to: entity:Customer
+        cardinality: many-to-one
+        roleNameSource: orders
+        roleNameTarget: customer
+        optional: false
+
+# ─── Processes ────────────────────────────────────────────────────────────
+# Business processes. Owned by bpmn-design.
+processes:
+  - id: process:place-order
+    name: Place Order
+    description: Customer adds items to a cart and pays.
+    pools:
+      - id: pool:customer
+        name: Customer
+        lanes:
+          - id: lane:customer-self-service
+            name: Self Service
+            actor: actor:Customer
+    events:
+      - { id: event:order-started,   name: Order started,   type: start, lane: lane:customer-self-service }
+      - { id: event:order-submitted, name: Order submitted, type: end,   lane: lane:customer-self-service }
+    tasks:
+      - id: task:enter-cart
+        name: Enter cart items
+        type: user                  # user | service | manual | script
+        lane: lane:customer-self-service
+        implementedBy: [function:OrderService.placeOrder]
+        consumes: [entity:Customer]
+        produces: [entity:Order]
+    gateways: []
+    flows:
+      - { from: event:order-started, to: task:enter-cart }
+      - { from: task:enter-cart,     to: event:order-submitted }
+
+# ─── Services ─────────────────────────────────────────────────────────────
+# Logical groupings of functions. Owned by system-design.
+services:
+  - id: service:OrderService
+    name: Order Service
+    module: module:checkout
+    description: Owns the order lifecycle.
+    exposes: [function:OrderService.placeOrder]
+    consumes: []
+
+# ─── Functions ────────────────────────────────────────────────────────────
+# Operations exposed by services. Owned by system-design.
+functions:
+  - id: function:OrderService.placeOrder
+    name: placeOrder
+    service: service:OrderService
+    description: Validate the cart and write a new order.
+    inputs:
+      - { name: customerId, type: uuid }
+      - { name: items,      type: "Array<{productId, quantity}>" }
+    outputs:
+      - { name: orderId, type: uuid }
+    reads:  [entity:Customer]
+    writes: [entity:Order]
+    flows:  [flow:place-order-happy-path]
+
+# ─── Flows ────────────────────────────────────────────────────────────────
+# Named end-to-end paths through the system. Owned by system-design.
+flows:
+  - id: flow:place-order-happy-path
+    name: Place Order — happy path
+    process: process:place-order
+    description: Cart entered, order persisted, no failures.
+    sequence:
+      - function:OrderService.placeOrder
+
+# ─── Modules ──────────────────────────────────────────────────────────────
+# Code-organisation boundaries. Owned by code-structure-design.
+modules:
+  - id: module:checkout
+    name: Checkout
+    intendedFolderPath: src/checkout
+    description: Handles cart, order, and payment.
+    contains:
+      - service:OrderService
+    allowedDependencies: []
+    forbiddenDependencies: []
+    deployedTo: []                # populated by enterprise-architecture skill
+
+# ─── Technology (reserved) ────────────────────────────────────────────────
+# Owned by the enterprise-architecture orchestrator. `nodes` is the
+# registry of deployment targets; modules point to nodes via
+# module.deployedTo[], not the other way round.
+technology:
+  nodes: []
+  environments: []
