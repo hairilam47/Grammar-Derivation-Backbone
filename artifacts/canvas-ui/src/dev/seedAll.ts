@@ -1,32 +1,42 @@
 // Dev-only deterministic seeder for the Architecture Decision Canvas.
 //
-// Routes EXCLUSIVELY through validator-gated store APIs (no direct
-// localStorage writes for governance / CTAD / ACW state). Clears the
-// relevant storage keys first so a re-run from any starting state
-// converges on the same end state.
+// Routes EXCLUSIVELY through the validator-gated public store APIs
+// (`addOrUpdateEntry`, `createSignal`, `advanceSignal`, `setCtadParam`,
+// `addEnvironment`, `createArchitecture`, `setArchitectureParam`,
+// `addArchitectureEnvironment`, `applyCard`, `createOu`, `createNode`,
+// `createEdge`, `updateNodeProperties`, `updateNodeBinding`, the per-
+// lens view-state setters, and the Track 3 view-prefs setters). No
+// raw localStorage write is performed for any governance / CTAD /
+// ACW state. The seeder is a pure consumer of public surfaces.
 //
-// Determinism caveat
-// ------------------
-// Two store APIs we depend on do not accept caller-supplied IDs:
-//   * `ctadStore.createArchitecture(name)` mints an `architectureId`
-//     by suffixing a slug with 8 random hex digits.
-//   * `signalsStore.createSignal(input)` mints a `signalId` by
-//     concatenating `Date.now()` with a random suffix, and stamps
-//     `observedAt` with `new Date()`.
-// All other seeded values (portfolio entries with frozen-at
-// `2026-01-15T12:00:00Z`, CTAD param values, env definitions, ACW
-// node ids, OU ids, view-prefs, view-state, applied-card defaults)
-// are byte-stable across reruns. Adding deterministic-id overrides
-// to the underlying stores would broaden their public API for a
-// dev-only consumer; we deliberately do not do so. The seeder
-// therefore documents the two non-deterministic fields it produces
-// and surfaces both ids in the on-screen summary so a developer
-// can correlate them across surfaces.
+// Determinism contract
+// --------------------
+// Running the seeder twice over the seeded state must produce a
+// byte-identical localStorage snapshot for every key the seeder
+// writes. To get there:
 //
-// The seeder module itself is loaded through `React.lazy()` from
-// App.tsx and the `/seed-all` route is gated on
-// `import.meta.env.DEV`, so neither the seeder code nor the route
-// is reachable from a production build.
+//   * Every id (architecture id, signal id, OU id, node id, edge id
+//     where applicable, environment id) is hard-coded inside the
+//     seeder. Architecture ids carry an 8-hex stable suffix so they
+//     satisfy the `ARCHITECTURE_ID_REGEX` invariant the persisted-
+//     doc validator enforces.
+//   * Every name, decision-date, project-name, OU name, env name
+//     is hard-coded.
+//   * The seeder freezes the global Date constructor and `Date.now`
+//     to a fixed instant (2026-01-15T12:00:00.000Z) for the entire
+//     synchronous run, then restores them in a `finally` block.
+//     This makes every store-internal `new Date()` call (CTAD
+//     params' `updatedAt`, environment add timestamps, applied-card
+//     `appliedAt`, signal `createdAt` / `lastReviewedAt`, etc.)
+//     resolve to the same instant on every run.
+//
+// Build-time tree-shaking
+// -----------------------
+// The seeder module is loaded through `React.lazy()` from App.tsx
+// inside an `import.meta.env.DEV` guard, so neither the seeder code
+// nor the `/seed-all` route is reachable from a production build.
+// The build-bundle regression check (Task #120) verifies the
+// production bundle contains no `seedAll` symbol.
 
 import {
   addOrUpdateEntry,
@@ -48,22 +58,22 @@ import {
 } from "@/ctad/ctadStore";
 import type { CtadEnvironmentDef } from "@/ctad/ctadRegistry";
 import { applyCard } from "@/ctad/cncfApplyService";
-import { CNCF_CARDS } from "@workspace/cncf-catalog";
+import { CNCF_CARDS } from "@/cncf/cncfCatalog";
 import {
-  clearWorkspace,
   createNode,
   createEdge,
   updateNodeProperties,
   updateNodeBinding,
+  clearWorkspace,
   __acwStoreInternals,
 } from "@/acw/acwStore";
 import { ensureDomainContainers } from "@/acw/palette/domainContainerSeed";
+import { paletteItemByLabel } from "@/acw/palette/paletteRegistry";
 import {
   setCurrentDomain,
   setActiveLod,
   setViewTab,
   toggleCollapsed,
-  setShowOrgOverlay,
   __acwViewStateInternals,
 } from "@/acw/acwViewState";
 import {
@@ -76,10 +86,7 @@ import {
   toggleArchitectureLayerHidden,
   __track3ViewPrefsInternals,
 } from "@/acw/track3/track3ViewPrefs";
-import {
-  setLensFullscreen,
-  __acwWorkspaceViewPrefsInternals,
-} from "@/acw/acwWorkspaceViewPrefs";
+import { __acwWorkspaceViewPrefsInternals } from "@/acw/acwWorkspaceViewPrefs";
 import {
   publishRefusal,
   __acwRefusalChannelInternals,
@@ -106,47 +113,59 @@ const STORAGE_KEYS = [
   "acw.track3.viewprefs.v1",
 ] as const;
 
+// Frozen instant for the entire seed run. Keeps every store-internal
+// `new Date()` / `Date.now()` call resolving to the same value so the
+// resulting localStorage snapshot is byte-stable across reruns.
+const FROZEN_ISO = "2026-01-15T12:00:00.000Z";
+const FROZEN_MS = Date.parse(FROZEN_ISO);
+
 export interface SeedSummary {
-  readonly portfolioEntries: number;
+  readonly portfolio: number;
+  readonly architectures: number;
+  readonly nodes: number;
+  readonly edges: number;
+  readonly ous: number;
+  readonly cards: number;
   readonly signals: number;
-  // Generated signal ids (non-deterministic — see module header).
-  // Surfaced so a developer can correlate the rendered signals
-  // panel with the seeder run.
-  readonly signalIds: readonly string[];
-  readonly ctadBindings: number;
-  readonly ctadStandaloneArchitectures: readonly string[];
-  readonly cncfCardsApplied: number;
-  readonly orgUnits: number;
-  readonly acwNodes: number;
-  readonly acwEdges: number;
-  readonly track3ArchitectureId: string | null;
+  readonly track3: number;
   readonly refusalsObserved: number;
   readonly firstRefusalReason: string | null;
 }
 
-// Three deterministic ADC decisions. Each is a plausible synthetic
-// case sized to exercise the grammar derivers (capability selection
-// produces components / risks / indicators automatically).
-function buildPortfolioFixtures(): Array<{
-  context: OrganisationContext;
-  selections: CapabilitySelection[];
-  baselineTradeOffs: TradeOffSettings;
-  metadata: { projectName: string; approvingAuthority: string };
-}> {
+// ---------------------------------------------------------------
+// Portfolio fixtures (3 deterministic decisions). Each fixture
+// supplies the inputs the grammar engine needs; `deriveArchitecture`
+// runs inside `buildADS` so every derived field (complexity score,
+// risk severity, layers present, in-scope capability ids, ECP
+// constraint categories, approval-function snapshots) is computed
+// from the actual deriver — never hand-coded.
+// ---------------------------------------------------------------
+
+interface PortfolioFixture {
+  readonly context: OrganisationContext;
+  readonly selections: readonly CapabilitySelection[];
+  readonly baselineTradeOffs: TradeOffSettings;
+  readonly metadata: { projectName: string; approvingAuthority: string };
+}
+
+function buildPortfolioFixtures(): readonly PortfolioFixture[] {
   return [
+    // Customer Portal Modernization — high-sensitivity external
+    // customer portal owned by Sarah Chen. Translates the user's
+    // "balanced" intent to (Distributed, Cloud, Full).
     {
       context: {
-        organisationType: "Government",
+        organisationType: "Enterprise",
         sensitivityLevel: "High",
         systemIntent: "LegacyReplacement",
-        expectedLifespanYears: 10,
+        expectedLifespanYears: 8,
       },
       selections: [
         { capabilityId: "CAP_EXTERNAL_ACCESS", status: "IN_SCOPE" },
         { capabilityId: "CAP_INTERNAL_ADMIN", status: "IN_SCOPE" },
         { capabilityId: "CAP_CASE_MANAGEMENT", status: "IN_SCOPE" },
-        { capabilityId: "CAP_DOCUMENT_MANAGEMENT", status: "IN_SCOPE" },
-        { capabilityId: "CAP_WORKFLOW_APPROVAL", status: "DEFERRED" },
+        { capabilityId: "CAP_DOCUMENT_MANAGEMENT", status: "DEFERRED" },
+        { capabilityId: "CAP_WORKFLOW_APPROVAL", status: "OUT_OF_SCOPE" },
       ],
       baselineTradeOffs: {
         architectureStyle: "Distributed",
@@ -154,10 +173,13 @@ function buildPortfolioFixtures(): Array<{
         scopeLevel: "Full",
       },
       metadata: {
-        projectName: "Customer Portal Replacement",
-        approvingAuthority: "Chief Architect",
+        projectName: "Customer Portal Modernization",
+        approvingAuthority: "Sarah Chen",
       },
     },
+    // Enterprise Data Lake — medium-sensitivity internal admin
+    // owned by Marcus Rivera. Translates the user's "cost-optimized"
+    // intent to (Simple, Cloud, Minimal).
     {
       context: {
         organisationType: "Enterprise",
@@ -166,9 +188,10 @@ function buildPortfolioFixtures(): Array<{
         expectedLifespanYears: 5,
       },
       selections: [
-        { capabilityId: "CAP_EXTERNAL_ACCESS", status: "IN_SCOPE" },
         { capabilityId: "CAP_INTERNAL_ADMIN", status: "IN_SCOPE" },
-        { capabilityId: "CAP_CASE_MANAGEMENT", status: "OUT_OF_SCOPE" },
+        { capabilityId: "CAP_REPORTING_ANALYTICS", status: "IN_SCOPE" },
+        { capabilityId: "CAP_DOCUMENT_MANAGEMENT", status: "IN_SCOPE" },
+        { capabilityId: "CAP_AUDIT_COMPLIANCE", status: "DEFERRED" },
       ],
       baselineTradeOffs: {
         architectureStyle: "Simple",
@@ -176,34 +199,88 @@ function buildPortfolioFixtures(): Array<{
         scopeLevel: "Minimal",
       },
       metadata: {
-        projectName: "Field Service Mobile",
-        approvingAuthority: "Head of Engineering",
+        projectName: "Enterprise Data Lake",
+        approvingAuthority: "Marcus Rivera",
       },
     },
+    // Regulatory Compliance Hub — high-sensitivity internal admin
+    // owned by Aisha Khan. Translates the user's "risk-averse"
+    // intent to (Distributed, OnPrem, Full).
     {
       context: {
         organisationType: "Government",
-        sensitivityLevel: "Low",
+        sensitivityLevel: "High",
         systemIntent: "NewCapability",
-        expectedLifespanYears: 7,
+        expectedLifespanYears: 10,
       },
       selections: [
         { capabilityId: "CAP_INTERNAL_ADMIN", status: "IN_SCOPE" },
-        { capabilityId: "CAP_DOCUMENT_MANAGEMENT", status: "IN_SCOPE" },
+        { capabilityId: "CAP_AUDIT_COMPLIANCE", status: "IN_SCOPE" },
         { capabilityId: "CAP_WORKFLOW_APPROVAL", status: "IN_SCOPE" },
+        { capabilityId: "CAP_DOCUMENT_MANAGEMENT", status: "IN_SCOPE" },
       ],
       baselineTradeOffs: {
-        architectureStyle: "Simple",
+        architectureStyle: "Distributed",
         deploymentModel: "OnPrem",
-        scopeLevel: "Minimal",
+        scopeLevel: "Full",
       },
       metadata: {
-        projectName: "Records Disposal Workflow",
-        approvingAuthority: "Records Manager",
+        projectName: "Regulatory Compliance Hub",
+        approvingAuthority: "Aisha Khan",
       },
     },
   ];
 }
+
+// Adapter labels (palette tile labels) → ACW domain. Drives the
+// per-domain seed pass; mirrors `DomainGrid.onDrop` semantics by
+// resolving each label through `paletteItemByLabel` and forwarding
+// `elementType`, `boundTechnologyCategory`, and `boundParam` from
+// the palette tile onto the `createNode` request.
+interface AcwSeedTile {
+  readonly label: string;
+  readonly parentId:
+    | "domain-business"
+    | "domain-data"
+    | "domain-application"
+    | "domain-technology";
+  readonly x: number;
+  readonly y: number;
+}
+
+const ACW_SEED_TILES: readonly AcwSeedTile[] = Object.freeze([
+  { label: "Strategy Map", parentId: "domain-business", x: 80, y: 80 },
+  { label: "Capability Map", parentId: "domain-business", x: 240, y: 80 },
+  { label: "Data Store", parentId: "domain-data", x: 80, y: 80 },
+  { label: "Web Portal", parentId: "domain-application", x: 80, y: 80 },
+  { label: "API Gateway", parentId: "domain-application", x: 240, y: 80 },
+  { label: "Microservice", parentId: "domain-application", x: 400, y: 80 },
+  { label: "Cloud Region", parentId: "domain-technology", x: 80, y: 80 },
+  { label: "Database", parentId: "domain-technology", x: 240, y: 80 },
+  { label: "Monitoring", parentId: "domain-technology", x: 400, y: 80 },
+] as const);
+
+// CONNECTS edges between application children. Sealed domain
+// containers may not be edge endpoints; only application nodes
+// connect to one another in this seed.
+const ACW_SEED_EDGES: readonly { from: string; to: string }[] = Object.freeze([
+  { from: "Web Portal", to: "API Gateway" },
+  { from: "API Gateway", to: "Microservice" },
+] as const);
+
+// Hard-coded architecture ids — the 8-hex suffix keeps the value
+// inside `ARCHITECTURE_ID_REGEX` so the persisted-doc validator
+// accepts them as if they had been generated.
+const ARCH_NEXTGEN_ID = "nextgen-platform-deadbeef";
+const ARCH_MOBILE_ID = "mobile-first-architecture-cafef00d";
+
+// Hard-coded signal ids. The validator requires non-empty strings
+// only — any stable string is fine.
+const SIG_RISK_ID = "seed-signal-risk-001";
+const SIG_DRIFT_ID = "seed-signal-drift-002";
+const SIG_DEPCONC_ID = "seed-signal-depconc-003";
+
+const STUDIO_LENS_ID = "/workspace/studio";
 
 function clearAllSeededKeys(): void {
   if (typeof window === "undefined") return;
@@ -220,7 +297,90 @@ function clearAllSeededKeys(): void {
   __track3ViewPrefsInternals.reloadFromStorageForTest();
 }
 
-// Public entry point. Returns a summary the dev page renders.
+// Wraps `fn` with a frozen Date / Date.now / Math.random /
+// crypto.randomUUID so every internal timestamp and id resolves
+// deterministically. Counters reset on every call so two
+// invocations with the same internal call sequence produce the
+// same id sequence. Restores the originals in a `finally` block
+// so a thrown error still leaves the globals intact.
+function withFrozenClock<T>(fn: () => T): T {
+  const RealDate = globalThis.Date;
+  const realNow = RealDate.now;
+  const realRandom = Math.random;
+  const realUuid =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID.bind(crypto)
+      : null;
+
+  class FrozenDate extends RealDate {
+    constructor(...args: unknown[]) {
+      if (args.length === 0) {
+        super(FROZEN_MS);
+      } else {
+        // Forward to the real constructor with whatever arguments
+        // were supplied. The cast is structural; runtime Date
+        // accepts any of these shapes.
+        super(...(args as [number]));
+      }
+    }
+    static override now(): number {
+      return FROZEN_MS;
+    }
+  }
+
+  // Deterministic counter-driven Math.random — produces a
+  // periodic but reproducible sequence in (0, 1). Resets to 1 at
+  // the start of every withFrozenClock call so two runs match.
+  let randomCounter = 0;
+  const frozenRandom = (): number => {
+    randomCounter += 1;
+    // Mix the counter into a (0, 1) value via a small LCG so
+    // consumers that reject 0 / require dispersion still get
+    // non-trivial outputs.
+    const x = (randomCounter * 1103515245 + 12345) >>> 0;
+    return (x % 0x7fffffff) / 0x7fffffff;
+  };
+
+  // Deterministic UUID v4-shaped string keyed off a per-run
+  // counter. Resets on every withFrozenClock call.
+  let uuidCounter = 0;
+  const frozenUuid = (): `${string}-${string}-${string}-${string}-${string}` => {
+    uuidCounter += 1;
+    const hex = uuidCounter.toString(16).padStart(12, "0");
+    return `00000000-0000-4000-8000-${hex}` as `${string}-${string}-${string}-${string}-${string}`;
+  };
+
+  try {
+    // Patch every global *inside* the try block so a throw at any
+    // patch site (e.g. a non-writable property descriptor under a
+    // hardened runtime) still triggers the `finally` restoration
+    // path. Re-assigning a global to its original value is
+    // idempotent, so over-restoring previously-unpatched globals
+    // is safe.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).Date = FrozenDate;
+    Math.random = frozenRandom;
+    if (realUuid !== null) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (crypto as any).randomUUID = frozenUuid;
+    }
+    return fn();
+  } finally {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).Date = RealDate;
+    RealDate.now = realNow;
+    Math.random = realRandom;
+    if (realUuid !== null) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (crypto as any).randomUUID = realUuid;
+    }
+  }
+}
+
+// Public entry point. Returns a structured summary the dev page
+// renders. Every step of the seed routes through validator-gated
+// public APIs; refusals surface through `acwRefusalChannel` and
+// are counted in the summary.
 export function seedAll(): SeedSummary {
   __acwRefusalChannelInternals.reset();
   let refusalsObserved = 0;
@@ -228,256 +388,259 @@ export function seedAll(): SeedSummary {
   const noteRefusal = (reason: string): void => {
     refusalsObserved += 1;
     if (firstRefusalReason === null) firstRefusalReason = reason;
-    // Surface to console with a stable prefix so the dev workflow
-    // can show every refusal directly in the browser logs without
-    // routing through React state.
     // eslint-disable-next-line no-console
     console.warn("[seedAll] refusal:", reason);
     publishRefusal(reason);
   };
 
-  clearAllSeededKeys();
+  return withFrozenClock(() => {
+    clearAllSeededKeys();
 
-  // ----- ADC portfolio (3 frozen decisions) -------------------
-  const fixtures = buildPortfolioFixtures();
-  // Stable freeze date — keeps the rendered Portfolio rows
-  // reading identically on every seed.
-  const fixedNow = new Date("2026-01-15T12:00:00.000Z");
-  for (const fx of fixtures) {
-    const ads = buildADS({
-      context: fx.context,
-      selections: fx.selections,
-      baselineTradeOffs: fx.baselineTradeOffs,
-      metadata: fx.metadata,
-      now: fixedNow,
-    });
-    addOrUpdateEntry(entryFromADS(ads));
-  }
+    // ----- ADC portfolio (3 frozen decisions) -------------------
+    const fixtures = buildPortfolioFixtures();
+    const fixedNow = new Date(FROZEN_ISO);
+    for (const fx of fixtures) {
+      const ads = buildADS({
+        context: fx.context,
+        selections: [...fx.selections],
+        baselineTradeOffs: fx.baselineTradeOffs,
+        metadata: fx.metadata,
+        now: fixedNow,
+      });
+      addOrUpdateEntry(entryFromADS(ads));
+    }
 
-  // ----- CTAD: 1 ADC-bound binding ----------------------------
-  // The bound binding is the first portfolio entry. setCtadParam
-  // implicitly materialises the binding doc on first write.
-  const boundBinding: CtadBinding = {
-    adsId: "customer-portal-replacement",
-    adsVersion: "v1",
-  };
-  setCtadParam(boundBinding, "hostingModel", "Public");
-  setCtadParam(boundBinding, "databaseClass", "Relational");
-  setCtadParam(boundBinding, "containerOrchestration", "Kubernetes");
-  setCtadParam(boundBinding, "monitoringClass", "Observability");
-  const boundEnvDev: CtadEnvironmentDef = {
-    id: "env-dev",
-    name: "Development",
-    kind: "Development",
-    hostingModel: "Public",
-  };
-  const boundEnvProd: CtadEnvironmentDef = {
-    id: "env-prod",
-    name: "Production",
-    kind: "Production",
-    hostingModel: "Public",
-  };
-  addEnvironment(boundBinding, boundEnvDev);
-  addEnvironment(boundBinding, boundEnvProd);
+    // ----- CTAD: 1 ADC-bound binding (legacy) -------------------
+    // Anchors to the first portfolio entry's adsId (computed by
+    // `slugifyAdsId(projectName)`). `setCtadParam` materialises
+    // the binding doc on first write.
+    const legacyBinding: CtadBinding = {
+      adsId: "customer-portal-modernization",
+      adsVersion: "v1",
+    };
+    setCtadParam(legacyBinding, "frontendFrameworkClass", "React-like");
+    setCtadParam(legacyBinding, "hostingModel", "Public");
+    setCtadParam(legacyBinding, "applicationStyle", "Microservices");
+    setCtadParam(legacyBinding, "databaseClass", "Relational");
+    setCtadParam(legacyBinding, "dataDistribution", "Sharded");
+    setCtadParam(legacyBinding, "observabilityStack", "Metrics + Logs + Traces");
+    const envDev: CtadEnvironmentDef = {
+      id: "env-dev",
+      name: "Development",
+      kind: "Development",
+      hostingModel: "Public",
+    };
+    const envProd: CtadEnvironmentDef = {
+      id: "env-prod",
+      name: "Production",
+      kind: "Production",
+      hostingModel: "Public",
+    };
+    addEnvironment(legacyBinding, envDev);
+    addEnvironment(legacyBinding, envProd);
 
-  // ----- CTAD: 2 standalone architectures ---------------------
-  // Architecture ids are generated by `createArchitecture` (random
-  // 8-hex suffix on a content-derived slug); the seeder captures
-  // the id and threads it through the rest of the calls. The
-  // suffix is the only non-deterministic field in the seeded set.
-  const archA = createArchitecture("Next-gen Platform");
-  setArchitectureParam(archA.architectureId, "hostingModel", "Hybrid");
-  setArchitectureParam(archA.architectureId, "databaseClass", "Document");
-  setArchitectureParam(
-    archA.architectureId,
-    "containerOrchestration",
-    "Kubernetes",
-  );
-  addArchitectureEnvironment(archA.architectureId, boundEnvDev);
-  addArchitectureEnvironment(archA.architectureId, boundEnvProd);
-
-  const archB = createArchitecture("Mobile First Architecture");
-  setArchitectureParam(archB.architectureId, "hostingModel", "Public");
-  setArchitectureParam(archB.architectureId, "databaseClass", "Document");
-  setArchitectureParam(archB.architectureId, "monitoringClass", "Centralised");
-  addArchitectureEnvironment(archB.architectureId, boundEnvProd);
-
-  // ----- CNCF apply layer: 2 cards on the bound binding -------
-  const cardKubernetes = CNCF_CARDS.find((c) => c.id === "cncf:kubernetes");
-  const cardOpenTelemetry = CNCF_CARDS.find(
-    (c) => c.id === "cncf:opentelemetry",
-  );
-  let cncfCardsApplied = 0;
-  if (cardKubernetes) {
+    // ----- CTAD: 2 standalone architectures ---------------------
+    // Hard-coded ids passed via `createArchitecture`'s additive
+    // `id` option so the persisted doc is byte-stable across runs.
+    let standaloneCount = 0;
     try {
-      applyCard(boundBinding, cardKubernetes);
-      cncfCardsApplied += 1;
+      createArchitecture("NextGen Platform", {
+        id: ARCH_NEXTGEN_ID,
+        now: FROZEN_ISO,
+      });
+      setArchitectureParam(ARCH_NEXTGEN_ID, "hostingModel", "Hybrid");
+      setArchitectureParam(ARCH_NEXTGEN_ID, "applicationStyle", "Microservices");
+      setArchitectureParam(ARCH_NEXTGEN_ID, "databaseClass", "Document");
+      setArchitectureParam(
+        ARCH_NEXTGEN_ID,
+        "containerOrchestration",
+        "Kubernetes",
+      );
+      addArchitectureEnvironment(ARCH_NEXTGEN_ID, envDev);
+      addArchitectureEnvironment(ARCH_NEXTGEN_ID, envProd);
+      standaloneCount += 1;
     } catch (err) {
       noteRefusal((err as Error).message);
     }
-  }
-  if (cardOpenTelemetry) {
     try {
-      applyCard(boundBinding, cardOpenTelemetry);
-      cncfCardsApplied += 1;
+      createArchitecture("Mobile-First Architecture", {
+        id: ARCH_MOBILE_ID,
+        now: FROZEN_ISO,
+      });
+      setArchitectureParam(
+        ARCH_MOBILE_ID,
+        "frontendFrameworkClass",
+        "Other",
+      );
+      setArchitectureParam(ARCH_MOBILE_ID, "hostingModel", "Public");
+      addArchitectureEnvironment(ARCH_MOBILE_ID, envProd);
+      standaloneCount += 1;
     } catch (err) {
       noteRefusal((err as Error).message);
     }
-  }
 
-  // ----- Organisational Units (2 fixtures) --------------------
-  // OUs are seeded BEFORE any ACW node so the bind step at the end
-  // of the workspace seed cannot dangle.
-  const ouEng = createOu({ id: "ou-engineering", name: "Engineering" });
-  const ouComp = createOu({ id: "ou-compliance", name: "Compliance" });
-  if (!ouEng.ok) noteRefusal(ouEng.reason);
-  if (!ouComp.ok) noteRefusal(ouComp.reason);
+    // ----- CNCF apply: 2 cards on the legacy binding ------------
+    // cncf:kubernetes sets `containerOrchestration` to a containerd-
+    // compatible option (Kubernetes); cncf:vitess constrains
+    // `databaseClass` to ["Relational"] (matches the value set
+    // above) and `dataDistribution` to ["Sharded"].
+    const cardKubernetes = CNCF_CARDS.find((c) => c.id === "cncf:kubernetes");
+    const cardVitess = CNCF_CARDS.find((c) => c.id === "cncf:vitess");
+    let cncfCardsApplied = 0;
+    if (cardKubernetes) {
+      try {
+        applyCard(legacyBinding, cardKubernetes, { now: FROZEN_ISO });
+        cncfCardsApplied += 1;
+      } catch (err) {
+        noteRefusal((err as Error).message);
+      }
+    } else {
+      noteRefusal('CNCF card "cncf:kubernetes" missing from catalog.');
+    }
+    if (cardVitess) {
+      try {
+        applyCard(legacyBinding, cardVitess, { now: FROZEN_ISO });
+        cncfCardsApplied += 1;
+      } catch (err) {
+        noteRefusal((err as Error).message);
+      }
+    } else {
+      noteRefusal('CNCF card "cncf:vitess" missing from catalog.');
+    }
 
-  // ----- ACW workspace: clear + seed 4 quadrants + children ---
-  clearWorkspace();
-  // re-seed the four sealed domain containers idempotently
-  ensureDomainContainers();
+    // ----- Organisational Units (2 fixtures) --------------------
+    const ouEng = createOu({ id: "ou-engineering", name: "Engineering" });
+    const ouComp = createOu({ id: "ou-compliance", name: "Compliance" });
+    if (!ouEng.ok) noteRefusal(ouEng.reason);
+    if (!ouComp.ok) noteRefusal(ouComp.reason);
 
-  // Children — one node per domain quadrant, exercising 4 of the
-  // 5 grammar element types (Zone, BusinessEntity, System, Component;
-  // Connector is exercised via an explicit edge below).
-  const bizProc = createNode({
-    type: "Zone",
-    parentId: "domain-business",
-    label: "Customer service journey",
-    x: 100,
-    y: 100,
-  });
-  const dataStore = createNode({
-    type: "System",
-    parentId: "domain-data",
-    label: "Customer database",
-    x: 100,
-    y: 100,
-    boundTechnologyCategory: "Relational database",
-  });
-  const apiGateway = createNode({
-    type: "System",
-    parentId: "domain-application",
-    label: "Public API gateway",
-    x: 100,
-    y: 100,
-    boundTechnologyCategory: "API gateway",
-    boundParam: {
-      sectionId: "infrastructure",
-      paramId: "containerOrchestration",
-      optionValue: "Kubernetes",
-    },
-  });
-  const microservice = createNode({
-    type: "System",
-    parentId: "domain-application",
-    label: "Customer service backend",
-    x: 400,
-    y: 100,
-    boundTechnologyCategory: "Backend service",
-  });
-  const k8sCluster = createNode({
-    type: "Component",
-    parentId: "domain-technology",
-    label: "Production Kubernetes cluster",
-    x: 100,
-    y: 100,
-    boundParam: {
-      sectionId: "infrastructure",
-      paramId: "containerOrchestration",
-      optionValue: "Kubernetes",
-    },
-  });
+    // ----- ACW workspace: 4 sealed containers + 9 children ------
+    clearWorkspace();
+    ensureDomainContainers();
 
-  // Surface any node-creation refusals in the summary counter.
-  for (const r of [bizProc, dataStore, apiGateway, microservice, k8sCluster]) {
-    if (!r.ok) noteRefusal(r.reason);
-  }
+    const idByLabel = new Map<string, string>();
+    for (const tile of ACW_SEED_TILES) {
+      const item = paletteItemByLabel(tile.label);
+      if (item === undefined) {
+        noteRefusal(
+          `Palette tile "${tile.label}" is not present in the registry.`,
+        );
+        continue;
+      }
+      const r = createNode({
+        type: item.elementType,
+        parentId: tile.parentId,
+        label: item.label,
+        x: tile.x,
+        y: tile.y,
+        ...(item.boundTechnologyCategory !== undefined
+          ? { boundTechnologyCategory: item.boundTechnologyCategory }
+          : {}),
+        ...(item.boundParam !== undefined
+          ? { boundParam: item.boundParam }
+          : {}),
+      });
+      if (!r.ok) {
+        noteRefusal(r.reason);
+        continue;
+      }
+      idByLabel.set(tile.label, r.id);
+    }
 
-  // 2 explicit edges between application children (sealed domain
-  // containers may not be edge endpoints — connect application
-  // children only).
-  if (apiGateway.ok && microservice.ok) {
-    const e1 = createEdge({
-      kind: "CONNECTS",
-      fromId: apiGateway.id,
-      toId: microservice.id,
-    });
-    if (!e1.ok) noteRefusal(e1.reason);
-  }
-  if (microservice.ok && dataStore.ok) {
-    const e2 = createEdge({
-      kind: "DATA_FLOW",
-      fromId: microservice.id,
-      toId: dataStore.id,
-    });
-    if (!e2.ok) noteRefusal(e2.reason);
-  }
+    // CONNECTS edges between application children only.
+    let edgesCreated = 0;
+    for (const edge of ACW_SEED_EDGES) {
+      const fromId = idByLabel.get(edge.from);
+      const toId = idByLabel.get(edge.to);
+      if (fromId === undefined || toId === undefined) {
+        noteRefusal(
+          `Edge "${edge.from}" -> "${edge.to}" cannot be created (one endpoint did not seed).`,
+        );
+        continue;
+      }
+      const r = createEdge({ kind: "CONNECTS", fromId, toId });
+      if (!r.ok) {
+        noteRefusal(r.reason);
+        continue;
+      }
+      edgesCreated += 1;
+    }
 
-  // Bind two child nodes to the OU registry so the Org View overlay
-  // has live tints to render.
-  if (ouEng.ok && apiGateway.ok) {
-    const upd = updateNodeProperties(apiGateway.id, {
-      organisationalUnitId: ouEng.id,
-    });
-    if (!upd.ok) noteRefusal(upd.reason);
-  }
-  if (ouComp.ok && microservice.ok) {
-    const upd = updateNodeProperties(microservice.id, {
-      organisationalUnitId: ouComp.id,
-    });
-    if (!upd.ok) noteRefusal(upd.reason);
-  }
+    // OU bindings on two non-container nodes. Microservice →
+    // Engineering exercises the application-domain overlay path;
+    // Capability Map → Compliance exercises the business-domain path.
+    const microserviceId = idByLabel.get("Microservice");
+    if (ouEng.ok && microserviceId !== undefined) {
+      const upd = updateNodeProperties(microserviceId, {
+        organisationalUnitId: ouEng.id,
+      });
+      if (!upd.ok) noteRefusal(upd.reason);
+    }
+    const capMapId = idByLabel.get("Capability Map");
+    if (ouComp.ok && capMapId !== undefined) {
+      const upd = updateNodeProperties(capMapId, {
+        organisationalUnitId: ouComp.id,
+      });
+      if (!upd.ok) noteRefusal(upd.reason);
+    }
 
-  // Re-bind one node through updateNodeBinding so the Phase 5
-  // semantic-binding read path is exercised end-to-end.
-  if (k8sCluster.ok) {
-    const reb = updateNodeBinding(k8sCluster.id, {
-      boundParam: {
-        sectionId: "infrastructure",
-        paramId: "containerOrchestration",
-        optionValue: "Kubernetes",
-      },
-      boundTechnologyCategory: "Container orchestration",
-    });
-    if (!reb.ok) noteRefusal(reb.reason);
-  }
+    // Re-bind one application node through `updateNodeBinding` so
+    // the Phase 5 semantic-binding read path is exercised end-to-
+    // end (palette default already binds API Gateway via
+    // `boundTechnologyCategory`; here we additionally bind a
+    // `boundParam` to `containerOrchestration=Kubernetes` so the
+    // overlay reflects the legacy binding's chosen orchestrator).
+    const apiGatewayId = idByLabel.get("API Gateway");
+    if (apiGatewayId !== undefined) {
+      const reb = updateNodeBinding(apiGatewayId, {
+        boundParam: {
+          sectionId: "ops",
+          paramId: "containerOrchestration",
+          optionValue: "Kubernetes",
+        },
+      });
+      if (!reb.ok) noteRefusal(reb.reason);
+    }
 
-  // ----- ACW view-state: per-lens preferences -----------------
-  const studioLensId = "/workspace/studio";
-  setCurrentDomain(studioLensId, "application");
-  setActiveLod(studioLensId, 2);
-  setViewTab(studioLensId, "design");
-  toggleCollapsed(studioLensId, "domain-technology");
-  setShowOrgOverlay(studioLensId, true);
+    const totalNodes = idByLabel.size + 4; // + 4 sealed containers
 
-  // ----- ACW workspace view-prefs (separate store) -----------
-  // Seeds the per-lens view-prefs document at
-  // `acw.workspace.viewprefs.v1`. Without this call the storage
-  // key would only ever exist if an end-user toggled fullscreen.
-  setLensFullscreen(studioLensId, false);
+    // ----- ACW view-state: per-lens preferences -----------------
+    setCurrentDomain(STUDIO_LENS_ID, "application");
+    setActiveLod(STUDIO_LENS_ID, 2);
+    setViewTab(STUDIO_LENS_ID, "design");
+    toggleCollapsed(STUDIO_LENS_ID, "domain-technology");
+    // OU overlay is intentionally OFF — per the spec the seeded
+    // workspace presents the overlay as off so the developer can
+    // toggle it on and observe the OU-tinted nodes light up.
 
-  // ----- Track 3 view-prefs (per-architecture) ----------------
-  const track3Arch = archA.architectureId;
-  setArchitectureViewMode(track3Arch, "3d");
-  setArchitecturePerspective(track3Arch, "appCentric");
-  toggleArchitectureLayerHidden(track3Arch, "ops");
+    // ----- Track 3 view-prefs (per-architecture) ----------------
+    setArchitectureViewMode(ARCH_NEXTGEN_ID, "3d");
+    // "all" is the closest valid analogue of the spec's "top-down"
+    // perspective — the registry's enumerated values are
+    // "all" | "infraCentric" | "appCentric" | "integrationCentric".
+    setArchitecturePerspective(ARCH_NEXTGEN_ID, "all");
+    // Two layers collapsed: infrastructure and ops. Both layer ids
+    // are members of the canonical TRACK3_LAYERS list.
+    toggleArchitectureLayerHidden(ARCH_NEXTGEN_ID, "infrastructure");
+    toggleArchitectureLayerHidden(ARCH_NEXTGEN_ID, "ops");
 
-  // ----- Policy signals (3 fixtures, varied lifecycle) --------
-  const sigInputs: CreateSignalInput[] = [
-    {
+    // ----- Policy signals (3 fixtures, varied lifecycle) --------
+    const sigRisk: CreateSignalInput = {
       signalCategory: "Risk Accumulation",
-      signalTitle: "Recurrent High severity in Customer Portal Replacement",
+      signalTitle: "Risk Accumulation across customer-portal and data-lake",
       signalDescription:
-        "Two recently frozen decisions in the customer portfolio carried High severity in Compliance.",
+        "Two recently frozen decisions in the customer programme carry the same High severity in Compliance.",
       evidenceSummary: {
         observationWindow: "Last 60 days",
         relatedDecisionCount: 2,
         qualitativePattern:
           "Same compliance category appearing across unrelated programmes.",
         relatedEntries: [
-          { adsId: "customer-portal-replacement", adsVersion: "v1" },
+          {
+            adsId: "customer-portal-modernization",
+            adsVersion: "v1",
+          },
+          { adsId: "enterprise-data-lake", adsVersion: "v1" },
         ],
       },
       interpretationGuidance: [
@@ -485,86 +648,108 @@ export function seedAll(): SeedSummary {
         "Should a portfolio review be scheduled?",
       ],
       reviewingBody: "Architecture Council",
-    },
-    {
-      signalCategory: "Complexity Accumulation",
-      signalTitle: "Distributed style adopted across two new programmes",
-      signalDescription:
-        "Two of the last three frozen decisions selected a distributed style under cloud deployment.",
-      evidenceSummary: {
-        observationWindow: "Last quarter",
-        relatedDecisionCount: 2,
-        qualitativePattern: "Trend toward distributed cloud baselines.",
-      },
-      interpretationGuidance: [
-        "Is the distributed style being adopted for capability or for fashion?",
-      ],
-      reviewingBody: "Architecture Council",
-    },
-    {
+    };
+    const sigDrift: CreateSignalInput = {
       signalCategory: "Posture Drift",
-      signalTitle: "Cloud deployment under High sensitivity",
+      signalTitle: "Posture Drift on compliance-hub",
       signalDescription:
-        "A High-sensitivity government decision selected a cloud baseline.",
+        "A High-sensitivity Government decision selected an OnPrem deployment baseline; the broader portfolio's drift trend is towards Cloud.",
       evidenceSummary: {
         observationWindow: "Last 30 days",
         relatedDecisionCount: 1,
         qualitativePattern:
           "Sensitivity / deployment combination uncommon for this organisation type.",
+        relatedEntries: [
+          { adsId: "regulatory-compliance-hub", adsVersion: "v1" },
+        ],
       },
       interpretationGuidance: [
         "Does this combination reflect a deliberate posture change?",
       ],
-      reviewingBody: "Risk & Compliance Board",
-    },
-  ];
-  const signalIds: string[] = [];
-  for (const input of sigInputs) {
-    const sig = createSignal(input);
-    signalIds.push(sig.signalId);
-  }
-  // Vary lifecycle: leave first as Observed, advance second to
-  // Under Discussion, advance third to Acknowledged.
-  if (signalIds[1]) {
-    advanceSignal(signalIds[1]);
-  }
-  if (signalIds[2]) {
-    advanceSignal(signalIds[2]);
-    advanceSignal(signalIds[2]);
-  }
+      reviewingBody: "Risk and Compliance Board",
+    };
+    const sigDep: CreateSignalInput = {
+      signalCategory: "Dependency Concentration",
+      signalTitle: "Dependency Concentration across all three decisions",
+      signalDescription:
+        "All three frozen decisions in the seeded portfolio share the same approving-authority pool and reference overlapping capability ids.",
+      evidenceSummary: {
+        observationWindow: "Last quarter",
+        relatedDecisionCount: 3,
+        qualitativePattern:
+          "Common approving-authority pool plus overlapping capability scope.",
+        relatedEntries: [
+          {
+            adsId: "customer-portal-modernization",
+            adsVersion: "v1",
+          },
+          { adsId: "enterprise-data-lake", adsVersion: "v1" },
+          { adsId: "regulatory-compliance-hub", adsVersion: "v1" },
+        ],
+      },
+      interpretationGuidance: [
+        "Does the shared capability scope indicate a shared upstream concern?",
+      ],
+      reviewingBody: "Architecture Council",
+    };
 
-  // Final refusal channel snapshot — anything that surfaced
-  // through publishRefusal during the seed run that we did not
-  // count via noteRefusal is included here as a safety net.
-  const channelLast = __acwRefusalChannelInternals.peekLast();
-  if (channelLast !== null && refusalsObserved === 0) {
-    refusalsObserved = 1;
-    firstRefusalReason = `(channel) ${channelLast}`;
-  }
+    // Seed in deterministic order; advance each to its target
+    // status. createSignal stamps both timestamps to FROZEN_ISO
+    // (frozen clock); advanceSignal does the same.
+    let signalsCreated = 0;
+    try {
+      createSignal(sigRisk, { id: SIG_RISK_ID, now: FROZEN_ISO });
+      // Risk → Under Discussion (advance once)
+      advanceSignal(SIG_RISK_ID, { now: FROZEN_ISO });
+      signalsCreated += 1;
+    } catch (err) {
+      noteRefusal((err as Error).message);
+    }
+    try {
+      createSignal(sigDrift, { id: SIG_DRIFT_ID, now: FROZEN_ISO });
+      // Drift → Observed (no advance)
+      signalsCreated += 1;
+    } catch (err) {
+      noteRefusal((err as Error).message);
+    }
+    try {
+      createSignal(sigDep, { id: SIG_DEPCONC_ID, now: FROZEN_ISO });
+      // Dependency Concentration → Acknowledged (advance twice)
+      advanceSignal(SIG_DEPCONC_ID, { now: FROZEN_ISO });
+      advanceSignal(SIG_DEPCONC_ID, { now: FROZEN_ISO });
+      signalsCreated += 1;
+    } catch (err) {
+      noteRefusal((err as Error).message);
+    }
 
-  return {
-    portfolioEntries: fixtures.length,
-    signals: signalIds.length,
-    signalIds,
-    ctadBindings: 1,
-    ctadStandaloneArchitectures: [
-      archA.architectureId,
-      archB.architectureId,
-    ],
-    cncfCardsApplied,
-    orgUnits: 2,
-    acwNodes: 4 + 5,
-    acwEdges: 2,
-    track3ArchitectureId: track3Arch,
-    refusalsObserved,
-    firstRefusalReason,
-  };
+    // Final refusal-channel snapshot — anything that surfaced
+    // through publishRefusal during the seed run that we did not
+    // count via noteRefusal is included as a safety net.
+    const channelLast = __acwRefusalChannelInternals.peekLast();
+    if (channelLast !== null && refusalsObserved === 0) {
+      refusalsObserved = 1;
+      firstRefusalReason = `(channel) ${channelLast}`;
+    }
+
+    return {
+      portfolio: fixtures.length,
+      architectures: 1 + standaloneCount, // 1 legacy binding + standalones
+      nodes: totalNodes,
+      edges: edgesCreated,
+      ous: 2,
+      cards: cncfCardsApplied,
+      signals: signalsCreated,
+      track3: 1,
+      refusalsObserved,
+      firstRefusalReason,
+    };
+  });
 }
 
-// Snapshot-and-restore probe used by the SeedAllPage to verify
-// the seeder runs without surfacing a validator refusal under
-// the EXACT keys the seeder writes. Restores any pre-existing
-// localStorage values regardless of probe outcome.
+// Snapshot-and-restore probe used by the SeedAllPage to verify the
+// seeder runs without surfacing a validator refusal under the EXACT
+// keys the seeder writes. Restores any pre-existing localStorage
+// values regardless of probe outcome.
 export interface SeedProbeResult {
   readonly ok: boolean;
   readonly summary?: SeedSummary;
@@ -613,4 +798,10 @@ export function runSeedProbe(): SeedProbeResult {
 
 export const __seedAllInternals = Object.freeze({
   STORAGE_KEYS,
+  FROZEN_ISO,
+  ARCH_NEXTGEN_ID,
+  ARCH_MOBILE_ID,
+  SIG_RISK_ID,
+  SIG_DRIFT_ID,
+  SIG_DEPCONC_ID,
 });

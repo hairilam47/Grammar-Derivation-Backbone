@@ -111,6 +111,17 @@ const SeedAllPage = import.meta.env.DEV
   ? lazy(() => import("@/dev/SeedAllPage"))
   : null;
 
+// Dev-only seeder determinism invariant (Task #119). Loaded via a
+// dynamic `import()` inside an `import.meta.env.DEV` guard so the
+// production bundle dead-code-eliminates both the import call and
+// every transitive byte of the seeder. The probe runs once at
+// module load (browser only), snapshots the seeded keys, runs
+// `seedAll` twice, asserts byte-identical persisted state across
+// both runs, and restores the original snapshot.
+if (import.meta.env.DEV) {
+  void import("@/dev/seedAllInvariants.test-shape");
+}
+
 function DarkModeApplier() {
   useEffect(() => {
     document.documentElement.classList.add("dark");

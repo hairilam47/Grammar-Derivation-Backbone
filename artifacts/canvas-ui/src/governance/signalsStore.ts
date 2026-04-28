@@ -242,7 +242,17 @@ function newSignalId(): string {
 // Creates a new signal in Observed state. Both timestamps stamped to the
 // same instant on creation (S6 spec: createdAt and lastReviewedAt are
 // equal at birth).
-export function createSignal(input: CreateSignalInput): PolicySignal {
+//
+// Optional `id` and `now` are an additive seed-affordance: when both
+// are absent the routine behaves exactly as before (`sig-…` random
+// suffix + `Date.now()` timestamp). The dev-only `/seed-all` route
+// supplies both so re-running the seed produces a byte-identical
+// localStorage snapshot. `id`, when supplied, must be a non-empty
+// string; `now`, when supplied, must be a valid ISO-8601 string.
+export function createSignal(
+  input: CreateSignalInput,
+  opts?: { readonly id?: string; readonly now?: string },
+): PolicySignal {
   if (!SIGNAL_CATEGORIES_SET.has(input.signalCategory)) {
     throw new Error(`Unknown signalCategory "${input.signalCategory}".`);
   }
@@ -257,9 +267,30 @@ export function createSignal(input: CreateSignalInput): PolicySignal {
       );
     }
   }
-  const now = new Date().toISOString();
+  let signalId: string;
+  if (opts?.id !== undefined) {
+    if (typeof opts.id !== "string" || opts.id.length === 0) {
+      throw new Error(
+        `Caller-supplied signal id must be a non-empty string.`,
+      );
+    }
+    signalId = opts.id;
+  } else {
+    signalId = newSignalId();
+  }
+  let now: string;
+  if (opts?.now !== undefined) {
+    if (typeof opts.now !== "string" || Number.isNaN(Date.parse(opts.now))) {
+      throw new Error(
+        `Caller-supplied "now" must be a valid ISO timestamp.`,
+      );
+    }
+    now = opts.now;
+  } else {
+    now = new Date().toISOString();
+  }
   const signal: PolicySignal = {
-    signalId: newSignalId(),
+    signalId,
     signalCategory: input.signalCategory,
     signalTitle: input.signalTitle,
     signalDescription: input.signalDescription,
@@ -295,7 +326,15 @@ export function createSignal(input: CreateSignalInput): PolicySignal {
 
 // Forward-only lifecycle transition. Throws when called on Acknowledged.
 // Stamps lastReviewedAt with the current instant.
-export function advanceSignal(signalId: string): PolicySignal {
+//
+// Optional `now` is an additive seed-affordance: when absent the
+// routine behaves exactly as before. The dev-only `/seed-all` route
+// supplies it so the resulting localStorage snapshot is byte-identical
+// across reruns. When supplied, it must be a valid ISO-8601 string.
+export function advanceSignal(
+  signalId: string,
+  opts?: { readonly now?: string },
+): PolicySignal {
   const all = readAll();
   const idx = all.findIndex((s) => s.signalId === signalId);
   if (idx < 0) throw new Error(`Policy signal "${signalId}" not found.`);
@@ -306,10 +345,21 @@ export function advanceSignal(signalId: string): PolicySignal {
       `Policy signal "${signalId}" is at terminal status "${current.status}" and cannot advance.`,
     );
   }
+  let nowIso: string;
+  if (opts?.now !== undefined) {
+    if (typeof opts.now !== "string" || Number.isNaN(Date.parse(opts.now))) {
+      throw new Error(
+        `Caller-supplied "now" must be a valid ISO timestamp.`,
+      );
+    }
+    nowIso = opts.now;
+  } else {
+    nowIso = new Date().toISOString();
+  }
   const updated: PolicySignal = {
     ...current,
     status: next,
-    lastReviewedAt: new Date().toISOString(),
+    lastReviewedAt: nowIso,
   };
   assertAllowedTopLevel(updated);
   all[idx] = updated;

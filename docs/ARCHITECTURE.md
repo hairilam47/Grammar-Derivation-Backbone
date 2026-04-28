@@ -3932,3 +3932,102 @@ schema, validator, refusal channel, or store touched.
 - ACW / CTAD / Track 3 isolation invariants no longer need to
   allow `@/components/governance/GlobalNav`; the now-unused
   `GlobalNav.tsx` was removed.
+
+---
+
+## 23. Dev-only `/seed-all` route (Task #119)
+
+A developer-only route that populates the local browser store with a
+deterministic data set spanning every persisted surface. Hidden from
+production: both the lazy `import()` of `SeedAllPage` and the route
+registration in `App.tsx` are gated on `import.meta.env.DEV`, which
+Vite replaces with a literal `false` at production build time so
+Rollup dead-code-eliminates the entire branch — including the
+seeder module and its transitive imports.
+
+### Files
+
+- `src/dev/seedAll.ts` — public `seedAll()` entry point and
+  `runSeedProbe()` (snapshot/restore wrapper). Routes EXCLUSIVELY
+  through validator-gated public store APIs (`addOrUpdateEntry`,
+  `createSignal`, `advanceSignal`, `setCtadParam`, `addEnvironment`,
+  `createArchitecture`, `setArchitectureParam`,
+  `addArchitectureEnvironment`, `applyCard`, `createOu`,
+  `createNode`, `createEdge`, `updateNodeProperties`,
+  `updateNodeBinding`, the per-lens view-state setters, and the
+  Track 3 view-prefs setters). No raw `localStorage` write is
+  performed for any governance / CTAD / ACW state.
+- `src/dev/SeedAllPage.tsx` — the dev page mounted at `/seed-all`.
+  All chrome strings are asserted against
+  `assertAllAcwPlaceholderLanguage` so a future edit cannot smuggle
+  recommendation / urgency / judgement language into the dev
+  surface.
+- `src/dev/seedAllInvariants.test-shape.ts` — module-load
+  determinism probe. Snapshots the seeded keys, runs `seedAll()`
+  twice, asserts byte-identical persisted state across both runs,
+  then restores the original snapshot. Loaded from `App.tsx` via
+  a dev-gated dynamic `import()` so the production bundle pays
+  zero bytes.
+
+### Determinism contract
+
+Running the seeder twice over the seeded state produces a
+byte-identical localStorage snapshot for every key the seeder
+writes. Achieved by:
+
+- Hard-coded ids (architecture ids carry an 8-hex stable suffix
+  satisfying `ARCHITECTURE_ID_REGEX`; signal ids and OU ids are
+  authored fixtures; environment ids are authored fixtures).
+- A `withFrozenClock()` wrapper that, for the duration of the
+  synchronous run, freezes `Date`, `Date.now()`, `Math.random()`,
+  and `crypto.randomUUID()` to deterministic counter-driven
+  outputs. Counters reset at the start of every call so two
+  identical invocations produce the same id sequence.
+- The seeder's preflight clear (`clearAllSeededKeys`) wipes only
+  the keys the seeder writes and then forces every cache-holding
+  store to reload from storage, so two identical runs share the
+  same starting state regardless of how the page was loaded.
+
+### Seeded state (one of each surface)
+
+- 3 frozen ADC portfolio entries (Customer Portal Modernization /
+  Sarah Chen; Enterprise Data Lake / Marcus Rivera; Regulatory
+  Compliance Hub / Aisha Khan).
+- 1 ADC-bound CTAD binding (`customer-portal-modernization@v1`)
+  with 6 set parameters and 2 environments (env-dev, env-prod).
+- 2 standalone CTAD architectures (`nextgen-platform-deadbeef`
+  with K8s + Document DB; `mobile-first-architecture-cafef00d`
+  with Other-class frontend) both with environments.
+- 2 CNCF cards applied to the legacy binding
+  (`cncf:kubernetes`, `cncf:vitess`).
+- 2 organisational units (`ou-engineering`, `ou-compliance`).
+- 1 ACW workspace populated through the public palette / store
+  APIs: 4 sealed domain containers + 9 children spread across
+  the four domains, 2 CONNECTS edges between application
+  children, 2 OU bindings on non-container nodes
+  (`Microservice → ou-engineering`,
+  `Capability Map → ou-compliance`), and 1 `boundParam` rebinding
+  on the API Gateway exercising the Phase 5 read path.
+- View-state preferences for `/workspace/studio` (Application
+  domain pre-selected at LoS L2, Technology container collapsed,
+  Design tab active; OU overlay intentionally OFF).
+- Track 3 per-architecture view-prefs for `nextgen-platform`
+  (3D mode, `all` perspective, `infrastructure` and `ops` layers
+  hidden).
+- 3 policy signals across the three lifecycle stages
+  (Risk Accumulation → Under Discussion via 1 advance;
+  Posture Drift → Observed; Dependency Concentration →
+  Acknowledged via 2 advances).
+
+### Strictly removable
+
+To revert: delete `src/dev/`, remove the dev-gated `SeedAllPage`
+lazy import + route registration from `App.tsx`, remove the
+dev-gated `seedAllInvariants.test-shape` dynamic import from
+`App.tsx`. The four additive optional parameters added to
+`createArchitecture(name, opts?: { id, now })`,
+`createSignal(input, opts?: { id, now })`,
+`advanceSignal(id, opts?: { now })`, and
+`applyCard(binding, card, opts?: { now })` are backward
+compatible with all existing callers (they default to the
+production code path) and can be left in place or rolled back.

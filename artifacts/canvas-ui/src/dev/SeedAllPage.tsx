@@ -22,15 +22,13 @@ const PROBE_HEADING = "Probe outcome";
 const FOOTER_NOTE =
   "This page is gated to development builds and is not bundled into a published deployment.";
 const STAT_LABEL_PORTFOLIO = "Portfolio entries written";
-const STAT_LABEL_SIGNALS = "Policy signals created";
-const STAT_LABEL_SIGNAL_IDS = "Policy signal ids";
-const STAT_LABEL_BINDINGS = "CTAD bound bindings";
-const STAT_LABEL_STANDALONE = "CTAD standalone architectures";
-const STAT_LABEL_CARDS = "CNCF cards applied";
-const STAT_LABEL_OUS = "Organisational units";
-const STAT_LABEL_NODES = "ACW nodes";
+const STAT_LABEL_ARCHITECTURES = "CTAD architectures (bindings + standalones)";
+const STAT_LABEL_NODES = "ACW nodes (containers + children)";
 const STAT_LABEL_EDGES = "ACW edges";
-const STAT_LABEL_TRACK3 = "Track 3 architecture id";
+const STAT_LABEL_OUS = "Organisational units";
+const STAT_LABEL_CARDS = "CNCF cards applied";
+const STAT_LABEL_SIGNALS = "Policy signals created";
+const STAT_LABEL_TRACK3 = "Track 3 architectures with view-prefs";
 const STAT_LABEL_REFUSALS = "Validator refusals observed";
 
 assertAllAcwPlaceholderLanguage([
@@ -44,14 +42,12 @@ assertAllAcwPlaceholderLanguage([
   PROBE_HEADING,
   FOOTER_NOTE,
   STAT_LABEL_PORTFOLIO,
-  STAT_LABEL_SIGNALS,
-  STAT_LABEL_SIGNAL_IDS,
-  STAT_LABEL_BINDINGS,
-  STAT_LABEL_STANDALONE,
-  STAT_LABEL_CARDS,
-  STAT_LABEL_OUS,
+  STAT_LABEL_ARCHITECTURES,
   STAT_LABEL_NODES,
   STAT_LABEL_EDGES,
+  STAT_LABEL_OUS,
+  STAT_LABEL_CARDS,
+  STAT_LABEL_SIGNALS,
   STAT_LABEL_TRACK3,
   STAT_LABEL_REFUSALS,
 ]);
@@ -75,34 +71,17 @@ function Stat({ label, value }: { label: string; value: string }) {
 function SummaryGrid({ summary }: { summary: SeedSummary }) {
   return (
     <div className="mt-3 rounded-md border border-border/60 bg-card p-4">
+      <Stat label={STAT_LABEL_PORTFOLIO} value={String(summary.portfolio)} />
       <Stat
-        label={STAT_LABEL_PORTFOLIO}
-        value={String(summary.portfolioEntries)}
+        label={STAT_LABEL_ARCHITECTURES}
+        value={String(summary.architectures)}
       />
+      <Stat label={STAT_LABEL_NODES} value={String(summary.nodes)} />
+      <Stat label={STAT_LABEL_EDGES} value={String(summary.edges)} />
+      <Stat label={STAT_LABEL_OUS} value={String(summary.ous)} />
+      <Stat label={STAT_LABEL_CARDS} value={String(summary.cards)} />
       <Stat label={STAT_LABEL_SIGNALS} value={String(summary.signals)} />
-      <Stat
-        label={STAT_LABEL_SIGNAL_IDS}
-        value={summary.signalIds.join(", ")}
-      />
-      <Stat
-        label={STAT_LABEL_BINDINGS}
-        value={String(summary.ctadBindings)}
-      />
-      <Stat
-        label={STAT_LABEL_STANDALONE}
-        value={summary.ctadStandaloneArchitectures.join(", ")}
-      />
-      <Stat
-        label={STAT_LABEL_CARDS}
-        value={String(summary.cncfCardsApplied)}
-      />
-      <Stat label={STAT_LABEL_OUS} value={String(summary.orgUnits)} />
-      <Stat label={STAT_LABEL_NODES} value={String(summary.acwNodes)} />
-      <Stat label={STAT_LABEL_EDGES} value={String(summary.acwEdges)} />
-      <Stat
-        label={STAT_LABEL_TRACK3}
-        value={summary.track3ArchitectureId ?? ""}
-      />
+      <Stat label={STAT_LABEL_TRACK3} value={String(summary.track3)} />
       <Stat
         label={STAT_LABEL_REFUSALS}
         value={String(summary.refusalsObserved)}
