@@ -19,6 +19,12 @@
 //   3. The seeder reports zero validator refusals on a clean
 //      run (`refusalsObserved === 0`). Any refusal would mean
 //      the seeder smuggled a value past a public store API.
+//   4. The seeded entity counts in `summary` match the spec
+//      contract (portfolio:3, architectures:3, ous:2, signals:3,
+//      cards:2, nodes:13, edges:2, track3:1). This locks the
+//      surface contract documented in the task spec so a
+//      regression in any seeded sub-domain surfaces immediately
+//      on the next dev-build load.
 //
 // Probe protocol:
 //   * Snapshot every seeded key (and only those) before the run,
@@ -42,7 +48,7 @@
 // regression check (Task #120) verifies the seeder symbol is
 // absent from the production bundle.
 
-import { seedAll, __seedAllInternals } from "./seedAll";
+import { seedAll, __seedAllInternals, type SeedSummary } from "./seedAll";
 import { __acwStoreInternals } from "@/acw/acwStore";
 import { __acwViewStateInternals } from "@/acw/acwViewState";
 import { __acwWorkspaceViewPrefsInternals } from "@/acw/acwWorkspaceViewPrefs";
@@ -50,6 +56,44 @@ import { __ouStoreInternals } from "@/acw/orgUnits/ouStore";
 import { __track3ViewPrefsInternals } from "@/acw/track3/track3ViewPrefs";
 
 const STORAGE_KEYS = __seedAllInternals.STORAGE_KEYS;
+
+// Spec-contract counts. See `.local/tasks/seed-all-test-data.md`
+// step "Visible counts" — locking these here means any drift in a
+// seeded sub-domain surfaces on the next dev-build load.
+const EXPECTED_COUNTS: Readonly<
+  Pick<
+    SeedSummary,
+    | "portfolio"
+    | "architectures"
+    | "ous"
+    | "signals"
+    | "cards"
+    | "nodes"
+    | "edges"
+    | "track3"
+  >
+> = Object.freeze({
+  portfolio: 3,
+  architectures: 3,
+  ous: 2,
+  signals: 3,
+  cards: 2,
+  nodes: 13,
+  edges: 2,
+  track3: 1,
+});
+
+function assertExpectedCounts(label: string, summary: SeedSummary): void {
+  for (const [k, expected] of Object.entries(EXPECTED_COUNTS)) {
+    const actual = summary[k as keyof typeof EXPECTED_COUNTS];
+    if (actual !== expected) {
+      throw new Error(
+        `seedAll spec-count contract violated (${label}): ` +
+          `expected ${k}=${expected}, got ${k}=${actual}.`,
+      );
+    }
+  }
+}
 
 function reloadAllStores(): void {
   __acwStoreInternals.reloadFromStorageForTest();
@@ -113,6 +157,7 @@ function runProbe(): void {
           ". Public-store-API contract violated.",
       );
     }
+    assertExpectedCounts("run 1", summaryA);
     const snapA = snapshotKeys();
     const allKeysAfterA = snapshotAllKeyNames();
     for (const k of allKeysAfterA) {
@@ -137,6 +182,7 @@ function runProbe(): void {
           ". Public-store-API contract violated.",
       );
     }
+    assertExpectedCounts("run 2", summaryB);
     const snapB = snapshotKeys();
     const allKeysAfterB = snapshotAllKeyNames();
     for (const k of allKeysAfterB) {
