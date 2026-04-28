@@ -373,16 +373,14 @@ async function main() {
           report.error("Cross-reference is not a string", { at, got: JSON.stringify(v) });
           return;
         }
-        // Special case: foreignKey strings are "entity:Name.attribute" — strip
-        // the .attribute suffix before resolution.
-        let lookup = v;
-        if (allowedKinds.includes("entity") && v.includes(".") && v.startsWith("entity:")) {
-          lookup = v.split(".")[0];
-        }
-        const found = idIndex.get(lookup);
+        // Generic refs must be exact IDs. The "entity:Name.attribute"
+        // dotted form is only valid in the dedicated foreignKey check
+        // below — accepting it here would let dotted refs slip through
+        // fields like functions[].reads[].
+        const found = idIndex.get(v);
         if (!found) {
           const fields = { at, got: v };
-          const hint = nearestMatch(lookup, idIndex.keys());
+          const hint = nearestMatch(v, idIndex.keys());
           if (hint) fields.hint = `${hint} exists — typo?`;
           report.error("Cross-reference unresolved", fields);
           return;

@@ -172,6 +172,10 @@ Cross-references are how the layers compose. The validator resolves every one of
 
 The deployment direction is `module → node`, not `node → module`. `technology.nodes[]` is the registry of nodes that exist; `module.deployedTo[]` records where each module runs. Picking one direction prevents the model from disagreeing with itself.
 
+### Why no top-level `crossReferences` section
+
+Cross-references live on the objects themselves (a function knows what it reads; a module knows what it contains) rather than in a separate top-level `crossReferences` index. This keeps each object self-describing: reading one entry of `functions[]` tells you everything that function touches, with no need to grep elsewhere. A separate index would duplicate this information and inevitably fall out of sync with the inline fields. The validator builds whatever index it needs in memory at validate-time; consumers that want a flattened cross-reference report should compute it from the inline fields rather than maintain it by hand.
+
 ## Contract invariants
 
 These are guaranteed by this foundation skill so sibling skills do not need to re-check them:
