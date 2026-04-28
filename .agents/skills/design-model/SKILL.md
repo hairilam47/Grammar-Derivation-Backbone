@@ -174,7 +174,7 @@ Cross-references are how the layers compose. The validator resolves every one of
 | `usecase` | `actors[]` | `actor:` | Actors that participate in the use case. |
 | `usecase` | `include[]` | `usecase:` | Sub-use-cases this one always invokes (`<<include>>`). |
 | `usecase.extend[]` | `usecase` | `usecase:` | Base use case this one optionally extends (`<<extend>>`). |
-| `usecase` | `specializes` | `usecase:` | Parent use case this one is a specialization of (UML generalization). |
+| `usecase` | `generalizationOf` | `usecase:` | Parent use case this one is a specialization of (UML generalization). |
 
 The deployment direction is `module → node`, not `node → module`. `technology.nodes[]` is the registry of nodes that exist; `module.deployedTo[]` records where each module runs. Picking one direction prevents the model from disagreeing with itself.
 

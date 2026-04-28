@@ -51,11 +51,11 @@ The simplest line: an actor participates in a use case. Drawn as a solid line (P
 - **Direction**: from the child (the specialization) to the parent (the generalization). The triangle sits on the parent.
 - **Inheritance**: the child inherits the parent's actor associations, includes, and extends. If "Pay for Wine" generalizes "Pay for Food", every actor associated with paying for food can also pay for wine without restating the association.
 - **Use it sparingly**. Use case generalization is a powerful but easily abused construct; in most domain models, two specializations of one base is the practical maximum before the diagram becomes opaque.
-- **Use it for actors too** when modelling roles that share goals. ("Premium Customer" generalizes "Customer" and inherits every customer use case.) This skill currently models actor generalization implicitly via repetition; if it becomes important, consider adding a `specializes` field on `actors[]` in a follow-up task.
+- **Use it for actors too** when modelling roles that share goals. ("Premium Customer" generalizes "Customer" and inherits every customer use case.) This skill currently models actor generalization implicitly via repetition; if it becomes important, consider adding a `generalizationOf` field on `actors[]` in a follow-up task.
 
 ### Cycles are always bugs
 
-A generalization cycle (`A specializes B`, `B specializes A`) is meaningless and the generator warns on it. Self-references in `include[]`, `extend[].usecase`, or `specializes` are also always bugs.
+A generalization cycle (`A` declares `generalizationOf: B` and `B` declares `generalizationOf: A`) is meaningless and the generator warns on it. Self-references in `include[]`, `extend[].usecase`, or `generalizationOf` are also always bugs.
 
 ## When to break the model into multiple system boundaries
 

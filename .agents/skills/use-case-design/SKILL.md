@@ -60,9 +60,9 @@ Walk the user through one use case at a time:
 5. **Actors** — `actors[]` lists the `actor:` IDs that participate. The first actor in the list is treated as the **primary actor** (rendered on the left of the boundary); the rest are supporting actors (rendered on the right). At least one actor is required.
 6. **Include relationships** — `include[]` lists the `usecase:` IDs this use case **always** invokes as part of completing its goal (`<<include>>` arrows point from the including use case to the included one). Use this when a sub-goal is mandatory and reusable across multiple parent use cases.
 7. **Extend relationships** — `extend[]` lists the `usecase:` IDs that this use case **optionally** extends, each with an optional `condition` string rendered in brackets on the arrow. The arrow points from the extending use case to the base use case (matches UML semantics: `<<extend>>` arrows leave the optional behaviour and point at the base case it inserts into).
-8. **Generalization** — optional `specializes` field names a parent use case (`usecase:`) that this one is a specialization of. Drawn as a UML generalization arrow from this use case to the parent (open triangle on the parent end).
+8. **Generalization** — optional `generalizationOf` field names a parent use case (`usecase:`) that this one is a specialization of. Drawn as a UML generalization arrow from this use case to the parent (open triangle on the parent end).
 
-Keep IDs stable. Renaming a use case ID requires updating every `include`, `extend`, and `specializes` reference; the foundation validator catches dangling references.
+Keep IDs stable. Renaming a use case ID requires updating every `include`, `extend`, and `generalizationOf` reference; the foundation validator catches dangling references.
 
 ### 3. Validate the model
 
@@ -74,7 +74,7 @@ The foundation validator covers:
 
 - ID uniqueness and grammar (every `usecase:` ID is unique and matches `[a-z][a-z0-9-]*`).
 - `usecases[].actors[]` references resolve to declared `actor:` IDs.
-- `usecases[].include[]`, `usecases[].extend[].usecase`, and `usecases[].specializes` references resolve to declared `usecase:` IDs.
+- `usecases[].include[]`, `usecases[].extend[].usecase`, and `usecases[].generalizationOf` references resolve to declared `usecase:` IDs.
 
 Fix any errors it reports before regenerating.
 
@@ -98,9 +98,9 @@ After generation the script prints, per system boundary:
 
 - A one-line summary: `restaurant — 4 actors · 6 use cases · 2 includes · 3 extends · 1 generalization`.
 - Use cases with no actor (a use case without a primary actor is a modelling smell).
-- Use cases that are completely isolated — no actor reaches them and no other use case includes, extends, or specializes them. Often a stale leftover from earlier modelling.
-- Generalization cycles (e.g. `usecase:a specializes usecase:b` and `usecase:b specializes usecase:a`).
-- Self-references in `include[]`, `extend[]`, or `specializes` (always a mistake).
+- Use cases that are completely isolated — no actor reaches them and no other use case includes, extends, or generalizes them. Often a stale leftover from earlier modelling.
+- Generalization cycles (e.g. `usecase:a` declares `generalizationOf: usecase:b` and `usecase:b` declares `generalizationOf: usecase:a`).
+- Self-references in `include[]`, `extend[]`, or `generalizationOf` (always a mistake).
 
 Other foundation-layer issues (ID grammar, wrong-kind references, dangling actor or use case IDs) are reported by the foundation validator, not duplicated here.
 
@@ -124,13 +124,13 @@ usecases:
       - usecase: usecase:order-wine             # base use case being extended
         condition: "if wine ordered"            # rendered in brackets on the arrow
 
-    specializes: usecase:order                  # optional; this use case is a child of usecase:order
+    generalizationOf: usecase:order             # optional; this use case is a child of usecase:order
 ```
 
 ### Required vs optional
 
 - **Required**: `id`, `name`, at least one entry in `actors[]`.
-- **Optional**: `description`, `system`, `include[]`, `extend[]`, `specializes`.
+- **Optional**: `description`, `system`, `include[]`, `extend[]`, `generalizationOf`.
 
 The foundation validator enforces ID grammar and cross-reference resolution. Layer-specific checks (at least one actor, no self-references, no generalization cycles, isolation report) are reported by this skill's generator as warnings.
 
@@ -141,7 +141,7 @@ The foundation validator enforces ID grammar and cross-reference resolution. Lay
 | Association | `actors[]` | Actor → use case | Actor participates in the use case. |
 | Include | `include[]` on the parent | Parent → child, `<<include>>` | Parent **always** invokes the child as part of completing its goal. |
 | Extend | `extend[]` on the extension | Extension → base, `<<extend>>` | Extension **optionally** inserts behaviour into the base, gated by `condition`. |
-| Generalization | `specializes` on the child | Child → parent (open triangle) | Child is a more specific kind of the parent; inherits its actor associations and behaviour. |
+| Generalization | `generalizationOf` on the child | Child → parent (open triangle) | Child is a more specific kind of the parent; inherits its actor associations and behaviour. |
 
 Two common mistakes to avoid:
 
@@ -245,10 +245,10 @@ It also:
 - Prints a per-boundary summary line: `<system> — N actors · N use cases · N includes · N extends · N generalizations`.
 - Warns if a use case has no actors (every use case needs at least one association).
 - Warns if a use case is isolated (no actor association, not included by anything, not extended by anything, not the parent of any specialization).
-- Warns on self-references (`include[]`, `extend[].usecase`, or `specializes` pointing at the same `usecase:` ID).
-- Warns on generalization cycles via `specializes`.
-- Skips `include`, `extend`, and `specializes` entries pointing at unknown IDs with a warning (foundation validator hard-fails on these; this script stays useful for standalone runs).
-- Exits non-zero only on internal failures (unparseable YAML, missing `usecases[]` section); zero on warnings.
+- Warns on self-references (`include[]`, `extend[].usecase`, or `generalizationOf` pointing at the same `usecase:` ID).
+- Warns on generalization cycles via `generalizationOf`.
+- Skips `include`, `extend`, and `generalizationOf` entries pointing at unknown IDs with a warning (foundation validator hard-fails on these; this script stays useful for standalone runs).
+- Runs the foundation validator first; exits **1** if it reports any grammar or cross-reference errors. Exits **2** on internal failures (file unreadable, parse error). An empty or absent `usecases[]` section exits cleanly with a no-op message.
 
 ## Bundled files
 

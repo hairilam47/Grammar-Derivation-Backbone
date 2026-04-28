@@ -7,17 +7,40 @@
 // are emitted into designs/diagrams/usecases.puml.
 //
 // Per-boundary summary and use-case-layer warnings are printed to
-// stdout. Foundation-layer issues (unresolved IDs, ID grammar, wrong
-// kind) are the foundation validator's responsibility — see
+// stdout. The foundation validator is invoked before generation so
+// grammar / cross-reference errors fail fast — see
 // .agents/skills/design-model/scripts/validate.mjs.
 //
 // Exit codes:
-//   0 — success (warnings allowed)
-//   2 — internal failure (file unreadable, parse error, missing usecases[])
+//   0 — success (warnings allowed); also returned for an empty / absent
+//       usecases[] section so the script is safe to run on a fresh model
+//   1 — foundation validation failed (ID grammar or cross-ref errors)
+//   2 — internal failure (file unreadable, parse error)
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { argv, exit, stdout, stderr } from "node:process";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const VALIDATOR_PATH = resolve(__dirname, "..", "..", "design-model", "scripts", "validate.mjs");
+
+// Run the foundation validator as a subprocess on the same model file
+// and forward its stdio. Resolves to its exit code.
+function runValidator(modelPath, asJson) {
+  return new Promise((resolveCode) => {
+    const args = [VALIDATOR_PATH];
+    if (asJson) args.push("--json");
+    args.push(modelPath);
+    const child = spawn(process.execPath, args, { stdio: "inherit" });
+    child.on("error", (err) => {
+      stderr.write(`generate.mjs: failed to spawn foundation validator: ${err.message}\n`);
+      resolveCode(2);
+    });
+    child.on("exit", (code) => resolveCode(code ?? 2));
+  });
+}
 
 async function loadModel(path, asJson) {
   const text = await readFile(path, "utf8");
@@ -73,7 +96,7 @@ function plantQuote(s) {
 
 // ─── Per-boundary rendering ───────────────────────────────────────────────
 // Render one diagram for the given system label and the use cases that
-// belong to it. Cross-boundary include/extend/specializes references are
+// belong to it. Cross-boundary include/extend/generalizationOf references are
 // skipped with a warning so each boundary diagram stays self-contained.
 function renderBoundary(systemLabel, ucsInBoundary, model, warnings) {
   const knownActors = new Map(
@@ -190,10 +213,10 @@ function renderBoundary(systemLabel, ucsInBoundary, model, warnings) {
       hasRel = true;
       renderRel("<<extend>>", uc.id, target, ext.condition);
     }
-    if (uc.specializes) {
-      const parent = uc.specializes;
+    if (uc.generalizationOf) {
+      const parent = uc.generalizationOf;
       if (parent === uc.id) {
-        warnings.push(`${reportLabel}: ${uc.id} specializes itself — remove the self-reference`);
+        warnings.push(`${reportLabel}: ${uc.id} declares generalizationOf itself — remove the self-reference`);
       } else {
         hasRel = true;
         renderRel("generalization", uc.id, parent);
@@ -217,7 +240,7 @@ function summariseBoundary(systemLabel, ucsInBoundary, warnings) {
     for (const a of uc.actors ?? []) actorSet.add(a);
     includes += (uc.include ?? []).length;
     extendsCount += (uc.extend ?? []).length;
-    if (uc.specializes) generalizations += 1;
+    if (uc.generalizationOf) generalizations += 1;
   }
   const summary =
     `${boundaryName} — ${actorSet.size} actors · ${ucsInBoundary.length} use cases · ` +
@@ -240,10 +263,11 @@ function lintAll(model, warnings) {
 
   // Isolation report — a use case is isolated when it has no actors AND
   // is not referenced by any *other* use case's include[],
-  // extend[].usecase, or specializes. Self-references are excluded from
-  // the reference set so a no-actor use case that only self-includes /
-  // self-extends / self-specializes still surfaces as isolated (those
-  // self-loops are also flagged separately in renderBoundary).
+  // extend[].usecase, or generalizationOf. Self-references are excluded
+  // from the reference set so a no-actor use case that only self-
+  // includes, self-extends, or names itself as its own generalizationOf
+  // still surfaces as isolated (those self-loops are also flagged
+  // separately in renderBoundary).
   const referenced = new Set();
   for (const uc of usecases) {
     if (!uc?.id) continue;
@@ -253,7 +277,7 @@ function lintAll(model, warnings) {
     for (const ext of uc.extend ?? []) {
       if (ext?.usecase && ext.usecase !== uc.id) referenced.add(ext.usecase);
     }
-    if (uc.specializes && uc.specializes !== uc.id) referenced.add(uc.specializes);
+    if (uc.generalizationOf && uc.generalizationOf !== uc.id) referenced.add(uc.generalizationOf);
   }
   for (const uc of usecases) {
     if (!uc?.id) continue;
@@ -263,16 +287,16 @@ function lintAll(model, warnings) {
     }
   }
 
-  // Generalization-cycle detection via depth-first walk over `specializes`.
+  // Generalization-cycle detection via depth-first walk over `generalizationOf`.
   // Multiple start nodes can lead into the same cycle, so canonicalise
   // each detected cycle by its sorted node-set signature and warn at
   // most once per distinct cycle.
   const reportedCycles = new Set();
   for (const start of usecases) {
-    if (!start?.id || !start.specializes) continue;
+    if (!start?.id || !start.generalizationOf) continue;
     const path = [start.id];
     const indexInPath = new Map([[start.id, 0]]);
-    let cursor = start.specializes;
+    let cursor = start.generalizationOf;
     while (cursor) {
       if (indexInPath.has(cursor)) {
         // Cycle nodes: from the first occurrence of cursor through the end of path.
@@ -288,7 +312,7 @@ function lintAll(model, warnings) {
       path.push(cursor);
       const next = byId.get(cursor);
       if (!next) break; // unresolved — foundation validator hard-fails
-      cursor = next.specializes;
+      cursor = next.generalizationOf;
     }
   }
 }
@@ -313,10 +337,32 @@ async function main() {
     exit(2);
   }
   const modelPath = resolve(files[0]);
+
+  // Run the foundation validator first so grammar / cross-reference
+  // errors surface before we try to render anything. Sibling skills
+  // delegate this to the user; this skill enforces it because use-case
+  // diagrams cross-link heavily (actors, include, extend, generalizationOf)
+  // and partial validation makes the warnings here hard to trust.
+  const validatorCode = await runValidator(modelPath, asJson);
+  if (validatorCode === 1) {
+    stderr.write("generate.mjs: foundation validation failed — fix the errors above before regenerating.\n");
+    exit(1);
+  }
+  if (validatorCode !== 0) {
+    // 2 = internal failure inside the validator (e.g. missing yaml package).
+    // The validator already printed its own diagnostic to stderr.
+    exit(2);
+  }
+
   const model = await loadModel(modelPath, asJson);
   if (!model || typeof model !== "object") fatal("Model file did not parse to an object.");
   if (!Array.isArray(model.usecases) || model.usecases.length === 0) {
-    fatal("Model has no usecases[] section. Use design-model to bootstrap, then add use cases.");
+    // Empty/absent usecases[] is a clean no-op — the model may simply
+    // not use this layer yet. Mirrors the "skill is safe to run on a
+    // fresh model" requirement so a top-level "regenerate everything"
+    // script can call this without special-casing.
+    stdout.write("No usecases[] section in the model — nothing to generate.\n");
+    exit(0);
   }
 
   const designsDir = dirname(modelPath);

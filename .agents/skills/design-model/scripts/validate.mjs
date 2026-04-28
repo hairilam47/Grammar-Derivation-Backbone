@@ -78,7 +78,7 @@ const CROSS_REFS = [
   { path: "usecases[].actors[]",                 kind: "actor"    },
   { path: "usecases[].include[]",                kind: "usecase"  },
   { path: "usecases[].extend[].usecase",         kind: "usecase"  },
-  { path: "usecases[].specializes",              kind: "usecase"  },
+  { path: "usecases[].generalizationOf",         kind: "usecase"  },
 ];
 
 // IDs of objects nested inside other objects (not top-level sections).
