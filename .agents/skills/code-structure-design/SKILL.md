@@ -101,7 +101,7 @@ Pure read; never writes files (apart from the diagram, which is regenerated as a
 The compare report prints:
 
 - **Modules without a folder**: design declares `intendedFolderPath` but the path doesn't exist under `<root>`.
-- **Folders without a module**: top-level folders under `<root>/src` (and any one-level-deeper folders inside the workspace dirs) that no module's `intendedFolderPath` matches.
+- **Folders without a module**: folders under `<root>/src` and under workspace-style dirs (`packages`, `apps`, `artifacts`), scanned **two levels deep** in each (so both `packages/checkout` and `packages/checkout/src` are considered), that no module's `intendedFolderPath` matches.
 - A small **skip-list** is applied to repo scanning: `.git`, `node_modules`, `dist`, `build`, `.next`, `.turbo`, `.cache`, `coverage`, `.local`. Document any project-specific noise folders you want to ignore by adding the flag `--skip <name>` (repeatable).
 
 The compare mode is read-only by design — it never edits the model. Use the report as a checklist to either reorganise the repo, or to update the design's `intendedFolderPath` values.
@@ -260,8 +260,8 @@ It also:
 
 - Detects cycles in the `allowedDependencies` graph and prints the full cycle path.
 - Reports allowed/forbidden contradictions as errors (exits non-zero).
-- Warns about empty modules, unplaced services, and duplicate `intendedFolderPath` values.
-- In `--compare-repo <root>` mode: walks `<root>/src` (and one level deeper inside workspace-style folders) and reports modules without a folder + folders without a module. Read-only.
+- Warns about empty modules, unplaced services, unknown service IDs in `contains[]`, and duplicate `intendedFolderPath` values.
+- In `--compare-repo <root>` mode: walks `<root>/src` and the workspace-style dirs (`packages`, `apps`, `artifacts`) two levels deep, and reports modules without a folder + folders without a module. Read-only.
 - Skips edges whose endpoints don't resolve (foundation validator hard-fails on those; this script stays useful when you want to regenerate a partially-edited model).
 - Exits 0 on warnings and on cycle reports; non-zero on internal failures (unparseable YAML, missing `modules[]` section) or on allowed/forbidden contradictions.
 

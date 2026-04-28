@@ -185,8 +185,19 @@ function detectCycles(modules) {
 function reportModelHealth(model, warnings, errors) {
   const modules = model.modules ?? [];
   const services = model.services ?? [];
+  const svcIds = new Set(services.map((s) => s.id));
   const placed = new Set();
   for (const m of modules) for (const sId of m?.contains ?? []) placed.add(sId);
+
+  // Unknown contains[] (foundation validator hard-fails on this; we surface
+  // it here too so users who skip validation still see the problem).
+  for (const m of modules) {
+    for (const sId of m?.contains ?? []) {
+      if (!svcIds.has(sId)) {
+        warnings.push(`module ${m.id}: contains unknown service ${sId} (run validate.mjs for the full check)`);
+      }
+    }
+  }
 
   // Empty modules.
   for (const m of modules) {
@@ -274,8 +285,10 @@ async function compareRepo(model, root, skipSet) {
       if (depth > 0) await scanDir(abs, depth - 1);
     }
   }
-  // Scan src/ two levels; also scan top-level workspace dirs one level.
-  await scanDir(resolve(root, "src"), 2);
+  // Scan src/ two levels deep (e.g. src/foo and src/foo/bar); also scan
+  // workspace-style folders (packages/apps/artifacts) two levels deep so a
+  // monorepo sees both `packages/checkout` and `packages/checkout/src`.
+  await scanDir(resolve(root, "src"), 1);
   for (const ws of ["packages", "apps", "artifacts"]) {
     await scanDir(resolve(root, ws), 1);
   }
