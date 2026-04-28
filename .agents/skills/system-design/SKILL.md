@@ -56,13 +56,13 @@ Walk the user through one function at a time:
 2. **Owning service** — `service:<id>`. The generator warns if the service does not also list this function in its `exposes[]`.
 3. **Inputs / outputs** — free-form list of `{ name, type }` pairs. Types are notational (`uuid`, `string`, `Array<{...}>`, `Money` — anything readable). The skill does not type-check them.
 4. **Reads / writes** — lists of `entity:<id>` IDs from the data layer. Surfaces in the C4 diagram as data-affinity hints (currently only enumerated in the textual report; see *Out of scope*).
-5. **Flow membership** — list of `flow:<id>` IDs this function participates in. The same flow membership is restated symmetrically in `flows[].sequence[]` — both directions are validated.
+5. **Flow membership** — list of `flow:<id>` IDs this function participates in. The same membership is also expressed from the other direction in `flows[].sequence[]`. Each direction is independently checked for ID resolution by the foundation validator; cross-direction symmetry (a function listing a flow that doesn't list it back, or vice versa) is **not** enforced today — keep them in sync by hand when you edit either side.
 
 ### 4. Add or edit a flow
 
 A flow is a named end-to-end path through the system. Walk the user through:
 
-1. **Name and ID** — `flow:<kebab-case>` (`flow:place-order`, `flow:billing/refund`).
+1. **Name and ID** — `flow:<kebab-case>` (`flow:place-order`, `flow:billing-refund`). The foundation validator allows lowercase letters, digits, and hyphens only — no slashes or dots in the name part.
 2. **Owning process** — `process:<id>` linking the flow to the BPMN layer (one process can have many flows: happy path, error path, etc.).
 3. **Description** — one sentence on what end-to-end behaviour the flow represents.
 4. **Sequence** — ordered list of `function:Service.method` IDs invoked along the path. The generator turns this list into a PlantUML sequence diagram, drawing one participant per service touched.
