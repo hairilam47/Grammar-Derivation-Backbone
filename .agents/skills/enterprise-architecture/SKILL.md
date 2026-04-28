@@ -1,21 +1,21 @@
 ---
 name: enterprise-architecture
-description: Orchestrator for the cross-layer design model. Walks all four sibling layer-skills (BPMN business processes, ERD data, system-design application, code-structure modules) plus its own technology layer (deployment nodes, environments, runtime platforms) in TOGAF / ArchiMate-flavoured order — Business → Data → Application → Technology — and emits a layered overview diagram (`designs/diagrams/ea-overview.puml`) and an end-to-end traceability report (`designs/ea-traceability.md`) that walks every business process down through the functions, entities, services, modules, and deployment nodes it touches. Use this skill whenever the user mentions "enterprise architecture", "EA", "TOGAF", "ArchiMate", "end-to-end design", "architecture overview", "traceability", "business-to-technology mapping", "where does process X land in the codebase", or asks for a single picture or report that ties business processes through to deployment. Owns the `technology` model section (deployment nodes, environments, runtime platforms) — purely design notation, not infrastructure-as-code.
+description: Orchestrator for the cross-layer design model. Walks all six sibling layer-skills (user-story backlog, use-case goals, BPMN business processes, ERD data, system-design application, code-structure modules) plus its own technology layer (deployment nodes, environments, runtime platforms) in TOGAF / ArchiMate-flavoured order — Requirements → Business → Data → Application → Technology — and emits a layered overview diagram (`designs/diagrams/ea-overview.puml`) and an end-to-end traceability report (`designs/ea-traceability.md`) that walks every business process up to the stories and use cases that drive it and down through the functions, entities, services, modules, and deployment nodes that ship it. Use this skill whenever the user mentions "enterprise architecture", "EA", "TOGAF", "ArchiMate", "end-to-end design", "architecture overview", "traceability", "business-to-technology mapping", "story-to-deployment mapping", "where does this story land in the codebase", "where does process X land in the codebase", or asks for a single picture or report that ties stories and processes through to deployment. Owns the `technology` model section (deployment nodes, environments, runtime platforms) — purely design notation, not infrastructure-as-code.
 ---
 
-# Enterprise Architecture Orchestrator (Business → Data → Application → Technology)
+# Enterprise Architecture Orchestrator (Requirements → Business → Data → Application → Technology)
 
-The capstone skill on top of the [`design-model`](../design-model/SKILL.md) foundation. Composes the slices owned by the four sibling layer-skills and adds the **technology** layer (deployment nodes, environments, runtime platforms) it owns directly. Produces two artifacts:
+The capstone skill on top of the [`design-model`](../design-model/SKILL.md) foundation. Composes the slices owned by the six sibling layer-skills and adds the **technology** layer (deployment nodes, environments, runtime platforms) it owns directly. Produces two artifacts:
 
-- **Layered overview diagram** — `designs/diagrams/ea-overview.puml`. A single PlantUML picture with all four layers stacked top-to-bottom, populated with the actual process / entity / service / module / node IDs from the model, with cross-layer arrows showing the implementedBy / reads-writes / deployedTo relationships.
-- **Traceability report** — `designs/ea-traceability.md`. A markdown document with one section per business process. Each section walks down through the stack: tasks → functions → entities (read/written) → services → modules → deployment nodes. Every gap in the trace is named with exact IDs (`process:order-fulfilment / task:pay — NO IMPLEMENTING FUNCTIONS DECLARED`).
+- **Layered overview diagram** — `designs/diagrams/ea-overview.puml`. A single PlantUML picture with all five layers stacked top-to-bottom, populated with the actual story / use case / process / entity / service / module / node IDs from the model, with cross-layer arrows showing the realizes / implementedBy / reads-writes / deployedTo relationships.
+- **Traceability report** — `designs/ea-traceability.md`. A markdown document with one section per business process. Each section opens with a **Requirements** subsection that lists the stories and use cases that trace down into the process, then walks down through the stack: tasks → functions → entities (read/written) → services → modules → deployment nodes. Every gap in the trace is named with exact IDs (`process:order-fulfilment / task:pay — NO IMPLEMENTING FUNCTIONS DECLARED`).
 
-This is the only skill that reads from every layer at once. The four focused skills (`bpmn-design`, `erd-design`, `system-design`, `code-structure-design`) each remain triggerable on their own and do not require the orchestrator. The orchestrator never edits the layer-owned sections — the sibling skills own those.
+This is the only skill that reads from every layer at once. The six focused skills (`user-story-design`, `use-case-design`, `bpmn-design`, `erd-design`, `system-design`, `code-structure-design`) each remain triggerable on their own and do not require the orchestrator. The orchestrator never edits the layer-owned sections — the sibling skills own those.
 
 ## When to load this skill
 
 - The user mentions enterprise architecture, EA, TOGAF, ArchiMate, end-to-end design, architecture overview, traceability, or business-to-technology mapping.
-- The user asks "where does this process land in the code", "which deployment node runs this function", or "show me a single picture of the whole architecture".
+- The user asks "where does this story land in the code", "which use case does this function realize", "where does this process land in the code", "which deployment node runs this function", or "show me a single picture of the whole architecture".
 - The user wants to add, edit, or visualise deployment nodes / environments / runtime platforms.
 - A cross-layer change has happened (e.g. a new process was added) and you need to refresh the overview and the trace report.
 
@@ -25,6 +25,7 @@ Load the [`design-model`](../design-model/SKILL.md) foundation skill alongside t
 
 | TOGAF Phase | ArchiMate Layer | Owned by sibling skill | Model section |
 |-------------|-----------------|------------------------|---------------|
+| Preliminary / Phase A — Architecture Vision | Motivation Layer (drivers, goals, requirements) | [`user-story-design`](../user-story-design/SKILL.md) + [`use-case-design`](../use-case-design/SKILL.md) | `stories[]`, `usecases[]` |
 | Phase B — Business Architecture | Business Layer (processes, actors, business functions) | [`bpmn-design`](../bpmn-design/SKILL.md) | `processes[]`, `actors[]` |
 | Phase C — Data Architecture | Information Layer (data objects) | [`erd-design`](../erd-design/SKILL.md) | `entities[]` |
 | Phase C — Application Architecture | Application Layer (application services, components, functions) | [`system-design`](../system-design/SKILL.md) + [`code-structure-design`](../code-structure-design/SKILL.md) | `services[]`, `functions[]`, `flows[]`, `modules[]` |
@@ -69,7 +70,7 @@ The foundation validator covers ID grammar and cross-reference resolution for ev
 node .agents/skills/enterprise-architecture/scripts/generate.mjs designs/system-model.yaml
 ```
 
-This always overwrites `designs/diagrams/ea-overview.puml` and `designs/ea-traceability.md`. Optional `--render-all` also re-runs every sibling generator (BPMN, ERD, system, code-structure) so all layer diagrams refresh in one shot.
+This always overwrites `designs/diagrams/ea-overview.puml` and `designs/ea-traceability.md`. Optional `--render-all` also re-runs every sibling generator (user-story, use-case, BPMN, ERD, system, code-structure) so all layer diagrams refresh in one shot.
 
 ### 6. Read the cross-layer gap report
 
@@ -81,10 +82,12 @@ After generation the script prints the full gap list — every place a trace bre
 - **Modules without a deployment node** — `module:X — no deployedTo[] declared`
 - **Processes with no tasks** — `process:X — no tasks declared`
 - **Nodes referenced by no module** — `node:X — no module deploys to it` (informational only — does not count toward the `--strict` exit-1 total; a node may exist for documentation reasons, e.g. external services)
+- **Stories that realize no use case** — `story:X — no realizes[] declared` (informational only — sometimes intentional, e.g. pure-plumbing stories; usually a sign the use-case layer has not caught up)
+- **Use cases not realized by any story** — `usecase:X — no story realizes it` (informational only — fine for early-stage use cases; suspicious once delivery has started)
 
 Functions that don't touch any entities are not flagged — many service functions legitimately have no `reads[]`/`writes[]` (HTTP shims, no-op endpoints, etc.).
 
-Exit codes: 0 on success (warnings are OK); 1 on cross-layer trace gaps that the user actively asked the report to flag (`--strict`); 2 on internal failures.
+Exit codes: 0 on success (warnings are OK); 1 when `--strict` was passed AND the report has at least one **non-informational** gap (informational categories — orphan nodes, stories without use cases, use cases without stories — are reported but never count toward the strict total); 2 on internal failures.
 
 ## Technology section — object shape
 
@@ -127,11 +130,20 @@ technology:
 
 ## Layered overview diagram convention
 
-The overview is **one** diagram with **four** stacked layers. Each layer is rendered as a coloured rectangle containing the IDs from that layer:
+The overview is **one** diagram with **five** stacked layers. Each layer is rendered as a coloured rectangle containing the IDs from that layer:
 
 ```plantuml
 @startuml ea-overview
 title Enterprise Architecture — Overview
+
+rectangle "Requirements Layer (stories, use cases)" as L_requirements #E1D5E7 {
+  rectangle "epic: Ordering" as L_req_epic_ordering {
+    rectangle "story:customer-orders-food (must)" as story_customer_orders_food
+  }
+  rectangle "system: restaurant" as L_req_sys_restaurant {
+    usecase "usecase:order-food\nOrder Food" as uc_order_food
+  }
+}
 
 rectangle "Business Layer (BPMN — processes, actors)" as L_business #FFF2CC {
   rectangle "process:order-fulfilment\nOrder Fulfilment" as proc_order_fulfilment
@@ -156,18 +168,21 @@ rectangle "Technology Layer (deployment nodes)" as L_technology #F8CECC {
 }
 
 ' Cross-layer arrows
-proc_order_fulfilment ..> fn_OrderService_placeOrder : "implementedBy"
+story_customer_orders_food ..> uc_order_food         : "realizes"
+uc_order_food              ..> proc_order_fulfilment : "implementedBy"
+proc_order_fulfilment      ..> fn_OrderService_placeOrder : "implementedBy"
 fn_OrderService_placeOrder ..> ent_Order             : "writes"
-mod_checkout              ..> node_api_host          : "deployedTo"
+mod_checkout               ..> node_api_host         : "deployedTo"
 @enduml
 ```
 
 Conventions:
 
-- One node per ID; aliases are kind-prefixed (`proc_`, `actor_`, `ent_`, `mod_`, `svc_`, `fn_`, `node_`) and sanitised to be PlantUML-safe.
-- **Nesting**: `service` components render inside their `module` rectangle; functions float in the application layer because a function belongs to a service that belongs to a module — three levels of nesting clutters the diagram more than it clarifies.
-- **Cross-layer arrows** use the dotted style (`..>`) to distinguish them from intra-layer arrows in the per-layer diagrams (which use `->` and `-->`). Labels: `implementedBy`, `reads`, `writes`, `deployedTo`.
-- The diagram is necessarily a simplification — for the full per-layer detail, refer to the four sibling diagrams (`process-*.puml`, `erd.puml`, `system-c4.puml`, `code-structure.puml`).
+- One node per ID; aliases are kind-prefixed (`story_`, `uc_`, `proc_`, `actor_`, `ent_`, `mod_`, `svc_`, `fn_`, `node_`) and sanitised to be PlantUML-safe.
+- **Nesting in the Requirements layer**: stories sit inside an `epic: <label>` rectangle (one per distinct `epic`, plus "Unassigned" for stories with no epic); use cases sit inside a `system: <label>` rectangle (one per distinct `system`, plus "(ungrouped)" for use cases with no system).
+- **Nesting in the Application layer**: `service` components render inside their `module` rectangle; functions float in the application layer because a function belongs to a service that belongs to a module — three levels of nesting clutters the diagram more than it clarifies.
+- **Cross-layer arrows** use the dotted style (`..>`) to distinguish them from intra-layer arrows in the per-layer diagrams (which use `->` and `-->`). Labels: `realizes`, `implementedBy`, `reads`, `writes`, `deployedTo`. The `usecase --> process` `implementedBy` arrow is computed transitively — drawn when at least one story that realizes the use case shares an `implementedBy` function with one of the process's tasks.
+- The diagram is necessarily a simplification — for the full per-layer detail, refer to the six sibling diagrams (`stories.md`, `usecase-*.puml`, `process-*.puml`, `erd.puml`, `system-c4.puml`, `code-structure.puml`).
 
 ## Traceability report convention
 
@@ -181,6 +196,12 @@ Generated from `designs/system-model.yaml` on 2026-04-28T12:00:00Z.
 ## process:order-fulfilment — Order Fulfilment
 
 > Customer places order, payment is taken, fulfilment kicks in.
+
+### Requirements
+- **Use cases**:
+  - usecase:order-food — Order Food
+- **Stories**:
+  - story:customer-orders-food — order food *(must)*
 
 ### task:place-order — "Customer places order"
 - **Lane**: lane:customer
@@ -212,8 +233,12 @@ Generated from `designs/system-model.yaml` on 2026-04-28T12:00:00Z.
   - process:order-fulfilment / task:pay
 - Modules not deployed:
   - module:warehouse → no deployedTo[] declared
-- Nodes referenced by no module:
-  - node:legacy-vm (informational only)
+- Nodes referenced by no module (informational):
+  - node:legacy-vm
+- Stories that realize no use case (informational):
+  - story:upgrade-postgres
+- Use cases not realized by any story (informational):
+  - usecase:archive-old-orders
 ```
 
 Every gap is named with the exact IDs the user needs to find in the model. The summary at the bottom is a reconciliation checklist — fix the listed entries in the appropriate sibling layer's section.
@@ -227,21 +252,21 @@ Every gap is named with the exact IDs the user needs to find in the model. The s
 
 It also:
 
-- Walks all four layers and builds the cross-layer gap report described above.
+- Walks all five layers and builds the cross-layer gap report described above.
 - Resolves `services[].module` ↔ `modules[].contains[]` to find the module for each service (either field works; the report uses whichever resolves).
 - Tags nodes with the environment that contains them (if `environments[]` is declared).
 - Skips edges whose endpoints don't resolve (the foundation validator hard-fails on those — this script stays useful when you want to regenerate a partially-edited model).
-- Exits 0 on warnings; 1 only when `--strict` is passed and the gap report has any entry; 2 on internal failures.
+- Exits 0 on warnings; 1 only when `--strict` is passed and the gap report has at least one **non-informational** entry (informational categories never count); 2 on internal failures.
 
 ### Flags
 
 | Flag | Purpose |
 |------|---------|
 | `--json` | Treat the input as JSON instead of YAML. |
-| `--render-all` | Also run every sibling generator (BPMN, ERD, system, code-structure) so all layer diagrams refresh in one shot. |
+| `--render-all` | Also run every sibling generator (user-story, use-case, BPMN, ERD, system, code-structure) so all layer diagrams refresh in one shot. |
 | `--no-overview` | Skip writing `ea-overview.puml`. |
 | `--no-trace` | Skip writing `ea-traceability.md`. |
-| `--strict` | Exit non-zero (1) if the cross-layer gap report has any entry. |
+| `--strict` | Exit non-zero (1) if the cross-layer gap report has at least one non-informational entry. Informational categories (orphan nodes, stories that realize no use case, use cases not realized by any story) are reported but never count toward the strict total. |
 
 ## Bundled files
 

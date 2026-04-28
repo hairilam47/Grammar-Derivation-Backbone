@@ -36,6 +36,7 @@ const KIND_RULES = {
   flow:     { name: /^[a-z][a-z0-9-]*$/,                                section: "flows" },
   node:     { name: /^[a-z][a-z0-9-]*$/,                                section: null /* technology.nodes */ },
   usecase:  { name: /^[a-z][a-z0-9-]*$/,                                section: "usecases" },
+  story:    { name: /^[a-z][a-z0-9-]*$/,                                section: "stories" },
 };
 
 // Cross-reference fields. Each entry: where to walk, and what kind(s) the
@@ -79,6 +80,11 @@ const CROSS_REFS = [
   { path: "usecases[].include[]",                kind: "usecase"  },
   { path: "usecases[].extend[].usecase",         kind: "usecase"  },
   { path: "usecases[].generalizationOf",         kind: "usecase"  },
+  // User stories
+  { path: "stories[].role",                      kind: "actor"    },
+  { path: "stories[].realizes[]",                kind: "usecase"  },
+  { path: "stories[].implementedBy[]",           kind: "function" },
+  { path: "stories[].dependsOn[]",               kind: "story"    },
 ];
 
 // IDs of objects nested inside other objects (not top-level sections).
@@ -101,6 +107,7 @@ const TOP_LEVEL_ID_SECTIONS = [
   { section: "modules",   kind: "module"   },
   { section: "flows",     kind: "flow"     },
   { section: "usecases",  kind: "usecase"  },
+  { section: "stories",   kind: "story"    },
 ];
 
 // ─── Reporter ─────────────────────────────────────────────────────────────

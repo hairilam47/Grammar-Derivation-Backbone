@@ -10,12 +10,15 @@
 // resolution are owned by the foundation validator
 // (.agents/skills/design-model/scripts/validate.mjs).
 //
-// Optional --render-all also runs the four sibling generators sequentially
-// so all layer diagrams refresh in one shot.
+// Optional --render-all also runs the six sibling generators sequentially
+// (user-story, use-case, BPMN, ERD, system, code-structure) so all layer
+// diagrams refresh in one shot.
 //
 // Exit codes:
 //   0 — success (warnings allowed)
-//   1 — gap report has entries AND --strict was passed
+//   1 — non-informational gap report entries AND --strict was passed
+//       (informational categories — e.g. orphan nodes, stories without
+//       use cases — are reported but do NOT count toward the strict total)
 //   2 — internal failure (file unreadable, parse error)
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
@@ -63,8 +66,19 @@ function alias(id) {
     kind === "function" ? "fn_" :
     kind === "module"   ? "mod_" :
     kind === "node"     ? "node_" :
+    kind === "usecase"  ? "uc_" :
+    kind === "story"    ? "story_" :
     "n_";
   return prefix + safe;
+}
+
+// epic / system label → slug for stable nested-rectangle aliases.
+function labelSlug(label, fallback) {
+  const slug = (label ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return slug || fallback;
 }
 
 function plantQuote(s) {
@@ -98,6 +112,8 @@ function buildIndex(model) {
   const functions = withId(model.functions,           "functions[]");
   const modules   = withId(model.modules,             "modules[]");
   const nodes     = withId(model.technology?.nodes,   "technology.nodes[]");
+  const usecases  = withId(model.usecases,            "usecases[]");
+  const stories   = withId(model.stories,             "stories[]");
   const environments = Array.isArray(model.technology?.environments) ? model.technology.environments : [];
   const runtimes     = Array.isArray(model.technology?.runtimes)     ? model.technology.runtimes     : [];
 
@@ -107,6 +123,8 @@ function buildIndex(model) {
   const entById = new Map(entities.map((e)  => [e.id, e]));
   const nodeById = new Map(nodes.map((n)    => [n.id, n]));
   const procById = new Map(processes.map((p) => [p.id, p]));
+  const ucById  = new Map(usecases.map((u)  => [u.id, u]));
+  const storyById = new Map(stories.map((s) => [s.id, s]));
 
   // service → module: prefer modules[].contains[]; fall back to services[].module.
   const serviceToModule = new Map();
@@ -126,11 +144,50 @@ function buildIndex(model) {
     }
   }
 
+  // Reverse index: usecase → stories[] that realize it.
+  const usecaseToStories = new Map();
+  for (const s of stories) {
+    for (const ucId of s?.realizes ?? []) {
+      if (!usecaseToStories.has(ucId)) usecaseToStories.set(ucId, []);
+      usecaseToStories.get(ucId).push(s);
+    }
+  }
+
   return {
-    processes, actors, entities, services, functions, modules, nodes, environments, runtimes,
-    fnById, svcById, modById, entById, nodeById, procById,
-    serviceToModule, nodeToEnvs,
+    processes, actors, entities, services, functions, modules, nodes, usecases, stories,
+    environments, runtimes,
+    fnById, svcById, modById, entById, nodeById, procById, ucById, storyById,
+    serviceToModule, nodeToEnvs, usecaseToStories,
   };
+}
+
+// Resolve the set of process tasks a usecase reaches via stories.
+// A usecase → task arrow is drawn when at least one story realizing the
+// usecase shares an `implementedBy` function with the task. Use cases
+// have no `implementedBy` field of their own, so the linkage is purely
+// transitive through the story layer.
+function usecaseTaskLinks(idx) {
+  const links = []; // [{ usecaseId, processId, taskId }]
+  const seen = new Set();
+  for (const uc of idx.usecases) {
+    const stories = idx.usecaseToStories.get(uc.id) ?? [];
+    if (stories.length === 0) continue;
+    const ucImplFns = new Set();
+    for (const s of stories) for (const fn of s?.implementedBy ?? []) ucImplFns.add(fn);
+    if (ucImplFns.size === 0) continue;
+    for (const p of idx.processes) {
+      for (const t of p?.tasks ?? []) {
+        const taskFns = t?.implementedBy ?? [];
+        const hit = taskFns.some((fn) => ucImplFns.has(fn));
+        if (!hit) continue;
+        const key = `${uc.id}|${p.id}|${t.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        links.push({ usecaseId: uc.id, processId: p.id, taskId: t.id });
+      }
+    }
+  }
+  return links;
 }
 
 // ─── Overview diagram ─────────────────────────────────────────────────────
@@ -140,6 +197,80 @@ function renderOverview(idx) {
   lines.push("' Generated from designs/system-model.yaml — do not hand-edit.");
   lines.push("' Regenerate with: node .agents/skills/enterprise-architecture/scripts/generate.mjs designs/system-model.yaml");
   lines.push("title Enterprise Architecture — Overview");
+  lines.push("");
+
+  // Requirements layer (stories grouped by epic, use cases grouped by system).
+  // Two distinct epic labels can slugify to the same alias ("Cust A" and
+  // "cust-a" both → cust_a), which would produce a duplicate-alias PlantUML
+  // error. Disambiguate by ordinal suffix after the first collision.
+  const assignSlugs = (keys, prefix) => {
+    const used = new Set();
+    const out = new Map();
+    let ord = 0;
+    for (const key of keys) {
+      ord += 1;
+      const base = labelSlug(key, `${prefix}_${ord}`);
+      let slug = base;
+      let suffix = 2;
+      while (used.has(slug)) slug = `${base}_${suffix++}`;
+      used.add(slug);
+      out.set(key, slug);
+    }
+    return out;
+  };
+
+  lines.push(`rectangle "Requirements Layer (stories, use cases)" as L_requirements #E1D5E7 {`);
+  if (idx.stories.length > 0) {
+    const storiesByEpic = new Map();
+    for (const s of idx.stories) {
+      const key = typeof s.epic === "string" && s.epic.trim() !== "" ? s.epic : "";
+      if (!storiesByEpic.has(key)) storiesByEpic.set(key, []);
+      storiesByEpic.get(key).push(s);
+    }
+    const epicKeys = [...storiesByEpic.keys()].sort((a, b) => {
+      if (a === "") return 1;
+      if (b === "") return -1;
+      return a.localeCompare(b);
+    });
+    const epicSlugs = assignSlugs(epicKeys, "epic");
+    for (const key of epicKeys) {
+      const label = key === "" ? "Unassigned" : key;
+      lines.push(`  rectangle "epic: ${plantQuote(label)}" as L_req_epic_${epicSlugs.get(key)} {`);
+      for (const s of storiesByEpic.get(key)) {
+        const prio = s.priority ? ` (${s.priority})` : "";
+        const lbl = `${s.id}${prio}`;
+        lines.push(`    rectangle "${plantQuote(lbl)}" as ${alias(s.id)}`);
+      }
+      lines.push(`  }`);
+    }
+  }
+  if (idx.usecases.length > 0) {
+    const ucBySystem = new Map();
+    for (const uc of idx.usecases) {
+      const key = typeof uc.system === "string" && uc.system.trim() !== "" ? uc.system : "";
+      if (!ucBySystem.has(key)) ucBySystem.set(key, []);
+      ucBySystem.get(key).push(uc);
+    }
+    const sysKeys = [...ucBySystem.keys()].sort((a, b) => {
+      if (a === "") return 1;
+      if (b === "") return -1;
+      return a.localeCompare(b);
+    });
+    const sysSlugs = assignSlugs(sysKeys, "system");
+    for (const key of sysKeys) {
+      const label = key === "" ? "(ungrouped)" : key;
+      lines.push(`  rectangle "system: ${plantQuote(label)}" as L_req_sys_${sysSlugs.get(key)} {`);
+      for (const uc of ucBySystem.get(key)) {
+        const lbl = uc.name ? `${uc.id}\\n${uc.name}` : uc.id;
+        lines.push(`    usecase "${plantQuote(lbl)}" as ${alias(uc.id)}`);
+      }
+      lines.push(`  }`);
+    }
+  }
+  if (idx.stories.length === 0 && idx.usecases.length === 0) {
+    lines.push(`  rectangle "(no stories or use cases declared)" as L_requirements_empty`);
+  }
+  lines.push(`}`);
   lines.push("");
 
   // Business layer.
@@ -247,6 +378,24 @@ function renderOverview(idx) {
       lines.push(`${alias(m.id)} ..> ${alias(nId)} : "deployedTo"`);
     }
   }
+  // Story → use case (realizes).
+  for (const s of idx.stories) {
+    for (const ucId of s?.realizes ?? []) {
+      if (!idx.ucById.has(ucId)) continue;
+      lines.push(`${alias(s.id)} ..> ${alias(ucId)} : "realizes"`);
+    }
+  }
+  // Use case → process task (computed transitively via stories).
+  // Anchor the arrow at the process rectangle (tasks are not first-class
+  // diagram nodes). One arrow per usecase/process pair, even when several
+  // tasks of the same process are touched, to keep the overview readable.
+  const ucProcSeen = new Set();
+  for (const link of usecaseTaskLinks(idx)) {
+    const key = `${link.usecaseId}|${link.processId}`;
+    if (ucProcSeen.has(key)) continue;
+    ucProcSeen.add(key);
+    lines.push(`${alias(link.usecaseId)} ..> ${alias(link.processId)} : "implementedBy"`);
+  }
 
   lines.push("");
   lines.push("@enduml");
@@ -289,6 +438,47 @@ function renderTraceability(idx) {
       out.push(`> ${p.description}`);
     }
     out.push("");
+
+    // Requirements subsection — stories whose `implementedBy[]` intersects
+    // any task's `implementedBy[]` for this process, plus the use cases
+    // those stories realize. Skipped when no stories or use cases are
+    // declared, so the subsection only appears once a model uses the
+    // requirements layer.
+    if (idx.stories.length > 0 || idx.usecases.length > 0) {
+      const taskFns = new Set();
+      for (const t of p?.tasks ?? []) for (const fn of t?.implementedBy ?? []) taskFns.add(fn);
+      const matchingStories = [];
+      const realizedUcs = new Set();
+      for (const s of idx.stories) {
+        const hit = (s?.implementedBy ?? []).some((fn) => taskFns.has(fn));
+        if (!hit) continue;
+        matchingStories.push(s);
+        for (const ucId of s?.realizes ?? []) realizedUcs.add(ucId);
+      }
+      out.push("### Requirements");
+      if (matchingStories.length === 0 && realizedUcs.size === 0) {
+        out.push("- _No stories or use cases trace down into this process._");
+      } else {
+        if (realizedUcs.size > 0) {
+          out.push("- **Use cases**:");
+          for (const ucId of [...realizedUcs].sort()) {
+            const uc = idx.ucById.get(ucId);
+            const name = uc?.name ? ` — ${uc.name}` : "";
+            out.push(`  - ${ucId}${name}`);
+          }
+        }
+        if (matchingStories.length > 0) {
+          out.push("- **Stories**:");
+          for (const s of matchingStories) {
+            const goal = s.goal ? ` — ${s.goal}` : "";
+            const prio = s.priority ? ` *(${s.priority})*` : "";
+            out.push(`  - ${s.id}${goal}${prio}`);
+          }
+        }
+      }
+      out.push("");
+    }
+
     const tasks = p.tasks ?? [];
     if (tasks.length === 0) {
       out.push("⚠ NO TASKS DECLARED");
@@ -380,6 +570,15 @@ function buildGapReport(idx) {
     .filter((p) => (p?.tasks?.length ?? 0) === 0)
     .map((p) => p.id);
 
+  // Requirements-layer gaps — informational (excluded from the --strict
+  // exit-1 total, in line with the orphan-nodes precedent above).
+  const storiesWithoutUsecase = idx.stories
+    .filter((s) => (s?.realizes?.length ?? 0) === 0)
+    .map((s) => s.id);
+  const usecasesWithoutStory = idx.usecases
+    .filter((uc) => !idx.usecaseToStories.has(uc.id) || idx.usecaseToStories.get(uc.id).length === 0)
+    .map((uc) => uc.id);
+
   return {
     tasksWithoutImpl,
     fnWithoutService,
@@ -387,29 +586,39 @@ function buildGapReport(idx) {
     modWithoutDeploy,
     orphanNodes,
     procWithoutTasks,
+    storiesWithoutUsecase,
+    usecasesWithoutStory,
   };
 }
 
-function printGapReport(rep) {
-  const sections = [
-    ["Process tasks without an implementing function", rep.tasksWithoutImpl],
-    ["Functions without an owning service",            rep.fnWithoutService],
-    ["Services not placed in any module",              rep.svcWithoutModule],
-    ["Modules not deployed",                           rep.modWithoutDeploy],
-    ["Processes with no tasks",                        rep.procWithoutTasks],
-    ["Nodes referenced by no module (informational)",  rep.orphanNodes],
+// Section list shared by printGapReport and appendGapSummaryToTrace.
+// `informational: true` excludes a section from the --strict exit-1 total,
+// keeping it in the report for visibility but not failing the build.
+function gapSections(rep) {
+  return [
+    { title: "Process tasks without an implementing function", items: rep.tasksWithoutImpl },
+    { title: "Functions without an owning service",            items: rep.fnWithoutService },
+    { title: "Services not placed in any module",              items: rep.svcWithoutModule },
+    { title: "Modules not deployed",                           items: rep.modWithoutDeploy },
+    { title: "Processes with no tasks",                        items: rep.procWithoutTasks },
+    { title: "Nodes referenced by no module",                  items: rep.orphanNodes,            informational: true },
+    { title: "Stories that realize no use case",               items: rep.storiesWithoutUsecase,  informational: true },
+    { title: "Use cases not realized by any story",            items: rep.usecasesWithoutStory,   informational: true },
   ];
+}
+
+function printGapReport(rep) {
+  const sections = gapSections(rep);
   let total = 0;
   stdout.write("\nCross-layer gap report:\n");
-  for (const [title, items] of sections) {
-    if (items.length === 0) {
-      stdout.write(`  ✓ ${title}: none\n`);
+  for (const sec of sections) {
+    const tag = sec.informational ? " (informational)" : "";
+    if (sec.items.length === 0) {
+      stdout.write(`  ✓ ${sec.title}${tag}: none\n`);
     } else {
-      stdout.write(`  ⚠ ${title} (${items.length}):\n`);
-      for (const it of items) stdout.write(`      - ${it}\n`);
-      // Orphan nodes are informational; everything else counts toward the gap total.
-      if (title.startsWith("Nodes referenced")) continue;
-      total += items.length;
+      stdout.write(`  ⚠ ${sec.title}${tag} (${sec.items.length}):\n`);
+      for (const it of sec.items) stdout.write(`      - ${it}\n`);
+      if (!sec.informational) total += sec.items.length;
     }
   }
   return total;
@@ -417,20 +626,14 @@ function printGapReport(rep) {
 
 function appendGapSummaryToTrace(trace, rep) {
   const out = [trace, "---", "", "## Cross-layer gap summary", ""];
-  const sections = [
-    ["Process tasks without an implementing function", rep.tasksWithoutImpl],
-    ["Functions without an owning service",            rep.fnWithoutService],
-    ["Services not placed in any module",              rep.svcWithoutModule],
-    ["Modules not deployed",                           rep.modWithoutDeploy],
-    ["Processes with no tasks",                        rep.procWithoutTasks],
-    ["Nodes referenced by no module (informational)",  rep.orphanNodes],
-  ];
+  const sections = gapSections(rep);
   let any = false;
-  for (const [title, items] of sections) {
-    if (items.length === 0) continue;
+  for (const sec of sections) {
+    if (sec.items.length === 0) continue;
     any = true;
-    out.push(`- **${title}** (${items.length}):`);
-    for (const it of items) out.push(`  - ${it}`);
+    const tag = sec.informational ? " (informational)" : "";
+    out.push(`- **${sec.title}${tag}** (${sec.items.length}):`);
+    for (const it of sec.items) out.push(`  - ${it}`);
   }
   if (!any) out.push("_No cross-layer gaps detected._");
   out.push("");
@@ -444,6 +647,8 @@ function renderSiblings(modelPath, asJson) {
     ["erd-design",            "scripts/generate.mjs"],
     ["system-design",         "scripts/generate.mjs"],
     ["code-structure-design", "scripts/generate.mjs"],
+    ["use-case-design",       "scripts/generate.mjs"],
+    ["user-story-design",     "scripts/generate.mjs"],
   ];
   for (const [skill, rel] of siblings) {
     const script = join(SKILLS_ROOT, skill, rel);

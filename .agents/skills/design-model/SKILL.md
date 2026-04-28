@@ -1,11 +1,11 @@
 ---
 name: design-model
-description: Foundation for the cross-layer design-model family of skills. Defines the shared `designs/system-model.yaml` file, the cross-layer ID grammar (`entity:`, `process:`, `service:`, `function:`, `module:`, `actor:`, `flow:`, `node:`, `usecase:`), and a validator that checks ID uniqueness, grammar conformance, and cross-reference resolution. Use this skill whenever the user mentions "design model", "shared model", "cross-layer model", "design schema", "design IDs", "system model", architecture-modelling that needs to span data, process, system, and code layers, or whenever any of the sibling skills (erd-design, bpmn-design, system-design, code-structure-design, use-case-design, enterprise-architecture) need to read or write the model. Use it even if the user asks to "set up architecture documentation that links business processes to functions to entities" — that's exactly what this skill seeds.
+description: Foundation for the cross-layer design-model family of skills. Defines the shared `designs/system-model.yaml` file, the cross-layer ID grammar (`entity:`, `process:`, `service:`, `function:`, `module:`, `actor:`, `flow:`, `node:`, `usecase:`, `story:`), and a validator that checks ID uniqueness, grammar conformance, and cross-reference resolution. Use this skill whenever the user mentions "design model", "shared model", "cross-layer model", "design schema", "design IDs", "system model", architecture-modelling that needs to span data, process, system, and code layers, or whenever any of the sibling skills (erd-design, bpmn-design, system-design, code-structure-design, use-case-design, user-story-design, enterprise-architecture) need to read or write the model. Use it even if the user asks to "set up architecture documentation that links business processes to functions to entities" — that's exactly what this skill seeds.
 ---
 
 # Design Model Foundation
 
-The six design skills (`erd-design`, `bpmn-design`, `system-design`, `code-structure-design`, `use-case-design`, `enterprise-architecture`) all read from and write to one file: **`designs/system-model.yaml`**. This skill owns that file's schema, the ID grammar that links objects across layers, and the validator that keeps it honest.
+The seven design skills (`erd-design`, `bpmn-design`, `system-design`, `code-structure-design`, `use-case-design`, `user-story-design`, `enterprise-architecture`) all read from and write to one file: **`designs/system-model.yaml`**. This skill owns that file's schema, the ID grammar that links objects across layers, and the validator that keeps it honest.
 
 Without this foundation, the focused skills produce isolated diagrams. With it, every business process can be traced down through the functions that implement it, the entities those functions read and write, the services that contain the functions, the modules those services live in, and (via the EA orchestrator) the deployment nodes those modules run on.
 
@@ -73,6 +73,7 @@ Tell the user exactly what changed: counts, new IDs, removed IDs, and the valida
 | `services`, `functions`, `flows` | `system-design` | This skill validates IDs and cross-refs only. |
 | `modules` | `code-structure-design` | This skill validates IDs and cross-refs only. |
 | `usecases` | `use-case-design` | This skill validates IDs and cross-refs only. |
+| `stories` | `user-story-design` | This skill validates IDs and cross-refs only. |
 | `technology` (deployment nodes, environments) | `enterprise-architecture` | Reserved here; the orchestrator owns its content. |
 
 When this skill is loaded standalone (no sibling skill is active), it can scaffold any section but should keep edits minimal and clearly labelled in its summary back to the user.
@@ -99,6 +100,7 @@ Every object has an ID of the form `<kind>:<name>`. The kind tags the object's t
 | `flow` | kebab-case | `[a-z][a-z0-9-]*` | `flow:place-order-happy-path` |
 | `node` | kebab-case | `[a-z][a-z0-9-]*` | `node:k8s-prod-cluster` |
 | `usecase` | kebab-case | `[a-z][a-z0-9-]*` | `usecase:order-food` |
+| `story` | kebab-case | `[a-z][a-z0-9-]*` | `story:customer-orders-food` |
 
 ### Why this grammar
 
@@ -175,6 +177,10 @@ Cross-references are how the layers compose. The validator resolves every one of
 | `usecase` | `include[]` | `usecase:` | Sub-use-cases this one always invokes (`<<include>>`). |
 | `usecase.extend[]` | `usecase` | `usecase:` | Base use case this one optionally extends (`<<extend>>`). |
 | `usecase` | `generalizationOf` | `usecase:` | Parent use case this one is a specialization of (UML generalization). |
+| `story` | `role` | `actor:` | The actor whose voice the story speaks in ("As a Customer…"). |
+| `story` | `realizes[]` | `usecase:` | Use cases the story incrementally delivers. |
+| `story` | `implementedBy[]` | `function:` | Functions that ship the story. |
+| `story` | `dependsOn[]` | `story:` | Other stories that must land before this one. |
 
 The deployment direction is `module → node`, not `node → module`. `technology.nodes[]` is the registry of nodes that exist; `module.deployedTo[]` records where each module runs. Picking one direction prevents the model from disagreeing with itself.
 
