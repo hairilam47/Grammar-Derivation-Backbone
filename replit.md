@@ -1,12 +1,11 @@
 # Overview
 
-This project is a pnpm workspace monorepo built with TypeScript that sits in the **architecture** middle of the canonical *strategy → architecture → transformation* chain — it does not elicit business strategy, and it does not plan or sequence delivery. Three peer surfaces realise the standard EA-discipline constructs:
+This project is a pnpm workspace monorepo built with TypeScript, designed to manage architectural decisions systematically. It provides a robust and auditable system for architectural governance, aiming to reduce architectural drift and enhance communication among stakeholders.
 
-- **ADC — Architecture Decision Canvas (`/`).** The decision-record discipline. A deterministic, grammar-based engine derives architecture components, applicable risks, and complexity indicators from organisational context plus capability and trade-off selections; approved outputs freeze as immutable artefacts — **ADS** (Architecture Decision Snapshot) and **ECP** (Execution Constraint Profile) — recorded in a portfolio.
-- **CTAD — Conceptual Technology Architecture Design (`/ctad`).** The **conceptual** abstraction layer in the standard *conceptual → logical → physical* EA layering: reversible, categorical exploration of technology configurations, with no authority over ADC artefacts.
-- **ACW — Architecture Composition Workspace (`/workspace/*`).** The architecture-description surface in the ISO/IEC/IEEE 42010 sense — *viewpoints* (lenses) over the four standard TOGAF domains (Business, Data, Application, Technology). The validator + refusal channel acts as **correspondence-rule conformance**. ACW is structurally isolated from the decision pipeline at build time.
-
-The system is descriptive, not prescriptive. See `docs/ARCHITECTURE.md` §1A for the canonical acronym ↔ EA-discipline glossary and the implementation-vs-discipline layer mapping.
+The system comprises three main components:
+- **Architecture Decision Canvas (ADC):** A decision-recording discipline that generates immutable architecture decision snapshots (ADS) and execution constraint profiles (ECP) based on organizational context and capability selections.
+- **Conceptual Technology Architecture Design (CTAD):** A conceptual abstraction layer for reversible, categorical exploration of technology configurations, independent of ADC artifacts.
+- **Architecture Composition Workspace (ACW):** An architecture description surface providing various viewpoints aligned with TOGAF domains, facilitating interactive design and validation against correspondence rules.
 
 The project's vision is to provide a robust and auditable system for managing architectural decisions, enabling clear governance, reducing architectural drift, and facilitating communication across technical and business stakeholders.
 
@@ -16,78 +15,68 @@ I prefer iterative development. Ask before making major changes. I prefer detail
 
 # System Architecture
 
-The project is structured as a pnpm workspace monorepo, separating deployable surfaces (`artifacts/*`) from shared libraries (`lib/*`).
+The project is structured as a pnpm workspace monorepo, separating deployable applications (`artifacts/`) from shared libraries (`lib/`).
 
 ## Stack
 
 - **Monorepo:** pnpm workspaces
 - **Frontend:** React 19.1.0, Vite 7, Tailwind 4, `lucide-react`, React Three Fiber, three.js
-- **Backend:** Express 5 (for `artifacts/api-server`)
+- **Backend:** Express 5
 - **Database (scaffolded):** PostgreSQL, Drizzle ORM 0.45
-- **TypeScript:** ~5.9.2 (strict, project references)
+- **TypeScript:** ~5.9.2
 - **Validation:** Zod 3.25
-- **API Codegen:** Orval (from OpenAPI spec)
-- **Client Export:** `jspdf` (PDF), `docx` (DOCX)
+- **API Codegen:** Orval
+- **Client Export:** `jspdf`, `docx`
 - **Build:** esbuild (server), Vite (browser)
-
-## Repository Layout
-
-- `artifacts/`: Contains deployable applications (e.g., `canvas-ui` for the main product, `api-server`, `mockup-sandbox`).
-- `lib/`: Houses shared libraries (e.g., `architecture-grammar` for the core engine, `diagramspec`, `diagram-layout`, `cncf-catalog`, `api-spec`).
-- `docs/ARCHITECTURE.md`: Canonical architecture reference.
 
 ## Key Features & Design Patterns
 
 ### Architecture Decision Canvas (ADC)
-- **Wizard Flow:** Guides users through Context, Capability selection, Result Display, Trade-off exploration, and Freeze metadata to generate ADS/ECP.
-- **Output:** Exports PDF and DOCX with integrity footer; records to portfolio.
-- **Read-Only Views:** Portfolio, Signals, Reflection, Exposure, Containment views are strictly read-only after decisions are frozen.
-- **Governance:** Immutability of frozen decisions; deterministic derivation of ADS/ECP.
+- **Wizard Flow:** Guides users through context, capability selection, trade-off analysis, and freezing decisions to generate ADS/ECP.
+- **Output:** Exports PDF and DOCX; records decisions to a portfolio.
+- **Immutability:** Frozen decisions are read-only to ensure governance and traceability.
 
 ### Architecture Composition Workspace (ACW)
-- **TOGAF-aligned Workspace:** Provides multiple lens views (Context & Domain, System Landscape, Integration, Deployment & Infrastructure, Operations & Continuity) and an EAStudio canvas.
-- **Discipline mapping (per `docs/ARCHITECTURE.md` §1A).** Each lens is a *viewpoint* (ISO 42010) over the four standard TOGAF domains: Context & Domain → Business architecture; System Landscape → Application portfolio architecture; Integration → Application + Data integration; Deployment & Infrastructure → Technology architecture; Operations & Continuity → Operational / governance overlay; EAStudio Canvas → free-form blueprint surface across all four domains. The validator + refusal channel realises *correspondence-rule conformance*.
-- **EAStudio Canvas:** Supports interactive editing with business entities, zones, systems, and components. Features include node properties, connection management (CONNECTS), and multiple view tabs (Design, Matrix, Export).
-- **EAStudio Visual Theme (Task #99):** `/workspace/studio` aligns visually to `attached_assets/ea_studio_full_platform_*.html`. The change is render-only: `acw-1.0` schema, grammar, validator, refusal channel, and the existing store API (`createNode` / `createEdge` / `deleteEdge` / `clearWorkspace`) are unchanged — no new store mutations were introduced. Scoped CSS lives under `.eastudio-root` in `artifacts/canvas-ui/src/index.css` using `es-*` class names. Iconography is `lucide-react` only. Sample and per-edge-delete are gated through `window.confirm` and route exclusively to existing validator-gated store mutations; refusals surface verbatim. See `docs/ARCHITECTURE.md` §20C for full details.
-- **EAStudio Decision Contract Nav (Task #100):** A collapsible right-side navigation rail mounts inside `.eastudio-root` on `/workspace/studio`. Header reads "Decision Contract"; four child links route to `/decision-canvas`, `/portfolio`, `/signals`, `/reflection` (verbatim from `App.tsx`). The rail is a real layout column (sibling of `.es-shell`) — `.eastudio-root` is now `flex-direction: row` with the existing top-bar / body / status-bar stack moved inside `.es-shell`, so the nav never overlays the canvas and never steals pointer events from drops. Collapsed state hides labels and shrinks to icon-only width (48px); expanded state is 200px. Toggle is keyboard-accessible (`aria-expanded`, `aria-controls`, Enter/Space). Component lives at `artifacts/canvas-ui/src/components/acw/studio/DecisionContractNav.tsx`; styles use the existing `--bg`, `--bg2`, `--border3`, `--accent` tokens under new `es-rnav*` selectors. Render-only: `acw-1.0` schema, grammar, validator, and store API are unchanged.
-- **Technology-aware Semantic Binding:** ACW nodes can be semantically bound to CTAD parameters and technology categories, with icons sourced from a vendor-neutral registry.
-- **EAStudio Path B Phase 3 — Right-click technology swap menu + Organisational Unit (OU) overlay (Task #115):** Two complementary Studio-canvas affordances. (1) Right-click on any node card surfaces a "Swap technology" popover hosted by `DomainGrid` that lists alternative options of the node's bound CTAD parameter via `resolveBoundOptions(node)` — the current selection is filtered OUT of the actionable list and surfaced once via a header annotation (`current: <value>`), so the empty-state copy `"No other options available."` renders whenever the bound parameter has exactly one option (the one already in use). The menu only intercepts on nodes that carry a `boundParam`; unbound nodes release the native browser context menu. Every accepted swap also calls `invalidateL3Memo()` and, when `activeLod === 3`, immediately re-runs `runL3GeneratorForPersistedArchitectures()` so the L3 surface refreshes in the same gesture. Every swap routes through the existing `updateNodeBinding(nodeId, { boundParam: { sectionId, paramId, optionValue } })` so the validator gating, refusal channel, and Phase-5 semantic-binding pipeline remain the single mutation path — no parallel writers, no allow-list widening. Outside-click and Escape both dismiss the menu. (2) An "Org View" toggle on `StudioTopBar` (gated to `lensId === "/workspace/studio"`) switches a per-lens `showOrgOverlayByLens?: Record<string, boolean>` slice on view-state (top allow-list extended; **view-state schema stays `acw-view-1.0`**); when ON, every `NodeCard` whose optional new `AcwNode.organisationalUnitId?: string` field is set and resolves through the OU registry receives a categorical `backgroundColor: hsl(<deterministic hue>, 35%, 22%)` tint and an aria-label augmentation `"<label> (organisational unit: <unit name>)"` (the parenthetical phrasing fires ONLY while the overlay is rendered, so an OU bound while Org View is OFF does not leak through assistive tech without an accompanying visual signal) — colour is never the sole carrier of unit membership. The categorical-only constants (S=35%, L=22% pinned by `acw/orgUnits/ouHueInvariants.test-shape.ts`) are the structural enforcement of the brief's prohibition on continuous / sequential / value-encoded colour ramps. The OU registry is an isolated store at `acw/orgUnits/ouStore.ts` (key `acw.organisational-units.v1`, schema `ou-1.0`, allow-listed `OuDoc { schemaVersion, units: OrgUnit[] }` with `OrgUnit { id, name, parentId? }`); duplicate ids, empty ids/names, and dangling parentIds are rejected by the read-validator. Idempotent `createOu` (re-using a supplied id is a no-op) plus `updateOuName` and `removeOu` round out the public surface. **OU API contract note (intentional deviation from brief):** `createOu` accepts `id` as OPTIONAL — when omitted, a fresh id is auto-generated via `freshOuId()`. The brief sketched a `createOu(entry: OuEntry)` shape with a user-supplied slug id, but the only first-party caller (`NodePropertiesPanel`'s "Add unit" affordance, driven by `window.prompt` for the unit name) has nowhere to source a slug, and the registry's read-validator already rejects empty / duplicate ids regardless of origin. Auto-id therefore preserves the structural guarantees while giving the UI a single-step add flow; programmatic callers that DO want a stable slug can still pass `id` and the idempotent re-use path makes that round-trip safe. `removeOu` is transactional: the cascade-clear runs FIRST through the validator-gated `updateNodeProperties`, and on any refusal the OU document is NOT mutated (the verbatim refusal reason surfaces back), so a removed unit can never leave a node carrying a dangling OU id; on success the cascade also reassigns child units' parentId to `undefined`. The ACW read-validator additionally REFUSES `organisationalUnitId` on sealed domain containers (`isDomainContainer === true`) — the structural enforcement that prevents the only path through which a clear could otherwise be unreachable. `NodePropertiesPanel` gains an "Organisational unit" dropdown with a `"Not specified"` sentinel that clears the field and registry options sorted alphabetically by name (locale-aware, case-insensitive), plus Add unit (`window.prompt` → `createOu` → auto-bind) and Remove (`window.confirm` → `removeOu`, disabled unless the node carries an OU id). `AcwNode` is widened with the optional `organisationalUnitId` field across read-validator + `CreateNodeRequest` + `UpdateNodePropertiesRequest` (the same edit also fixed a pre-existing bug where `lodRange` was dropped from the `updateNodeProperties` spread); **ACW schema stays `acw-1.0`** because the field is optional and absent on legacy nodes. Build-time invariants: `acw/orgUnits/ouStoreInvariants.test-shape.ts` (schema lock, validator negatives, idempotent `createOu`, cascade-clear and parent-reassign on `removeOu`, create-time empty-name and dangling-parent refusals — all using snapshot-and-restore against an ad-hoc sealed container so the user's persisted workspace and OU registry survive a probe failure), `acw/orgUnits/ouHueInvariants.test-shape.ts` (S/L constants, `hashHueForOu` determinism + range, `cssForOu` formula match, empty-id refusal), a 12j OU round-trip probe in `acwGrammarV2Invariants.test-shape.ts` (set / preserve-through-binding / clear / empty-string-refusal), and a 12k swap-visibility probe (seed `boundParam.optionValue: "Kubernetes"` → `updateNodeBinding` to `"Nomad"` → assert `resolveLabel` returns `"Nomad"` against the live store snapshot) that locks the renderer to the semantic-binding read path. The Studio `NodeCard` in `DomainGrid.tsx` derives its label and icon from `resolveLabel(node)` / `resolveIcon(node)` (the same resolvers `InteractiveCanvas2D` uses), with the palette tile's icon as fallback when no `boundTechnologyCategory` is set — so a right-click swap of `boundParam.optionValue` updates the on-canvas card text in the same gesture, without a separate re-render path. Both new invariant modules are side-effect imported in `pages/acw/WorkspaceShell.tsx`. ACW isolation allow-list unchanged (`@/acw` permitted prefix already covers `@/acw/orgUnits/*`); refusal channel unchanged. See `docs/ARCHITECTURE.md` §2A row for the full additive contract.
-- **EAStudio Path B Phase 2 — Level of Specification (LoS) framework + L3 generator (Task #114):** The Studio canvas gains a per-lens LoS toggle (L1 Business / L2 Application / L3 Technology) on `StudioTopBar` (gated to `lensId === "/workspace/studio"`); selecting L3 mounts `Canvas3DStructural` inside `position: fixed; inset: 0; z-0` (Track 3 fullscreen parity) and edge-triggers the L3 generator on each per-session transition INTO L3 (`activeLod !== 3` → `activeLod === 3`, ref-gated). The generator (`acw/l3/l3Generator.ts`) is pure / idempotent / deterministic, walks every L2 node carrying a `boundParam` reference, parents the minted child to that origin L2 node with stable id `l3:<architectureId>:<parentId>:<sectionId>:<paramId>` (the `architectureId` segment prevents cross-architecture collisions when the Studio shell projects multiple persisted architectures into the same workspace) and `lodRange: [3, 3]` so they are visible only at L3, and uses a closed mapping table: `(infrastructure, hostingModel="kubernetes")` mints a `ComputeNode` labelled "Kubernetes cluster" (any other `hostingModel` value mints nothing — no fallback), and `(infrastructure, databaseClass)` mints a `Component` labelled with the chosen option value VERBATIM (no suffix, no transform). The generator never deletes anything; it does not require any specific parent container. **ACW schema stays `acw-1.0`** and **view-state schema stays `acw-view-1.0`** — both new fields (`AcwNode.lodRange?` and view-state `activeLodByLens?`) are optional and absent on legacy documents, so persisted data loads without migration. Two new build-time invariants enforce the contract: `acwL3IsolationInvariants.test-shape.ts` pins the L3 module's CTAD-store imports to a single named symbol (`exportArchitectureState`) and explicitly rejects every other named import including `listArchitectures` and any re-exported type, and `acwL3GeneratorInvariants.test-shape.ts` runs snapshot-and-restore probes for idempotency, no-orphan-recreate, the `lodRange: [3, 3]` contract, and the closed mapping table. The Studio shell carries no architectureId mapping, so the generator's `runL3GeneratorForPersistedArchitectures` entry point enumerates the architecture roster by reading the CTAD storage key (`ctad.state.v1`) directly through `localStorage` — a global runtime affordance the import-only L3 isolation invariant does not restrict — and delegates each id to the allowlisted `exportArchitectureState` for the actual snapshot. See `docs/ARCHITECTURE.md` §20E (and §2A row) for full details.
-- **EAStudio Path B Phase 1 — Palette tile-level technology bindings (Task #113):** 9 of the 32 EAStudio palette tiles (Data Store, API Gateway, Microservice, Mobile App, Event Bus, Web Portal, Database, Runtime Engine, IAM Service) now declare a default `boundTechnologyCategory`; on drop, `DomainGrid.onDrop` forwards the optional defaults onto `createNode` so the resulting node carries the same Phase-5 semantic shape a manual `updateNodeBinding` would produce. Five tiles (`data-etl`, `tech-cloud-region`, `tech-monitoring`, `tech-object-storage`, `tech-cicd`) and the Business domain remain unbound because the existing icon registry has no clean categorical home — those tiles drop as plain typed nodes (pre-Phase-1 behaviour). A module-load assertion plus a sibling `paletteRegistryInvariants.test-shape.ts` fails the bundle if a tile names a category the icon registry does not know about. Render-only / additive: `acw-1.0` schema, grammar, validator, refusal channel, store API, and isolation invariant are unchanged. See `docs/ARCHITECTURE.md` §20D for full details.
-- **Stepwise authoring wizard:** `components/acw/AuthoringPanel.tsx` is now two 3-step card-based wizards (Add element: Type → Parent → Label; Add relationship: Kind → From → Destination) plus a *Bound parameters* pill picker, replacing the prior flat dropdown forms while keeping every mutation routed through `createNode` / `createEdge` / `updateNodeBinding` and every refusal surfaced in the shared `acw-refusal-banner`. Constitutional rules are preserved (`lucide-react` only, no traffic lights, no judgement animation, no emoji, every new static label asserted via `assertAllAcwPlaceholderLanguage`); see `docs/ARCHITECTURE.md` §18A for full details.
-- **Isolation Invariant:** ACW workspace modules are strictly isolated from the decision pipeline to prevent unintended influence.
+- **TOGAF-aligned Workspace:** Offers multiple lens views (Context & Domain, System Landscape, Integration, Deployment & Infrastructure, Operations & Continuity) and an EAStudio canvas.
+- **EAStudio Canvas:** Supports interactive editing of business entities, zones, systems, and components with node properties and connection management.
+- **Semantic Binding:** ACW nodes can be bound to CTAD parameters and technology categories.
+- **Right-click Technology Swap:** Allows dynamic swapping of bound technologies on nodes.
+- **Organizational Unit (OU) Overlay:** Visualizes organizational unit assignments on nodes with categorical color-coding.
+- **Level of Specification (LoS) Framework:** Toggles between L1 (Business), L2 (Application), and L3 (Technology) views, with an L3 generator for technology-specific nodes.
+- **Palette Tile-level Technology Bindings:** Default technology bindings for palette tiles, applied on drop.
+- **Stepwise Authoring Wizards:** Guided wizards for adding elements and relationships.
+- **Isolation Invariant:** ACW modules are strictly isolated from the decision pipeline.
 
 ### Conceptual Technology Architecture Design (CTAD)
-- **Discipline position (per `docs/ARCHITECTURE.md` §1A).** CTAD is the **conceptual** layer of the standard *conceptual → logical → physical* EA layering: it captures categorical, reversible technology choices (e.g., "managed hosting" as a category, not a specific vendor product). ACW (and Track 3) sits one layer down at the **logical** layer.
-- **State-driven Exploration:** Non-wizard, reversible categorical exploration of technology configurations.
-- **Modes:** Supports ADC-bound workspaces (anchored to frozen ADC decisions) and standalone Architecture Workspaces.
-- **Environments:** First-class concept for defining and managing different environments (e.g., development, production) with hosting models.
-- **CNCF Apply Layer:** Integrates vendor-neutral CNCF reference cards for contextual constraints and audit logging.
-- **Non-Authority:** CTAD never writes back to ADC/governance artifacts.
+- **State-driven Exploration:** Non-wizard, reversible exploration of technology configurations.
+- **Workspaces:** Supports ADC-bound and standalone architecture workspaces.
+- **Environments:** Manages different environments and hosting models.
+- **Non-Authority:** CTAD does not influence ADC or governance artifacts.
 
 ### Derived Views (ACW Track 3)
-- **Read-Only Structural View:** Compiles `CTAD_STATE` into `DiagramSpec`, uses ELK for layout, and renders in both 2D SVG and 3D R3F.
-- **Decoupled:** Can operate on CTAD architectures independently of ADC bounds.
-- **Full-page Canvas:** Features a full-page architecture canvas with floating overlays for controls.
-- **Derivation Purity:** Strictly read-only, ensuring that derived views cannot influence the source state.
+- **Read-Only Structural View:** Compiles `CTAD_STATE` into `DiagramSpec`, using ELK for layout, rendered in 2D SVG and 3D R3F.
+- **Decoupled:** Operates independently of ADC bounds.
+- **Derivation Purity:** Strictly read-only to prevent state modification.
+
+### Dev-only seeding
+- **`/seed-all`** (development builds only): a deterministic fixture seeder that populates ADC portfolio (3 frozen decisions), CTAD (1 ADC-bound binding + 2 standalone architectures), 2 CNCF apply-cards on the bound binding, ACW workspace (4 sealed domain quadrants + 5 children + 2 edges), 2 organisational units, per-lens view-state, Track 3 view-prefs, and 3 policy signals with varied lifecycle. Routes exclusively through validator-gated store APIs (`addOrUpdateEntry`, `setCtadParam`, `createArchitecture`, `applyCard`, `createNode`, `createEdge`, `updateNodeProperties`, `updateNodeBinding`, `createOu`, `createSignal`, etc.). The page exposes a `Run probe` button that snapshots-and-restores localStorage so visual checks can verify the seeder runs cleanly without polluting the developer's browser state. The route is gated on `import.meta.env.DEV` and is not registered in production builds.
 
 ### Design Principles
-- **Strict Stratification:** Upper layers only read from lower layers.
-- **Immutability:** Frozen decisions (ADS/ECP) cannot be edited.
-- **Deterministic Derivation:** Same inputs always yield identical output.
+- **Strict Stratification:** Upper layers read only from lower layers.
+- **Immutability:** Frozen decisions are uneditable.
+- **Deterministic Derivation:** Consistent output from identical inputs.
 - **Read-Only Views:** All governance and derived views are strictly read-only.
-- **Non-Authority of CTAD:** CTAD does not influence ADC or governance.
-- **Strict Removability:** Each feature or phase is designed for independent removal.
-- **Build-Time Refusals:** Invariants are checked at module load, failing the build on regression.
+- **Non-Authority of CTAD:** CTAD does not influence ADC.
+- **Build-Time Refusals:** Invariants are checked at module load to prevent regressions.
 
-### Visual System (Task #104 — App-wide UI polish)
-- **Typography:** Single Inter sans stack with OpenType feature flags applied at body level. JetBrains Mono / ui-monospace for monospaced text. `.tnum` utility provides tabular numerals for stat readouts.
-- **Surface tokens:** Multi-stop shadow ramp (light + ambient bloom). Restrained `--accent-gradient`, `--accent-gradient-soft`, `--accent-gradient-hairline`, `--surface-gradient` tokens. Accent gradients are applied only to brand marks, primary CTAs, the active route indicator, and a small number of statement surfaces — never to status, urgency, or judgement signals (no traffic-light usage).
-- **Motion tokens:** `--motion-fast / -base / -slow` with `--motion-ease` / `-ease-out`. A `prefers-reduced-motion: reduce` block zeros all three durations and disables the route fade.
-- **Glass utilities:** `.glass-surface(-strong)` for tooltips/popovers/toasts; `.glass-header` and `.glass-rail` for the app chrome. Glass is used only on overlays and chrome — never on decision surfaces.
-- **Interaction utilities:** `.lift` (cards), `.interactive` (controls), `.ui-transition`, `.ui-transition-card`, `.ui-transition-input` (shadcn primitives), `.nav-active-bar` (active route indicator), `.brand-mark` (gradient logo square), `.route-fade-in` + `RouteTransition` (App.tsx page change).
-- **Shared header:** `components/AppHeader.tsx` is the canonical top bar (brand mark, page title/subtitle). Used by Portfolio, Signals, Reflection, Exposure, Containment.
-- **App shell (Task #108):** `components/AppSidebar.tsx` exports `AppSidebar` + `AppShell` — a collapsible left sidebar wrapping every route. Top-level entries: Landing, Architecture Workspace (with `Derived view` sub-link). All decision-pipeline destinations (Decision Canvas, CTAD, Portfolio, Signals, Reflection) live under a parent **Design Contract** group (auto-expands on those routes; testid `nav-design-contract`). Collapsed rail ~64px / expanded ~240px; persists to `localStorage` (`app:sidebar:collapsed`); becomes a dismissible overlay below `md` (Esc + outside-click). Existing nav `data-testid`s are preserved.
+### Visual System
+- **Typography:** Inter sans and JetBrains Mono.
+- **Surface Tokens:** Multi-stop shadow ramp, restrained accent gradients, and surface gradients.
+- **Motion Tokens:** Configurable motion durations and ease functions, with reduced motion preference support.
+- **Glass Utilities:** `glass-surface`, `glass-header`, `glass-rail` for overlays and chrome.
+- **Interaction Utilities:** `lift`, `interactive`, `ui-transition`, `nav-active-bar`, `brand-mark`, `route-fade-in`.
+- **Shared Header:** Canonical `AppHeader.tsx` for brand mark, page title/subtitle.
+- **App Shell:** Collapsible left sidebar (`AppSidebar` + `AppShell`) for navigation, with persistence to `localStorage`.
 
 # External Dependencies
 

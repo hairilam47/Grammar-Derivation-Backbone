@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -101,6 +101,16 @@ import "@/acw/track3/acwTrack3ViewPrefsInvariants.test-shape";
 import "@/acw/l3/acwL3IsolationInvariants.test-shape";
 import "@/acw/l3/acwL3GeneratorInvariants.test-shape";
 
+// Dev-only deterministic seed page (Task #119). Both the lazy
+// import expression and the route registration are gated on
+// `import.meta.env.DEV`. Vite replaces `import.meta.env.DEV` with
+// a literal `false` at production build time, which lets Rollup
+// dead-code-eliminate the entire ternary branch — including the
+// dynamic `import()` that would otherwise emit a separate chunk.
+const SeedAllPage = import.meta.env.DEV
+  ? lazy(() => import("@/dev/SeedAllPage"))
+  : null;
+
 function DarkModeApplier() {
   useEffect(() => {
     document.documentElement.classList.add("dark");
@@ -144,6 +154,13 @@ function Router() {
       <Route path="/ctad/:adsId/:adsVersion" component={CtadShell} />
       <Route path="/acw/derived" component={Track3Entry} />
       <Route path="/acw/derived/arch/:architectureId" component={Track3Shell} />
+      {import.meta.env.DEV && SeedAllPage !== null && (
+        <Route path="/seed-all">
+          <Suspense fallback={null}>
+            <SeedAllPage />
+          </Suspense>
+        </Route>
+      )}
       <Route component={NotFound} />
     </Switch>
   );
