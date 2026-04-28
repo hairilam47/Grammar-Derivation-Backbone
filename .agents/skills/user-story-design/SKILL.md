@@ -119,7 +119,7 @@ stories:
   - id: story:customer-orders-food            # required, must start with "story:"
     role: actor:Customer                      # required, must be a declared actor
     goal: order food                          # required, the "I want to …" half
-    benefit: I can eat                        # optional but recommended, the "so that …" half
+    benefit: I can eat                        # required, the "so that …" half — every story must declare why
     priority: must                            # required: must | should | could | wont (MoSCoW)
     points: 5                                 # optional: Fibonacci number OR t-shirt size string
     epic: Ordering                            # optional: free-text grouping label
@@ -145,10 +145,10 @@ stories:
 
 ### Required vs optional
 
-- **Required**: `id`, `role`, `goal`, `priority`.
-- **Optional**: `benefit`, `points`, `epic`, `acceptanceCriteria[]`, `realizes[]`, `implementedBy[]`, `dependsOn[]`.
+- **Required**: `id`, `role`, `goal`, `benefit`, `priority`.
+- **Optional**: `points`, `epic`, `acceptanceCriteria[]`, `realizes[]`, `implementedBy[]`, `dependsOn[]`.
 
-The foundation validator enforces ID grammar and cross-reference resolution. Layer-specific checks (priority within the MoSCoW set, points within the Fibonacci or t-shirt domain, acceptance criteria well-formedness, dependency cycles) are reported by this skill's generator as warnings.
+The foundation validator enforces ID grammar and cross-reference resolution. This skill's generator additionally treats missing `role`, `goal`, or `benefit` as **errors** (exit 1) — without all three halves of the Connextra template ("As a … I want … so that …") a story is not a story. Layer-specific checks (priority within the MoSCoW set, points within the Fibonacci or t-shirt domain, acceptance criteria well-formedness, dependency cycles) are reported as warnings (exit 0).
 
 ## Backlog markdown convention
 

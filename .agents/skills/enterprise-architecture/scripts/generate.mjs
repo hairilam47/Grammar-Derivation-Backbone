@@ -68,6 +68,7 @@ function alias(id) {
     kind === "node"     ? "node_" :
     kind === "usecase"  ? "uc_" :
     kind === "story"    ? "story_" :
+    kind === "task"     ? "task_" :
     "n_";
   return prefix + safe;
 }
@@ -273,11 +274,24 @@ function renderOverview(idx) {
   lines.push(`}`);
   lines.push("");
 
-  // Business layer.
+  // Business layer. Tasks are rendered as nested rectangles inside
+  // each process container so that cross-layer arrows from use cases
+  // can terminate at the specific task being implemented (rather than
+  // collapsing to the process as a whole).
   lines.push(`rectangle "Business Layer (BPMN — processes, actors)" as L_business #FFF2CC {`);
   for (const p of idx.processes) {
     const label = p.name ? `${p.id}\\n${p.name}` : p.id;
-    lines.push(`  rectangle "${plantQuote(label)}" as ${alias(p.id)}`);
+    const tasks = Array.isArray(p?.tasks) ? p.tasks.filter((t) => t?.id) : [];
+    if (tasks.length === 0) {
+      lines.push(`  rectangle "${plantQuote(label)}" as ${alias(p.id)}`);
+    } else {
+      lines.push(`  rectangle "${plantQuote(label)}" as ${alias(p.id)} {`);
+      for (const t of tasks) {
+        const tLabel = t.name ? `${t.id}\\n${t.name}` : t.id;
+        lines.push(`    rectangle "${plantQuote(tLabel)}" as ${alias(t.id)}`);
+      }
+      lines.push(`  }`);
+    }
   }
   for (const a of idx.actors) {
     const label = a.name ? `${a.id}\\n${a.name}` : a.id;
@@ -386,15 +400,15 @@ function renderOverview(idx) {
     }
   }
   // Use case → process task (computed transitively via stories).
-  // Anchor the arrow at the process rectangle (tasks are not first-class
-  // diagram nodes). One arrow per usecase/process pair, even when several
-  // tasks of the same process are touched, to keep the overview readable.
-  const ucProcSeen = new Set();
+  // Tasks are first-class diagram nodes nested inside their process
+  // container, so the arrow terminates at the specific task being
+  // implemented. One arrow per usecase/task pair.
+  const ucTaskSeen = new Set();
   for (const link of usecaseTaskLinks(idx)) {
-    const key = `${link.usecaseId}|${link.processId}`;
-    if (ucProcSeen.has(key)) continue;
-    ucProcSeen.add(key);
-    lines.push(`${alias(link.usecaseId)} ..> ${alias(link.processId)} : "implementedBy"`);
+    const key = `${link.usecaseId}|${link.taskId}`;
+    if (ucTaskSeen.has(key)) continue;
+    ucTaskSeen.add(key);
+    lines.push(`${alias(link.usecaseId)} ..> ${alias(link.taskId)} : "implementedBy"`);
   }
 
   lines.push("");

@@ -133,8 +133,12 @@ function renderBacklog(model, byEpic) {
       out.push("");
       const role = actorDisplay(s.role, model);
       const goal = s.goal ?? "(no goal declared)";
-      const benefit = s.benefit ? ` **so that** ${s.benefit}` : "";
-      out.push(`**As a** ${role} **I want to** ${goal}${benefit}.`);
+      // benefit is REQUIRED — always render the "so that" clause. If a
+      // story slipped through with no benefit (the generator will exit 1
+      // below), render a visible placeholder so the gap is obvious in
+      // the rendered backlog rather than silently swallowed.
+      const benefit = s.benefit ? s.benefit : "_(no benefit declared — fill in the user value)_";
+      out.push(`**As a** ${role} **I want to** ${goal} **so that** ${benefit}.`);
       out.push("");
       const acs = Array.isArray(s.acceptanceCriteria) ? s.acceptanceCriteria : [];
       if (acs.length > 0) {
@@ -169,8 +173,10 @@ function renderFeature(epicLabel, stories, model) {
     lines.push(`Feature: ${storyName(s.id)}`);
     const role = actorDisplay(s.role, model);
     lines.push(`  As a ${role}`);
-    if (s.goal)    lines.push(`  I want to ${s.goal}`);
-    if (s.benefit) lines.push(`  So that ${s.benefit}`);
+    lines.push(`  I want to ${s.goal ?? "(no goal declared)"}`);
+    // benefit is required — always emit a "So that" line. Use a visible
+    // placeholder if missing; the generator exits 1 in that case.
+    lines.push(`  So that ${s.benefit ?? "(no benefit declared — fill in the user value)"}`);
     lines.push("");
     const acs = Array.isArray(s.acceptanceCriteria) ? s.acceptanceCriteria : [];
     for (let i = 0; i < acs.length; i++) {
@@ -201,7 +207,11 @@ function storyOrder(a, b) {
 }
 
 // ─── Story-layer warnings ─────────────────────────────────────────────────
-function lintStories(stories, warnings) {
+// Required-shape errors (missing role/goal/benefit) push into `errors`;
+// everything else is a warning. The generator still writes the partial
+// backlog before exiting non-zero on errors so authors can see the
+// rendered shape of what they have so far.
+function lintStories(stories, warnings, errors) {
   const byId = new Map();
   for (const s of stories) {
     if (s?.id) byId.set(s.id, s);
@@ -227,10 +237,16 @@ function lintStories(stories, warnings) {
       }
     }
 
-    // Required-ish fields.
-    if (!s.role)              warnings.push(`${s.id}: no role (every story needs an actor it speaks for)`);
-    if (!s.goal)              warnings.push(`${s.id}: no goal (the "I want to …" half is required)`);
-    if (!s.benefit)           warnings.push(`${s.id}: no benefit (the "so that …" half is strongly recommended)`);
+    // Required-shape fields. The Connextra template is "As a <role> I
+    // want to <goal> so that <benefit>" — all three halves must be
+    // present for the story to be a story at all. These are ERRORS,
+    // not warnings.
+    if (!s.role)
+      errors.push(`${s.id}: no role (every story needs an actor it speaks for)`);
+    if (!s.goal)
+      errors.push(`${s.id}: no goal (the "I want to …" clause is required)`);
+    if (!s.benefit)
+      errors.push(`${s.id}: no benefit (the "so that …" clause is required — every story must declare why)`);
 
     // Acceptance criteria well-formedness.
     const acs = Array.isArray(s.acceptanceCriteria) ? s.acceptanceCriteria : [];
@@ -335,13 +351,21 @@ async function main() {
   const model = await loadModel(modelPath, asJson);
   if (!model || typeof model !== "object") fatal("Model file did not parse to an object.");
   const stories = Array.isArray(model.stories) ? model.stories.filter((s) => s?.id) : [];
-  if (stories.length === 0) {
-    stdout.write("No stories[] section in the model — nothing to generate.\n");
-    exit(0);
-  }
 
   const designsDir = dirname(modelPath);
   await mkdir(designsDir, { recursive: true });
+
+  // Always emit designs/stories.md, even when stories[] is empty or
+  // missing — the file becomes a scaffold that documents the layer's
+  // existence and points authors at the user-story-design skill.
+  if (stories.length === 0) {
+    const backlogPath = join(designsDir, "stories.md");
+    const emptyByEpic = new Map();
+    await writeFile(backlogPath, renderBacklog(model, emptyByEpic), "utf8");
+    stdout.write(`Wrote ${backlogPath} (empty scaffold — no stories[] declared yet)\n`);
+    stdout.write("\nSummary:\n  • stories — 0 stories\n");
+    exit(0);
+  }
 
   // Group by epic (empty key for "Unassigned").
   const byEpic = new Map();
@@ -392,9 +416,10 @@ async function main() {
     }
   }
 
-  // Layer warnings.
+  // Layer warnings + errors.
   const warnings = [];
-  lintStories(stories, warnings);
+  const errors = [];
+  lintStories(stories, warnings, errors);
 
   // Priority distribution.
   const counts = Object.fromEntries(PRIORITIES.map((p) => [p, 0]));
@@ -413,13 +438,20 @@ async function main() {
   stdout.write("\nSummary:\n");
   stdout.write(`  • stories — ${stories.length} stories · ${epicCount} epic${epicCount === 1 ? "" : "s"} · ${distParts.join(" · ")}\n`);
 
+  if (errors.length > 0) {
+    stdout.write("\nERRORS:\n");
+    errors.forEach((e, i) => stdout.write(`  ${i + 1}. ${e}\n`));
+  }
   if (warnings.length > 0) {
     stdout.write("\nWARNINGS:\n");
     warnings.forEach((w, i) => stdout.write(`  ${i + 1}. ${w}\n`));
-  } else {
-    stdout.write("\nNo story-layer warnings.\n");
   }
-  exit(0);
+  if (errors.length === 0 && warnings.length === 0) {
+    stdout.write("\nNo story-layer warnings or errors.\n");
+  }
+  // Exit non-zero if any required-shape error was raised. The partial
+  // backlog has already been written so authors can see what they have.
+  exit(errors.length > 0 ? 1 : 0);
 }
 
 main().catch((e) => fatal(`Internal error: ${e.stack || e.message}`));
