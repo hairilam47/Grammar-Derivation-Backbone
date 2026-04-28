@@ -39,15 +39,9 @@ import {
   type AppliedCardEntry,
 } from "./ctadAppliedCardsStore";
 
-// Optional `now` is an additive seed-affordance: when absent the
-// routine behaves exactly as before. The dev-only `/seed-all` route
-// supplies it so re-running the seed produces a byte-identical
-// localStorage snapshot for `ctad.applied-cards.v1` and the
-// constraints store. When supplied it must be a valid ISO-8601 string.
 export function applyCard(
   binding: CtadBinding,
   card: CncfCard,
-  opts?: { readonly now?: string },
 ): AppliedCardEntry {
   if (isCardApplied(binding, card.id)) {
     throw new Error(
@@ -60,17 +54,7 @@ export function applyCard(
       `cncfApplyService: cannot apply card "${card.id}" — ${preview.conflicts.length} conflict(s): ${preview.conflicts.map((c) => c.reason).join("; ")}`,
     );
   }
-  let appliedAt: string;
-  if (opts?.now !== undefined) {
-    if (typeof opts.now !== "string" || Number.isNaN(Date.parse(opts.now))) {
-      throw new Error(
-        `cncfApplyService: caller-supplied "now" must be a valid ISO timestamp.`,
-      );
-    }
-    appliedAt = opts.now;
-  } else {
-    appliedAt = new Date().toISOString();
-  }
+  const appliedAt = new Date().toISOString();
 
   for (const eff of preview.constraintEffects) {
     addContribution(binding, eff.paramId, {

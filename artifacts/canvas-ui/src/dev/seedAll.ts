@@ -297,12 +297,17 @@ function clearAllSeededKeys(): void {
   __track3ViewPrefsInternals.reloadFromStorageForTest();
 }
 
-// Wraps `fn` with a frozen Date / Date.now / Math.random /
-// crypto.randomUUID so every internal timestamp and id resolves
-// deterministically. Counters reset on every call so two
-// invocations with the same internal call sequence produce the
-// same id sequence. Restores the originals in a `finally` block
-// so a thrown error still leaves the globals intact.
+// Freezes Date, Date.now, Math.random, and crypto.randomUUID for the
+// synchronous duration of `fn` so every store-internal timestamp / id
+// resolves deterministically across reruns. Globals are restored in
+// `finally`. This is the minimum mechanism that lets the seeder remain
+// a pure consumer of existing public store APIs without widening every
+// store's signature with a clock-injection parameter.
+type GlobalsBag = {
+  Date: typeof Date;
+  randomUUID?: typeof crypto.randomUUID;
+};
+
 function withFrozenClock<T>(fn: () => T): T {
   const RealDate = globalThis.Date;
   const realNow = RealDate.now;
@@ -313,14 +318,11 @@ function withFrozenClock<T>(fn: () => T): T {
       : null;
 
   class FrozenDate extends RealDate {
-    constructor(...args: unknown[]) {
+    constructor(...args: ConstructorParameters<typeof Date> | []) {
       if (args.length === 0) {
         super(FROZEN_MS);
       } else {
-        // Forward to the real constructor with whatever arguments
-        // were supplied. The cast is structural; runtime Date
-        // accepts any of these shapes.
-        super(...(args as [number]));
+        super(...(args as ConstructorParameters<typeof Date>));
       }
     }
     static override now(): number {
@@ -328,51 +330,36 @@ function withFrozenClock<T>(fn: () => T): T {
     }
   }
 
-  // Deterministic counter-driven Math.random — produces a
-  // periodic but reproducible sequence in (0, 1). Resets to 1 at
-  // the start of every withFrozenClock call so two runs match.
   let randomCounter = 0;
   const frozenRandom = (): number => {
     randomCounter += 1;
-    // Mix the counter into a (0, 1) value via a small LCG so
-    // consumers that reject 0 / require dispersion still get
-    // non-trivial outputs.
     const x = (randomCounter * 1103515245 + 12345) >>> 0;
     return (x % 0x7fffffff) / 0x7fffffff;
   };
 
-  // Deterministic UUID v4-shaped string keyed off a per-run
-  // counter. Resets on every withFrozenClock call.
   let uuidCounter = 0;
-  const frozenUuid = (): `${string}-${string}-${string}-${string}-${string}` => {
+  const frozenUuid = ((): `${string}-${string}-${string}-${string}-${string}` => {
     uuidCounter += 1;
     const hex = uuidCounter.toString(16).padStart(12, "0");
     return `00000000-0000-4000-8000-${hex}` as `${string}-${string}-${string}-${string}-${string}`;
-  };
+  }) satisfies typeof crypto.randomUUID;
 
+  const g = globalThis as unknown as GlobalsBag;
   try {
-    // Patch every global *inside* the try block so a throw at any
-    // patch site (e.g. a non-writable property descriptor under a
-    // hardened runtime) still triggers the `finally` restoration
-    // path. Re-assigning a global to its original value is
-    // idempotent, so over-restoring previously-unpatched globals
-    // is safe.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).Date = FrozenDate;
+    g.Date = FrozenDate as unknown as DateConstructor;
     Math.random = frozenRandom;
     if (realUuid !== null) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (crypto as any).randomUUID = frozenUuid;
+      (crypto as { randomUUID: typeof crypto.randomUUID }).randomUUID =
+        frozenUuid;
     }
     return fn();
   } finally {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).Date = RealDate;
+    g.Date = RealDate;
     RealDate.now = realNow;
     Math.random = realRandom;
     if (realUuid !== null) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (crypto as any).randomUUID = realUuid;
+      (crypto as { randomUUID: typeof crypto.randomUUID }).randomUUID =
+        realUuid;
     }
   }
 }
@@ -444,10 +431,7 @@ export function seedAll(): SeedSummary {
     // `id` option so the persisted doc is byte-stable across runs.
     let standaloneCount = 0;
     try {
-      createArchitecture("NextGen Platform", {
-        id: ARCH_NEXTGEN_ID,
-        now: FROZEN_ISO,
-      });
+      createArchitecture("NextGen Platform", { id: ARCH_NEXTGEN_ID });
       setArchitectureParam(ARCH_NEXTGEN_ID, "hostingModel", "Hybrid");
       setArchitectureParam(ARCH_NEXTGEN_ID, "applicationStyle", "Microservices");
       setArchitectureParam(ARCH_NEXTGEN_ID, "databaseClass", "Document");
@@ -463,10 +447,7 @@ export function seedAll(): SeedSummary {
       noteRefusal((err as Error).message);
     }
     try {
-      createArchitecture("Mobile-First Architecture", {
-        id: ARCH_MOBILE_ID,
-        now: FROZEN_ISO,
-      });
+      createArchitecture("Mobile-First Architecture", { id: ARCH_MOBILE_ID });
       setArchitectureParam(
         ARCH_MOBILE_ID,
         "frontendFrameworkClass",
@@ -489,7 +470,7 @@ export function seedAll(): SeedSummary {
     let cncfCardsApplied = 0;
     if (cardKubernetes) {
       try {
-        applyCard(legacyBinding, cardKubernetes, { now: FROZEN_ISO });
+        applyCard(legacyBinding, cardKubernetes);
         cncfCardsApplied += 1;
       } catch (err) {
         noteRefusal((err as Error).message);
@@ -499,7 +480,7 @@ export function seedAll(): SeedSummary {
     }
     if (cardVitess) {
       try {
-        applyCard(legacyBinding, cardVitess, { now: FROZEN_ISO });
+        applyCard(legacyBinding, cardVitess);
         cncfCardsApplied += 1;
       } catch (err) {
         noteRefusal((err as Error).message);
@@ -698,25 +679,25 @@ export function seedAll(): SeedSummary {
     // (frozen clock); advanceSignal does the same.
     let signalsCreated = 0;
     try {
-      createSignal(sigRisk, { id: SIG_RISK_ID, now: FROZEN_ISO });
+      createSignal(sigRisk, { id: SIG_RISK_ID });
       // Risk → Under Discussion (advance once)
-      advanceSignal(SIG_RISK_ID, { now: FROZEN_ISO });
+      advanceSignal(SIG_RISK_ID);
       signalsCreated += 1;
     } catch (err) {
       noteRefusal((err as Error).message);
     }
     try {
-      createSignal(sigDrift, { id: SIG_DRIFT_ID, now: FROZEN_ISO });
+      createSignal(sigDrift, { id: SIG_DRIFT_ID });
       // Drift → Observed (no advance)
       signalsCreated += 1;
     } catch (err) {
       noteRefusal((err as Error).message);
     }
     try {
-      createSignal(sigDep, { id: SIG_DEPCONC_ID, now: FROZEN_ISO });
+      createSignal(sigDep, { id: SIG_DEPCONC_ID });
       // Dependency Concentration → Acknowledged (advance twice)
-      advanceSignal(SIG_DEPCONC_ID, { now: FROZEN_ISO });
-      advanceSignal(SIG_DEPCONC_ID, { now: FROZEN_ISO });
+      advanceSignal(SIG_DEPCONC_ID);
+      advanceSignal(SIG_DEPCONC_ID);
       signalsCreated += 1;
     } catch (err) {
       noteRefusal((err as Error).message);

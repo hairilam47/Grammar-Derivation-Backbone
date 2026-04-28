@@ -5,7 +5,7 @@
 // recommendation / urgency / judgement language into a dev page
 // that ships in the developer build.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 import { seedAll, runSeedProbe, type SeedSummary } from "./seedAll";
@@ -119,6 +119,17 @@ export default function SeedAllPage() {
       errorMessage: result.errorMessage,
     });
   }
+
+  // Auto-run hook: visiting `/seed-all?auto=1` runs the seeder once
+  // on mount. Lets test scripts and dev launchers reseed without a
+  // click. The check tolerates SSR / non-window environments.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("auto") === "1") {
+      handleSeed();
+    }
+  }, []);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-8">

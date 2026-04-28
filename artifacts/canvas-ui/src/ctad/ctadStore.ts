@@ -553,16 +553,15 @@ export function getArchitectureDoc(id: string): CtadArchitectureDoc | null {
   return doc.architectures[id] ?? null;
 }
 
-// Optional `id` and `now` are an additive seed-affordance: when both are
-// absent the routine behaves exactly as before (random hex suffix +
-// `Date.now()` timestamps). The dev-only seeder (`/seed-all`) supplies
-// both so re-running the seed produces a byte-identical localStorage
-// snapshot. `id`, when supplied, must satisfy `isValidArchitectureId`
-// (the same regex the persisted-doc validator enforces); `now`, when
-// supplied, must be a valid ISO-8601 string.
+// Optional `id` is an additive seed-affordance: when absent the routine
+// behaves exactly as before (random hex suffix). The dev-only seeder
+// (`/seed-all`) supplies it so re-running the seed produces a
+// byte-identical localStorage snapshot. When supplied it must satisfy
+// `isValidArchitectureId` (the same regex the persisted-doc validator
+// enforces).
 export function createArchitecture(
   name: string,
-  opts?: { readonly id?: string; readonly now?: string },
+  opts?: { readonly id?: string },
 ): CtadArchitectureDoc {
   const trimmed = name.trim();
   if (trimmed.length === 0) {
@@ -579,17 +578,7 @@ export function createArchitecture(
   } else {
     id = generateArchitectureId(trimmed);
   }
-  let now: string;
-  if (opts?.now !== undefined) {
-    if (typeof opts.now !== "string" || Number.isNaN(Date.parse(opts.now))) {
-      throw new Error(
-        `CTAD store: caller-supplied "now" must be a valid ISO timestamp.`,
-      );
-    }
-    now = opts.now;
-  } else {
-    now = new Date().toISOString();
-  }
+  const now = new Date().toISOString();
   const next: CtadArchitectureDoc = Object.freeze({
     architectureId: id,
     architectureName: trimmed,
