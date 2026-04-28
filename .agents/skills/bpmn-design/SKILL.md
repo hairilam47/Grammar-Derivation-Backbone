@@ -85,12 +85,13 @@ node .agents/skills/bpmn-design/scripts/generate.mjs designs/system-model.yaml -
 
 After generation the script prints, per process:
 
-- A one-line summary: `process:checkout — 2 lanes · 5 tasks · 2 gateways (1 exclusive, 1 parallel) · 1 start, 1 end · 7 flows`.
+- A one-line summary: `process:checkout — 2 actors · 3 lanes · 5 tasks · 2 gateways (1 exclusive, 1 parallel) · 1 starts, 1 ends · 7 flows` (actor count = unique `actor:` IDs referenced by lanes in the process).
 - Orphan tasks: tasks with no `implementedBy` reference.
 - Disconnected processes: processes where every task has empty `implementedBy` (no link from the business layer to the code layer at all).
+- Unresolved `implementedBy` references: tasks pointing at function IDs that do not exist in `model.functions[]`. Surfaced here as warnings so per-process generation stays useful during incremental modelling; the foundation validator hard-fails on the same condition.
 - Cross-layer warnings: tasks whose `implementedBy` mixes services from different modules (a smell — the process is straddling module boundaries the architect should examine).
 
-Foundation-layer issues (unresolved IDs, wrong-kind references, dangling flow endpoints) are reported by the foundation validator, not duplicated here.
+Other foundation-layer issues (ID grammar, wrong-kind references, dangling flow endpoints, unresolved entity / lane / actor references) are reported by the foundation validator, not duplicated here.
 
 ## Process object shape
 

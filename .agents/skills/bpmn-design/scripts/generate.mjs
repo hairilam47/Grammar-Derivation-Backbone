@@ -182,12 +182,19 @@ function renderNode(node) {
 }
 
 // ─── Per-process summary + BPMN-layer warnings ────────────────────────────
-function summariseProcess(proc, services, warnings) {
+function summariseProcess(proc, model, warnings) {
+  const services = model.services ?? [];
+  const knownFunctions = new Set((model.functions ?? []).map((f) => f?.id).filter(Boolean));
+
   const lanes = (proc.pools ?? []).flatMap((p) => p.lanes ?? []);
   const tasks = proc.tasks ?? [];
   const gateways = proc.gateways ?? [];
   const events = proc.events ?? [];
   const flows = proc.flows ?? [];
+
+  // Actor count — unique actor IDs referenced by any lane in the process.
+  const actors = new Set();
+  for (const l of lanes) if (l?.actor) actors.add(l.actor);
 
   const gatewayKindCounts = {};
   for (const g of gateways) {
@@ -201,7 +208,7 @@ function summariseProcess(proc, services, warnings) {
     .join(", ") || "—";
 
   const summary =
-    `${proc.id} — ${lanes.length} lanes · ${tasks.length} tasks · ` +
+    `${proc.id} — ${actors.size} actors · ${lanes.length} lanes · ${tasks.length} tasks · ` +
     `${gateways.length} gateways (${gatewayKindStr}) · ${starts} starts, ${ends} ends · ${flows.length} flows`;
 
   // Layer-specific warnings.
@@ -214,6 +221,18 @@ function summariseProcess(proc, services, warnings) {
   } else if (orphanTasks.length > 0) {
     const ids = orphanTasks.map((t) => t.id).join(", ");
     warnings.push(`${proc.id}: ${orphanTasks.length} orphan task(s) with no implementedBy: ${ids}`);
+  }
+
+  // Unresolved implementedBy references — surface them at the BPMN layer too
+  // so this report stands on its own. The foundation validator hard-fails on
+  // the same condition; here we only warn so per-process generation stays
+  // useful during incremental modelling.
+  for (const t of tasks) {
+    for (const fn of t?.implementedBy ?? []) {
+      if (!knownFunctions.has(fn)) {
+        warnings.push(`${proc.id}: task ${t.id} references unknown function ${fn} (run validate.mjs for full ID checks)`);
+      }
+    }
   }
 
   // Cross-module spread — collect modules referenced by the process's tasks.
@@ -285,7 +304,7 @@ async function main() {
     const path = join(diagramsDir, `${processSlug(proc.id)}.puml`);
     await writeFile(path, puml, "utf8");
     stdout.write(`Wrote ${path}\n`);
-    summaries.push(summariseProcess(proc, model.services ?? [], warnings));
+    summaries.push(summariseProcess(proc, model, warnings));
   }
 
   stdout.write("\nSummary:\n");
