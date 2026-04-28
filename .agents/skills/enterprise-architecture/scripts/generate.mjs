@@ -73,15 +73,33 @@ function plantQuote(s) {
 }
 
 // Build cross-layer indexes used by both the diagram and the report.
+// Entries that lack a string `id` are skipped with a warning — the foundation
+// validator hard-fails on those; this generator stays useful when regenerating
+// from a partially-edited model that has not yet been re-validated.
+function withId(list, sectionName) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  let dropped = 0;
+  for (const item of list) {
+    if (item && typeof item.id === "string" && item.id.length > 0) out.push(item);
+    else dropped += 1;
+  }
+  if (dropped > 0) {
+    stderr.write(`generate.mjs: skipped ${dropped} entr${dropped === 1 ? "y" : "ies"} in ${sectionName} that lack an \`id\` (run validate.mjs to fix).\n`);
+  }
+  return out;
+}
+
 function buildIndex(model) {
-  const processes = model.processes ?? [];
-  const actors    = model.actors    ?? [];
-  const entities  = model.entities  ?? [];
-  const services  = model.services  ?? [];
-  const functions = model.functions ?? [];
-  const modules   = model.modules   ?? [];
-  const nodes     = model.technology?.nodes ?? [];
-  const environments = model.technology?.environments ?? [];
+  const processes = withId(model.processes,           "processes[]");
+  const actors    = withId(model.actors,              "actors[]");
+  const entities  = withId(model.entities,            "entities[]");
+  const services  = withId(model.services,            "services[]");
+  const functions = withId(model.functions,           "functions[]");
+  const modules   = withId(model.modules,             "modules[]");
+  const nodes     = withId(model.technology?.nodes,   "technology.nodes[]");
+  const environments = Array.isArray(model.technology?.environments) ? model.technology.environments : [];
+  const runtimes     = Array.isArray(model.technology?.runtimes)     ? model.technology.runtimes     : [];
 
   const fnById  = new Map(functions.map((f) => [f.id, f]));
   const svcById = new Map(services.map((s)  => [s.id, s]));
@@ -109,7 +127,7 @@ function buildIndex(model) {
   }
 
   return {
-    processes, actors, entities, services, functions, modules, nodes, environments,
+    processes, actors, entities, services, functions, modules, nodes, environments, runtimes,
     fnById, svcById, modById, entById, nodeById, procById,
     serviceToModule, nodeToEnvs,
   };
@@ -245,6 +263,18 @@ function renderTraceability(idx) {
   out.push("");
   out.push("This report walks every business process down through the stack: tasks → functions → entities → services → modules → deployment nodes. Gaps in the trace are flagged with ⚠ and listed in the summary at the bottom.");
   out.push("");
+
+  if (idx.runtimes.length > 0) {
+    out.push("## Runtime platforms");
+    out.push("");
+    out.push("Informational — declared in `technology.runtimes[]`. No cross-references are validated against this list.");
+    out.push("");
+    for (const r of idx.runtimes) {
+      const usedBy = Array.isArray(r?.usedBy) && r.usedBy.length > 0 ? ` — used by ${r.usedBy.join(", ")}` : "";
+      out.push(`- **${r?.name ?? "(unnamed runtime)"}**${usedBy}`);
+    }
+    out.push("");
+  }
 
   if (idx.processes.length === 0) {
     out.push("> No processes are declared. Add some via the `bpmn-design` skill.");
