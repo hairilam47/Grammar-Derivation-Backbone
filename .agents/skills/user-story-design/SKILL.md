@@ -57,7 +57,7 @@ Walk the user through one story at a time:
 1. **ID** — `story:<kebab-case>`, stable across renames. The backlog markdown is regenerated from this; renaming requires updating every `dependsOn[]` reference.
 2. **Role** — the `actor:` ID whose voice the story speaks in. The "As a Customer" half of the canonical template. Required.
 3. **Goal** — short verb phrase. The "I want to order food" half. Required.
-4. **Benefit** — the "so that I can eat" clause. Optional but strongly recommended (an INVEST-quality story explains *why*).
+4. **Benefit** — the "so that I can eat" clause. Required — an INVEST-quality story always explains *why*; the generator exits 1 if any story is missing it.
 5. **Priority** — one of `must`, `should`, `could`, `wont` (MoSCoW). Required.
 6. **Points** — optional; either a Fibonacci number (`1`, `2`, `3`, `5`, `8`, `13`, `21`) or a t-shirt size string (`xs`, `s`, `m`, `l`, `xl`).
 7. **Epic** — optional free-text label used to group stories in the backlog markdown. Stories with no `epic` are gathered under "Unassigned".
