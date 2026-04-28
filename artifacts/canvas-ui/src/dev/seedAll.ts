@@ -238,6 +238,7 @@ function buildPortfolioFixtures(): readonly PortfolioFixture[] {
 // `elementType`, `boundTechnologyCategory`, and `boundParam` from
 // the palette tile onto the `createNode` request.
 interface AcwSeedTile {
+  readonly id: string;
   readonly label: string;
   readonly parentId:
     | "domain-business"
@@ -248,16 +249,19 @@ interface AcwSeedTile {
   readonly y: number;
 }
 
+// Hard-coded node ids passed through `createNode`'s existing
+// optional `id` field so the persisted ACW workspace is byte-stable
+// across reruns.
 const ACW_SEED_TILES: readonly AcwSeedTile[] = Object.freeze([
-  { label: "Strategy Map", parentId: "domain-business", x: 80, y: 80 },
-  { label: "Capability Map", parentId: "domain-business", x: 240, y: 80 },
-  { label: "Data Store", parentId: "domain-data", x: 80, y: 80 },
-  { label: "Web Portal", parentId: "domain-application", x: 80, y: 80 },
-  { label: "API Gateway", parentId: "domain-application", x: 240, y: 80 },
-  { label: "Microservice", parentId: "domain-application", x: 400, y: 80 },
-  { label: "Cloud Region", parentId: "domain-technology", x: 80, y: 80 },
-  { label: "Database", parentId: "domain-technology", x: 240, y: 80 },
-  { label: "Monitoring", parentId: "domain-technology", x: 400, y: 80 },
+  { id: "seed-node-strategy-map", label: "Strategy Map", parentId: "domain-business", x: 80, y: 80 },
+  { id: "seed-node-capability-map", label: "Capability Map", parentId: "domain-business", x: 240, y: 80 },
+  { id: "seed-node-data-store", label: "Data Store", parentId: "domain-data", x: 80, y: 80 },
+  { id: "seed-node-web-portal", label: "Web Portal", parentId: "domain-application", x: 80, y: 80 },
+  { id: "seed-node-api-gateway", label: "API Gateway", parentId: "domain-application", x: 240, y: 80 },
+  { id: "seed-node-microservice", label: "Microservice", parentId: "domain-application", x: 400, y: 80 },
+  { id: "seed-node-cloud-region", label: "Cloud Region", parentId: "domain-technology", x: 80, y: 80 },
+  { id: "seed-node-database", label: "Database", parentId: "domain-technology", x: 240, y: 80 },
+  { id: "seed-node-monitoring", label: "Monitoring", parentId: "domain-technology", x: 400, y: 80 },
 ] as const);
 
 // CONNECTS edges between application children. Sealed domain
@@ -273,12 +277,6 @@ const ACW_SEED_EDGES: readonly { from: string; to: string }[] = Object.freeze([
 // accepts them as if they had been generated.
 const ARCH_NEXTGEN_ID = "nextgen-platform-deadbeef";
 const ARCH_MOBILE_ID = "mobile-first-architecture-cafef00d";
-
-// Hard-coded signal ids. The validator requires non-empty strings
-// only — any stable string is fine.
-const SIG_RISK_ID = "seed-signal-risk-001";
-const SIG_DRIFT_ID = "seed-signal-drift-002";
-const SIG_DEPCONC_ID = "seed-signal-depconc-003";
 
 const STUDIO_LENS_ID = "/workspace/studio";
 
@@ -509,6 +507,7 @@ export function seedAll(): SeedSummary {
         continue;
       }
       const r = createNode({
+        id: tile.id,
         type: item.elementType,
         parentId: tile.parentId,
         label: item.label,
@@ -675,29 +674,30 @@ export function seedAll(): SeedSummary {
     };
 
     // Seed in deterministic order; advance each to its target
-    // status. createSignal stamps both timestamps to FROZEN_ISO
-    // (frozen clock); advanceSignal does the same.
+    // status. createSignal returns the assigned signalId — capture
+    // it and pass to advanceSignal so the seeder does not depend on
+    // any specific id-generation scheme inside signalsStore.
     let signalsCreated = 0;
     try {
-      createSignal(sigRisk, { id: SIG_RISK_ID });
+      const created = createSignal(sigRisk);
       // Risk → Under Discussion (advance once)
-      advanceSignal(SIG_RISK_ID);
+      advanceSignal(created.signalId);
       signalsCreated += 1;
     } catch (err) {
       noteRefusal((err as Error).message);
     }
     try {
-      createSignal(sigDrift, { id: SIG_DRIFT_ID });
+      createSignal(sigDrift);
       // Drift → Observed (no advance)
       signalsCreated += 1;
     } catch (err) {
       noteRefusal((err as Error).message);
     }
     try {
-      createSignal(sigDep, { id: SIG_DEPCONC_ID });
+      const created = createSignal(sigDep);
       // Dependency Concentration → Acknowledged (advance twice)
-      advanceSignal(SIG_DEPCONC_ID);
-      advanceSignal(SIG_DEPCONC_ID);
+      advanceSignal(created.signalId);
+      advanceSignal(created.signalId);
       signalsCreated += 1;
     } catch (err) {
       noteRefusal((err as Error).message);
@@ -782,7 +782,4 @@ export const __seedAllInternals = Object.freeze({
   FROZEN_ISO,
   ARCH_NEXTGEN_ID,
   ARCH_MOBILE_ID,
-  SIG_RISK_ID,
-  SIG_DRIFT_ID,
-  SIG_DEPCONC_ID,
 });

@@ -19,17 +19,10 @@ const HOME_LINK = "Back to landing";
 const STATUS_IDLE = "No run yet on this page load.";
 const STATUS_HEADING = "Last run summary";
 const PROBE_HEADING = "Probe outcome";
+const PROBE_OK = "ok";
+const PROBE_NOT_OK = "not ok";
 const FOOTER_NOTE =
   "This page is gated to development builds and is not bundled into a published deployment.";
-const STAT_LABEL_PORTFOLIO = "Portfolio entries written";
-const STAT_LABEL_ARCHITECTURES = "CTAD architectures (bindings + standalones)";
-const STAT_LABEL_NODES = "ACW nodes (containers + children)";
-const STAT_LABEL_EDGES = "ACW edges";
-const STAT_LABEL_OUS = "Organisational units";
-const STAT_LABEL_CARDS = "CNCF cards applied";
-const STAT_LABEL_SIGNALS = "Policy signals created";
-const STAT_LABEL_TRACK3 = "Track 3 architectures with view-prefs";
-const STAT_LABEL_REFUSALS = "Validator refusals observed";
 
 assertAllAcwPlaceholderLanguage([
   PAGE_TITLE,
@@ -40,16 +33,9 @@ assertAllAcwPlaceholderLanguage([
   STATUS_IDLE,
   STATUS_HEADING,
   PROBE_HEADING,
+  PROBE_OK,
+  PROBE_NOT_OK,
   FOOTER_NOTE,
-  STAT_LABEL_PORTFOLIO,
-  STAT_LABEL_ARCHITECTURES,
-  STAT_LABEL_NODES,
-  STAT_LABEL_EDGES,
-  STAT_LABEL_OUS,
-  STAT_LABEL_CARDS,
-  STAT_LABEL_SIGNALS,
-  STAT_LABEL_TRACK3,
-  STAT_LABEL_REFUSALS,
 ]);
 
 interface RunState {
@@ -59,42 +45,18 @@ interface RunState {
   readonly probeOk?: boolean;
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+// Verbatim JSON dump of the SeedSummary returned by `seedAll()`.
+// The spec mandates that the success status panel print the JSON
+// summary exactly as returned (and the Error.message verbatim on
+// failure); see `.local/tasks/seed-all-test-data.md` step 3.
+function SummaryJson({ summary }: { summary: SeedSummary }) {
   return (
-    <div className="flex items-baseline justify-between border-b border-border/40 py-2">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="font-mono text-sm tabular-nums">{value}</span>
-    </div>
-  );
-}
-
-function SummaryGrid({ summary }: { summary: SeedSummary }) {
-  return (
-    <div className="mt-3 rounded-md border border-border/60 bg-card p-4">
-      <Stat label={STAT_LABEL_PORTFOLIO} value={String(summary.portfolio)} />
-      <Stat
-        label={STAT_LABEL_ARCHITECTURES}
-        value={String(summary.architectures)}
-      />
-      <Stat label={STAT_LABEL_NODES} value={String(summary.nodes)} />
-      <Stat label={STAT_LABEL_EDGES} value={String(summary.edges)} />
-      <Stat label={STAT_LABEL_OUS} value={String(summary.ous)} />
-      <Stat label={STAT_LABEL_CARDS} value={String(summary.cards)} />
-      <Stat label={STAT_LABEL_SIGNALS} value={String(summary.signals)} />
-      <Stat label={STAT_LABEL_TRACK3} value={String(summary.track3)} />
-      <Stat
-        label={STAT_LABEL_REFUSALS}
-        value={String(summary.refusalsObserved)}
-      />
-      {summary.firstRefusalReason !== null && (
-        <div
-          data-testid="text-first-refusal-reason"
-          className="mt-2 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 font-mono text-xs"
-        >
-          {summary.firstRefusalReason}
-        </div>
-      )}
-    </div>
+    <pre
+      data-testid="text-seed-summary-json"
+      className="mt-3 overflow-x-auto rounded-md border border-border/60 bg-card p-4 font-mono text-xs"
+    >
+      {JSON.stringify(summary, null, 2)}
+    </pre>
   );
 }
 
@@ -172,7 +134,7 @@ export default function SeedAllPage() {
         {state.kind === "seeded" && state.summary && (
           <>
             <h2 className="text-base font-semibold">{STATUS_HEADING}</h2>
-            <SummaryGrid summary={state.summary} />
+            <SummaryJson summary={state.summary} />
           </>
         )}
 
@@ -187,9 +149,9 @@ export default function SeedAllPage() {
                   : "border-amber-500/40 bg-amber-500/10"
               }`}
             >
-              {state.probeOk ? "ok" : (state.errorMessage ?? "not ok")}
+              {state.probeOk ? PROBE_OK : (state.errorMessage ?? PROBE_NOT_OK)}
             </div>
-            {state.summary && <SummaryGrid summary={state.summary} />}
+            {state.summary && <SummaryJson summary={state.summary} />}
           </>
         )}
 

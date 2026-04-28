@@ -4024,10 +4024,10 @@ writes. Achieved by:
 To revert: delete `src/dev/`, remove the dev-gated `SeedAllPage`
 lazy import + route registration from `App.tsx`, remove the
 dev-gated `seedAllInvariants.test-shape` dynamic import from
-`App.tsx`. The four additive optional parameters added to
-`createArchitecture(name, opts?: { id, now })`,
-`createSignal(input, opts?: { id, now })`,
-`advanceSignal(id, opts?: { now })`, and
-`applyCard(binding, card, opts?: { now })` are backward
-compatible with all existing callers (they default to the
-production code path) and can be left in place or rolled back.
+`App.tsx`. One additive optional parameter was added —
+`createArchitecture(name, opts?: { id })` — and it is backward
+compatible with all existing callers (default behaviour
+generates a fresh id). It can be left in place or rolled back.
+Hard-coded ids on ACW nodes are passed through `createNode`'s
+pre-existing optional `id` field; no public-API surface change
+was needed for the rest of the seed.

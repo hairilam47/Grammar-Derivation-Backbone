@@ -242,16 +242,7 @@ function newSignalId(): string {
 // Creates a new signal in Observed state. Both timestamps stamped to the
 // same instant on creation (S6 spec: createdAt and lastReviewedAt are
 // equal at birth).
-//
-// Optional `id` is an additive seed-affordance: when absent the routine
-// behaves exactly as before (`sig-…` random suffix). The dev-only
-// `/seed-all` route supplies it so re-running the seed produces a
-// byte-identical localStorage snapshot. When supplied it must be a
-// non-empty string.
-export function createSignal(
-  input: CreateSignalInput,
-  opts?: { readonly id?: string },
-): PolicySignal {
+export function createSignal(input: CreateSignalInput): PolicySignal {
   if (!SIGNAL_CATEGORIES_SET.has(input.signalCategory)) {
     throw new Error(`Unknown signalCategory "${input.signalCategory}".`);
   }
@@ -266,17 +257,7 @@ export function createSignal(
       );
     }
   }
-  let signalId: string;
-  if (opts?.id !== undefined) {
-    if (typeof opts.id !== "string" || opts.id.length === 0) {
-      throw new Error(
-        `Caller-supplied signal id must be a non-empty string.`,
-      );
-    }
-    signalId = opts.id;
-  } else {
-    signalId = newSignalId();
-  }
+  const signalId = newSignalId();
   const now = new Date().toISOString();
   const signal: PolicySignal = {
     signalId,
