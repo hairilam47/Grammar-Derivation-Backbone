@@ -187,6 +187,11 @@ function renderDdl(model) {
     if (ent.description) out.push(`-- ${ent.description}`);
     out.push(`CREATE TABLE ${tableName} (`);
     const attrs = ent.attributes ?? [];
+    const pkAttrs = attrs.filter((a) => a.primaryKey);
+    // Composite primary keys (≥2 attrs marked primaryKey) must be emitted
+    // as a single table-level constraint, not multiple column-level
+    // PRIMARY KEY clauses (which would be invalid SQL).
+    const useTableLevelPk = pkAttrs.length >= 2;
     const colWidth = Math.max(0, ...attrs.map((a) => (a.name ?? "").length));
     const typeWidth = Math.max(0, ...attrs.map((a) => (a.type ?? "?").length));
     const colLines = attrs.map((a) => {
@@ -196,12 +201,20 @@ function renderDdl(model) {
         " ",
         (a.type ?? "?").padEnd(typeWidth),
       ];
-      if (a.primaryKey) parts.push(" PRIMARY KEY");
+      // Single-attribute PK gets the inline keyword; composite PK is
+      // declared once at the bottom as PRIMARY KEY (a, b, …).
+      if (a.primaryKey && !useTableLevelPk) parts.push(" PRIMARY KEY");
       if (a.required && !a.primaryKey) parts.push(" NOT NULL");
+      if (a.primaryKey && useTableLevelPk) parts.push(" NOT NULL");
       if (a.unique && !a.primaryKey) parts.push(" UNIQUE");
       if (a.default !== undefined) parts.push(` DEFAULT ${a.default}`);
       return parts.join("");
     });
+    const constraintLines = [];
+    if (useTableLevelPk) {
+      const cols = pkAttrs.map((a) => a.name).join(", ");
+      constraintLines.push(`  PRIMARY KEY (${cols})`);
+    }
     const fkLines = attrs
       .filter((a) => a.foreignKey)
       .map((a) => {
@@ -212,7 +225,7 @@ function renderDdl(model) {
         return `  FOREIGN KEY (${a.name}) REFERENCES ${fkEnt}(${fkAttr})`;
       })
       .filter(Boolean);
-    out.push([...colLines, ...fkLines].join(",\n"));
+    out.push([...colLines, ...constraintLines, ...fkLines].join(",\n"));
     out.push(");");
 
     // Indexes (design discussion)
