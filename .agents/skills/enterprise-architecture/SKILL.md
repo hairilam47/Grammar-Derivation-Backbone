@@ -79,9 +79,10 @@ After generation the script prints the full gap list — every place a trace bre
 - **Functions without an owning service** — `function:X.y — no service` (the foundation already requires `function.service`, so this typically only fires when a function entry was hand-edited)
 - **Services not placed in any module** — `service:X — not contained by any module` (also reported by `code-structure-design`; surfaced here too because it breaks the trace)
 - **Modules without a deployment node** — `module:X — no deployedTo[] declared`
-- **Nodes referenced by no module** — `node:X — no module deploys to it` (warning only — a node may exist for documentation reasons, e.g. external services)
 - **Processes with no tasks** — `process:X — no tasks declared`
-- **Functions with no entities** — informational only (some functions don't touch data)
+- **Nodes referenced by no module** — `node:X — no module deploys to it` (informational only — does not count toward the `--strict` exit-1 total; a node may exist for documentation reasons, e.g. external services)
+
+Functions that don't touch any entities are not flagged — many service functions legitimately have no `reads[]`/`writes[]` (HTTP shims, no-op endpoints, etc.).
 
 Exit codes: 0 on success (warnings are OK); 1 on cross-layer trace gaps that the user actively asked the report to flag (`--strict`); 2 on internal failures.
 

@@ -47,3 +47,11 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Stray outputs from validation runs of the design-model skill family
+# (the model-driven generators write artifacts beside the model file; when
+# validation drops a model at repo root, the outputs land here too).
+/tmp-*.json
+/tmp-*.yaml
+/diagrams/ea-overview.puml
+/ea-traceability.md
