@@ -125,15 +125,20 @@ export default function WorkItemDashboard() {
 
   if (!orgId) return null;
 
+  // Selecting (or creating) a Work Item must land the user on the
+  // Workspace Hub — the third surface in the onboarding flow
+  // (Org Selector → Work-Item Dashboard → Workspace Hub) — NOT
+  // directly on an ADC/CTAD/ACW tool. RootGate at "/" renders the
+  // WorkspaceHub once both `orgId` and `workItemId` are set.
   function handleOpen(id: string) {
     setWorkItemId(id);
-    navigate("/workspace");
+    navigate("/");
   }
 
   function handleCreated(id: string) {
     setDialogOpen(false);
     setWorkItemId(id);
-    navigate("/workspace");
+    navigate("/");
   }
 
   function handleSwitchOrg() {
