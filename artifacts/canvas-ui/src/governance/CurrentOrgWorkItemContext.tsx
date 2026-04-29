@@ -73,8 +73,11 @@ function reconcilePersistedScope(scope: CurrentScope): CurrentScope {
     workItemId = null;
   }
   if (workItemId !== null) {
+    // Drop work-item id whenever there is no parent org in scope,
+    // the row no longer exists, or the row belongs to a different
+    // org than the one we are about to render under.
     const wi = getWorkItem(workItemId);
-    if (wi === null || (orgId !== null && wi.orgId !== orgId)) {
+    if (orgId === null || wi === null || wi.orgId !== orgId) {
       workItemId = null;
     }
   }
