@@ -176,6 +176,41 @@ const PORTFOLIO_STORE_READ_ONLY_NAMED_IMPORTS: readonly string[] = [
   "PortfolioEntry",
 ];
 
+// CTAD Phase 3 — explicit named-import allowlist for the ACW
+// workspace store. Unlike the read-only governance stores above,
+// CTAD legitimately needs both read and write access to the
+// workspace (the design shell creates / repositions / re-parents /
+// deletes nodes and edges). Listing the permitted symbols by name
+// (rather than the previous "anything goes" stance) prevents a
+// future CTAD file from quietly reaching for an authoritative
+// surface that should NOT be CTAD-callable — for example
+// `dispatch` (raw command bus), `loadWorkspace` (storage replace),
+// `getRefusalChannel`, or any future EAStudio-only mutation. Any
+// new symbol CTAD needs must be added here with rationale.
+const ACW_STORE_NAMED_IMPORTS: readonly string[] = [
+  // Core read surfaces.
+  "getWorkspace",
+  "subscribe",
+  // Pure type-guard predicates (read-only).
+  "isAcwDiagramType",
+  // Type re-exports CTAD renders against.
+  "AcwWorkspace",
+  "AcwNode",
+  "AcwEdge",
+  "AcwDiagramType",
+  "ACW_DIAGRAM_TYPES",
+  // Validator-gated mutators the design shell is permitted to call.
+  // Notably absent (and forbidden): `dispatch`, `clearWorkspace`,
+  // `__acwStoreInternals`, and any future EAStudio-only helper.
+  "createNode",
+  "createEdge",
+  "deleteEdge",
+  "renameNode",
+  "updateNodeParent",
+  "updateNodePosition",
+  "updateNodeProperties",
+];
+
 // CTAD Phase 3 (Task #152) — read-only named-import allowlists
 // for the requirements and module catalog stores. Symbols outside
 // these lists (e.g. `saveRequirement`, `deleteRequirement`,
@@ -368,6 +403,22 @@ export function assertNoForbiddenCtadImports(
       contents,
       path,
     );
+    // ACW workspace store: explicit named-import allowlist.
+    // Mutators are permitted (CTAD authors logical nodes/edges),
+    // but unlisted symbols (raw `dispatch`, `loadWorkspace`,
+    // refusal-channel internals, future EAStudio-only mutations)
+    // are forbidden. The shared assertion helper labels its error
+    // messages "read-only"; we re-use it because the same
+    // namespace/default/side-effect/dynamic-import bans apply, and
+    // the named-import sub-allowlist is the only mechanism that
+    // matters here.
+    assertReadOnlyStoreNamedImports(
+      "acw-store",
+      /["'][^"']*acw\/acwStore["']/,
+      ACW_STORE_NAMED_IMPORTS,
+      contents,
+      path,
+    );
   }
 }
 
@@ -510,5 +561,85 @@ function selfTestPhase3StoresReadOnlyScan(): void {
   }
 }
 selfTestPhase3StoresReadOnlyScan();
+
+// ACW store named-import sub-allowlist self-test. Mirrors the
+// governance-store self-test above. Verifies the bundle rejects
+// (a) an unlisted symbol like `dispatch` that CTAD must NOT call,
+// and (b) every non-named import shape (namespace, default,
+// side-effect, dynamic). Verifies it accepts the approved shape
+// the design shell actually uses.
+function selfTestAcwStoreNamedImportScan(): void {
+  const storePath = "@/acw/acwStore";
+  const bad: ReadonlyArray<{ readonly label: string; readonly src: string }> = [
+    { label: "namespace import", src: `import * as s from "${storePath}";` },
+    { label: "default import", src: `import s from "${storePath}";` },
+    {
+      label: "default + named import",
+      src: `import s, { getWorkspace } from "${storePath}";`,
+    },
+    { label: "side-effect import", src: `import "${storePath}";` },
+    {
+      label: "dynamic import",
+      src: `const m = await import("${storePath}");`,
+    },
+    {
+      label: "named import with unlisted internal (dispatch)",
+      src: `import { dispatch } from "${storePath}";`,
+    },
+    {
+      label: "named import with unlisted internal (clearWorkspace)",
+      src: `import { clearWorkspace } from "${storePath}";`,
+    },
+  ];
+  for (const { label, src } of bad) {
+    let threw = false;
+    try {
+      assertNoForbiddenCtadImports({ "/src/ctad/__synthetic__.ts": src });
+    } catch {
+      threw = true;
+    }
+    if (!threw) {
+      throw new Error(
+        `CTAD isolation invariant self-test: acw-store scan failed to reject "${label}". The named-import sub-allowlist is too lax.`,
+      );
+    }
+  }
+  // Positive controls — both real CTAD import shapes that the
+  // bundle exercises today.
+  //   approvedShell:    the CtadDesignShell.tsx mutator-heavy shape.
+  //   approvedPalette:  the paletteRegistry.ts read-only type-guard
+  //                     shape (validates that `isAcwDiagramType`
+  //                     remains in the allowlist).
+  const approvedShell = `import {
+  ACW_DIAGRAM_TYPES,
+  type AcwDiagramType,
+  type AcwEdge,
+  type AcwNode,
+  type AcwWorkspace,
+  createEdge,
+  createNode,
+  deleteEdge,
+  getWorkspace,
+  renameNode,
+  subscribe,
+  updateNodeParent,
+  updateNodePosition,
+  updateNodeProperties,
+} from "${storePath}";`;
+  const approvedPalette = `import { isAcwDiagramType } from "${storePath}";`;
+  for (const [label, src] of [
+    ["CtadDesignShell shape", approvedShell],
+    ["paletteRegistry shape", approvedPalette],
+  ] as const) {
+    try {
+      assertNoForbiddenCtadImports({ "/src/ctad/__synthetic__.ts": src });
+    } catch (e) {
+      throw new Error(
+        `CTAD isolation invariant self-test: acw-store scan rejected the approved ${label}. Cause: ${(e as Error).message}`,
+      );
+    }
+  }
+}
+selfTestAcwStoreNamedImportScan();
 
 assertNoForbiddenCtadImports(CTAD_SOURCES);

@@ -614,16 +614,46 @@ export default function CtadDesignShell() {
   // BusinessEntity); we additionally pre-screen with `canCreateNode`
   // so we can grey out infeasible quadrants in the UI before the
   // user clicks or drops.
+  //
+  // After a successful re-parent we additionally call
+  // `updateNodePosition` to seed a deterministic, quadrant-relative
+  // (x, y) inside the target sealed container. This matches the
+  // Phase-3 spec ("set parentId AND x/y on drop") and gives
+  // EAStudio a sensible starting layout without depending on
+  // whatever transient drag-position the node carried while it was
+  // a free logical node on the CTAD canvas. The offsets are simple
+  // hash-based scatter inside a 600 x 360 area so multiple
+  // promotions into the same quadrant don't all stack on top of
+  // each other; the validator does not constrain coordinates so
+  // this never refuses.
   // ---------------------------------------------------------------
   const onPromote = useCallback((node: AcwNode, parentId: string) => {
     const result = updateNodeParent(node.id, parentId);
-    if (!result.ok) setError(result.reason);
-    else {
-      setError(null);
-      // After promotion the node leaves the canvas; clear selection
-      // so the Properties panel returns to empty.
-      setSelectedNodeId(null);
+    if (!result.ok) {
+      setError(result.reason);
+      return;
     }
+    // Deterministic scatter: derive a stable offset from the node id
+    // so the same node always lands in the same spot inside its
+    // quadrant (idempotent across re-promotes / undo / replay).
+    let h = 0;
+    for (let i = 0; i < node.id.length; i++) {
+      h = (h * 31 + node.id.charCodeAt(i)) >>> 0;
+    }
+    const dx = 80 + (h % 600);
+    const dy = 80 + ((h >>> 8) % 360);
+    const reposition = updateNodePosition(node.id, dx, dy);
+    if (!reposition.ok) {
+      // Position update on a freshly-re-parented node should not
+      // refuse (no grammar coupling); surface the reason if the
+      // store ever evolves to refuse a (parent, position) pair.
+      setError(reposition.reason);
+      return;
+    }
+    setError(null);
+    // After promotion the node leaves the canvas; clear selection
+    // so the Properties panel returns to empty.
+    setSelectedNodeId(null);
   }, []);
 
   // Validator pre-screen view, rebuilt from the live workspace.
