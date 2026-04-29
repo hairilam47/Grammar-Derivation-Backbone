@@ -214,14 +214,35 @@ function deriveSlug(name: string): string {
   return base.length > 0 ? base : "org";
 }
 
+// Resolve a unique, well-formed slug for the org dictionary,
+// honouring the 40-char cap AND the slug regex's "must end with
+// [a-z0-9]" rule even when a numeric suffix has to be appended.
+// We shorten the base portion (rather than blindly truncating the
+// composed candidate) so the suffix is preserved and the end of
+// the slug is always alphanumeric, then re-check uniqueness in a
+// loop. Throws on the (impossible-in-practice) exhaustion case.
 function uniqueSlug(name: string, doc: OrgDoc): string {
+  const MAX = 40;
   const base = deriveSlug(name);
   const taken = new Set(Object.values(doc.organisations).map((o) => o.slug));
-  if (!taken.has(base)) return base;
-  let n = 2;
-  while (taken.has(`${base}-${n}`)) n += 1;
-  const candidate = `${base}-${n}`;
-  return candidate.length <= 40 ? candidate : candidate.slice(0, 40);
+  if (!taken.has(base) && isValidOrgSlug(base)) return base;
+  for (let n = 2; n < 1_000_000; n += 1) {
+    const suffix = `-${n}`;
+    const allowedBaseLen = MAX - suffix.length;
+    let trimmedBase = base.slice(0, Math.max(allowedBaseLen, 1));
+    // After the slice, the trimmed base must still end with an
+    // alphanumeric (slug regex requirement). Strip trailing dashes
+    // before re-composing.
+    trimmedBase = trimmedBase.replace(/-+$/g, "");
+    if (trimmedBase.length === 0) trimmedBase = "org";
+    const candidate = `${trimmedBase}${suffix}`;
+    if (taken.has(candidate)) continue;
+    if (!isValidOrgSlug(candidate)) continue;
+    return candidate;
+  }
+  throw new Error(
+    `orgStore: could not derive a unique slug from name "${name}".`,
+  );
 }
 
 export interface CreateOrganisationInput {
