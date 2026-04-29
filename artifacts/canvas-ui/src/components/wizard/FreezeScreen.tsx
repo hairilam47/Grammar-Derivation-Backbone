@@ -415,6 +415,17 @@ export function FreezeScreen({
         </Card>
       </div>
 
+      {/* SRS export is always available on the Freeze screen, regardless
+         of whether ADS / ECP previews have been built. The exporter
+         renders against whatever data the stores hold and stamps a
+         DRAFT watermark when the underlying contract is not frozen. */}
+      <div
+        className="flex flex-wrap items-end gap-3"
+        data-testid="srs-export-bar"
+      >
+        <SrsExportButton testIdSuffix="freeze" />
+      </div>
+
       {ads && ecp && (
         <>
           <div
@@ -451,7 +462,6 @@ export function FreezeScreen({
             >
               <FileType className="w-4 h-4" /> Export ECP (DOCX)
             </Button>
-            <SrsExportButton testIdSuffix="freeze" />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

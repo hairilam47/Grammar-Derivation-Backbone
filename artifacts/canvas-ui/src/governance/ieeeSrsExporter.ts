@@ -113,9 +113,17 @@ function buildContext(workItemIdOpt?: string): SrsContext {
     modules,
     requirements,
     contract,
+    allContracts: contracts,
     ctadArchitectures,
     acwWorkspace,
   };
+}
+
+interface RevisionEntry {
+  readonly version: string;
+  readonly date: string;
+  readonly frozenBy: string;
+  readonly requirementCount: number;
 }
 
 interface TitlePageData {
@@ -125,9 +133,14 @@ interface TitlePageData {
   readonly version: string;
   readonly lastUpdated: string;
   readonly status: "DRAFT" | "FROZEN";
+  readonly documentDate: string;
+  readonly approvingAuthority: string;
   readonly contractLine: string;
   readonly revisionLine: string;
+  readonly revisionHistory: readonly RevisionEntry[];
 }
+
+const PENDING_FREEZE = "Pending freeze";
 
 function buildTitlePage(
   ctx: SrsContext,
@@ -141,6 +154,28 @@ function buildTitlePage(
   const revisionLine = ctx.contract
     ? `Revision: contract-bound (${ctx.contract.summary.total} requirement(s) frozen)`
     : `Revision: live (${ctx.requirements.length} requirement(s) currently captured)`;
+  // Approving authority is the freezer of the most recent contract;
+  // when no contract exists it is explicitly marked as pending.
+  const approvingAuthority = ctx.contract
+    ? ctx.contract.frozenBy
+    : PENDING_FREEZE;
+  // Document date is the timestamp of the most recent freeze when one
+  // exists; otherwise the current ISO date so the rendered document
+  // always carries a date field.
+  const documentDate = ctx.contract
+    ? ctx.contract.frozenAt
+    : new Date().toISOString();
+  // Revision history walks every contract version in chronological
+  // order. Versions are derived as v1, v2, ... by index in the
+  // ascending list returned by listContracts; this gives a stable,
+  // reproducible numbering tied to freeze order rather than to wall
+  // clock. Empty history renders as a single placeholder row.
+  const revisionHistory: RevisionEntry[] = ctx.allContracts.map((c, i) => ({
+    version: `v${i + 1}`,
+    date: c.frozenAt,
+    frozenBy: c.frozenBy,
+    requirementCount: c.summary.total,
+  }));
   return {
     documentTitle: "Software Requirements Specification",
     projectName: ctx.workItem.title,
@@ -148,8 +183,11 @@ function buildTitlePage(
     version: cfg.metadata.version,
     lastUpdated: cfg.metadata.lastUpdated,
     status,
+    documentDate,
+    approvingAuthority,
     contractLine,
     revisionLine,
+    revisionHistory,
   };
 }
 
@@ -327,9 +365,26 @@ function renderPdf(
   writeWrapped(`Standard: ${title.standard}`, 11, "normal");
   writeWrapped(`Template Version: ${title.version}`, 11, "normal");
   writeWrapped(`Template Last Updated: ${title.lastUpdated}`, 11, "normal");
+  writeWrapped(`Document Date: ${title.documentDate}`, 11, "normal");
+  writeWrapped(`Approving Authority: ${title.approvingAuthority}`, 11, "normal");
   writeWrapped(`Status: ${title.status}`, 11, "bold");
   writeWrapped(title.contractLine, 10, "italic");
   writeWrapped(title.revisionLine, 10, "italic");
+  y += 10;
+  writeWrapped("Revision History", 12, "bold");
+  y += 4;
+  {
+    const histRows: string[][] =
+      title.revisionHistory.length === 0
+        ? [["[No data]", "[No data]", "[No data]", "[No data]"]]
+        : title.revisionHistory.map((r) => [
+            r.version,
+            r.date,
+            r.frozenBy,
+            String(r.requirementCount),
+          ]);
+    drawTable(["Version", "Date", "Frozen By", "Requirements"], histRows);
+  }
   y += 14;
 
   // --- Body ---
@@ -379,6 +434,61 @@ function renderPdf(
 // DOCX renderer
 // ---------------------------------------------------------------------------
 
+function buildRevisionHistoryTable(
+  history: readonly RevisionEntry[],
+): Table {
+  const headerCells = ["Version", "Date", "Frozen By", "Requirements"].map(
+    (h) =>
+      new TableCell({
+        children: [
+          new Paragraph({
+            children: [new TextRun({ text: h, bold: true, size: 20 })],
+          }),
+        ],
+      }),
+  );
+  const dataRows: TableRow[] =
+    history.length === 0
+      ? [
+          new TableRow({
+            children: ["[No data]", "[No data]", "[No data]", "[No data]"].map(
+              (cell) =>
+                new TableCell({
+                  children: [
+                    new Paragraph({
+                      children: [new TextRun({ text: cell, size: 20 })],
+                    }),
+                  ],
+                }),
+            ),
+          }),
+        ]
+      : history.map(
+          (r) =>
+            new TableRow({
+              children: [
+                r.version,
+                r.date,
+                r.frozenBy,
+                String(r.requirementCount),
+              ].map(
+                (cell) =>
+                  new TableCell({
+                    children: [
+                      new Paragraph({
+                        children: [new TextRun({ text: cell, size: 20 })],
+                      }),
+                    ],
+                  }),
+              ),
+            }),
+        );
+  return new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: [new TableRow({ children: headerCells }), ...dataRows],
+  });
+}
+
 async function renderDocx(
   cfg: SrsTemplateConfig,
   ctx: SrsContext,
@@ -412,6 +522,12 @@ async function renderDocx(
       children: [new TextRun({ text: `Template Last Updated: ${title.lastUpdated}`, size: 22 })],
     }),
     new Paragraph({
+      children: [new TextRun({ text: `Document Date: ${title.documentDate}`, size: 22 })],
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: `Approving Authority: ${title.approvingAuthority}`, size: 22 })],
+    }),
+    new Paragraph({
       children: [new TextRun({ text: `Status: ${title.status}`, bold: true, size: 22 })],
       spacing: { after: 120 },
     }),
@@ -420,6 +536,15 @@ async function renderDocx(
     }),
     new Paragraph({
       children: [new TextRun({ text: title.revisionLine, italics: true, size: 20 })],
+      spacing: { after: 240 },
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: "Revision History", bold: true, size: 24 })],
+      spacing: { before: 120, after: 80 },
+    }),
+    buildRevisionHistoryTable(title.revisionHistory),
+    new Paragraph({
+      children: [new TextRun({ text: "", size: 20 })],
       spacing: { after: 240 },
     }),
   );

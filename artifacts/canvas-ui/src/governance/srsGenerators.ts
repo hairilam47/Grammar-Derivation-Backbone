@@ -43,6 +43,11 @@ export interface SrsContext {
   readonly modules: readonly Module[];
   readonly requirements: readonly Requirement[];
   readonly contract: RequirementsContract | null;
+  // Full chronological list of frozen contracts for this work item,
+  // ascending by frozen time. Used by the title-page revision-history
+  // block and other generators that need the freeze sequence rather
+  // than only the most recent freeze.
+  readonly allContracts: readonly RequirementsContract[];
   readonly ctadArchitectures: readonly CtadArchitectureDoc[];
   readonly acwWorkspace: AcwWorkspace | null;
 }
@@ -647,5 +652,15 @@ const STATIC_TEXTS: string[] = [
   "The following technology architectures are attached to the work item via the CTAD plane:",
   "ACW workspace: not initialised",
   "No Requirements Contract has been frozen for this work item; contents may change without version increment.",
+  // --- Phase 1B IEEE-830 title-page labels (rendered by ieeeSrsExporter)
+  "Software Requirements Specification",
+  "Document Date",
+  "Approving Authority",
+  "Pending freeze",
+  "Revision History",
+  "Version",
+  "Date",
+  "Frozen By",
+  "Requirements",
 ];
 assertAllGovernanceLanguage(STATIC_TEXTS);
