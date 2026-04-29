@@ -66,6 +66,14 @@ const LABELS = {
   openDerivedCta: "Open derived view",
   emptyHeading: "No frozen decisions found",
   brandLabel: "Architecture Decision Canvas",
+  // CTAD Phase 3 (Task #152) — entry affordance for the multi-diagram
+  // logical-design surface. Lives above the tabs because it is
+  // workspace-scoped (not architecture- or ADC-scoped) and applies
+  // equally regardless of which tab the user is on.
+  designLinkHeading: "Logical Design (multi-diagram authoring)",
+  designLinkBody:
+    "Author BPMN, ERD, DDL, Sequence, and Class diagrams in the current workspace. Logical nodes are reversible until you promote them into an EAStudio domain quadrant.",
+  designLinkCta: "Open Logical Design",
 } as const;
 
 // Verbatim brief-mandated empty-state sentence. It contains the
@@ -113,6 +121,28 @@ export default function CtadEntry() {
             {LABELS.pageSubtitle}
           </p>
         </div>
+
+        <Card className="mb-6" data-testid="ctad-entry-design-link">
+          <CardHeader>
+            <CardTitle className="text-base">
+              {LABELS.designLinkHeading}
+            </CardTitle>
+            <CardDescription className="text-xs">
+              {LABELS.designLinkBody}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link href="/ctad/design">
+              <Button
+                size="sm"
+                variant="secondary"
+                data-testid="ctad-entry-design-link-cta"
+              >
+                {LABELS.designLinkCta}
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
 
         <div
           className="mb-6 inline-flex border border-border/50 rounded-md overflow-hidden text-xs"

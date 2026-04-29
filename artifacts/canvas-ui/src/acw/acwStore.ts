@@ -58,6 +58,72 @@ import {
 } from "@/governance/scopedStorageClient";
 
 export const ACW_SCHEMA_VERSION = "acw-1.0" as const;
+
+// CTAD Phase 3 — Multi-Diagram Logical Design.
+//
+// Closed enum for the diagram surface a node was authored on. The
+// CTAD design canvas filters by this so switching diagram modes
+// hides nodes from the other modes without losing them. The string
+// values are intentionally lower-case so a future serialised
+// document remains stable across casing edits to the palette.
+//
+// Declared inside `acwStore` (not in CTAD) because the read-
+// validator needs the predicate on every workspace load and the
+// ACW isolation invariant forbids ACW source from importing CTAD
+// modules. The CTAD palette imports the type from here.
+export const ACW_DIAGRAM_TYPES = [
+  "bpmn",
+  "erd",
+  "ddl",
+  "sequence",
+  "class",
+] as const;
+export type AcwDiagramType = (typeof ACW_DIAGRAM_TYPES)[number];
+
+export function isAcwDiagramType(value: unknown): value is AcwDiagramType {
+  return (
+    typeof value === "string" &&
+    (ACW_DIAGRAM_TYPES as readonly string[]).includes(value)
+  );
+}
+
+export interface AcwLogicalPosition {
+  readonly x: number;
+  readonly y: number;
+}
+
+export function isAcwLogicalPositionShape(
+  value: unknown,
+): value is AcwLogicalPosition {
+  if (value === null || typeof value !== "object") return false;
+  const o = value as Record<string, unknown>;
+  const keys = Object.keys(o);
+  if (keys.length !== 2) return false;
+  if (typeof o.x !== "number" || typeof o.y !== "number") return false;
+  return Number.isFinite(o.x) && Number.isFinite(o.y);
+}
+
+export function isAcwBoundRequirementIdsShape(
+  value: unknown,
+): value is readonly string[] {
+  if (!Array.isArray(value)) return false;
+  for (const id of value) {
+    if (typeof id !== "string" || id.length === 0) return false;
+  }
+  return true;
+}
+
+export function isAcwLogicalStyleShape(
+  value: unknown,
+): value is Readonly<Record<string, string>> {
+  if (value === null || typeof value !== "object") return false;
+  if (Array.isArray(value)) return false;
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof k !== "string" || k.length === 0) return false;
+    if (typeof v !== "string") return false;
+  }
+  return true;
+}
 // Phase 2 (SaaS Onboarding) — Org+WorkItem scope. Each Work Item
 // owns its own ACW workspace document; switching Work Items must
 // surface a different graph.
@@ -135,6 +201,52 @@ export interface AcwNode {
   // own remove path so dangling references are the rare exception
   // rather than the rule.
   readonly organisationalUnitId?: string;
+  // CTAD Phase 3 — Multi-Diagram Logical Design.
+  //
+  // Optional metadata stamped on a node when it is authored on the
+  // CTAD design canvas. The schema version stays `acw-1.0` — every
+  // field below is additive and absent on every pre-Phase-3
+  // document, so the EAStudio canvas reads existing graphs
+  // unchanged. Conversely, when present these fields are inert from
+  // EAStudio's point of view: the EAStudio render code does not key
+  // off them, the validator has no opinion about them, and they are
+  // preserved verbatim through `updateNodeProperties` /
+  // `updateNodePosition` so a CTAD-authored node survives a round
+  // trip through the EAStudio surface unchanged.
+  //
+  //   - `diagramType` — closed enum identifying which CTAD diagram
+  //     surface authored this node. Filtering by this value lets
+  //     the design canvas hide nodes from the other diagrams
+  //     without losing them.
+  //   - `diagramSubtype` — free-form label identifying the palette
+  //     tile (e.g. `"pool"`, `"task"`, `"entity"`, `"primary-key"`).
+  //     The validator only checks the field is a non-empty string;
+  //     the palette registry owns the closed set and asserts every
+  //     value passes the CTAD vocabulary tier at module load.
+  //   - `boundRequirementIds` — ids in the requirements store this
+  //     node has been linked to. Read-only one-way reference; the
+  //     validator does not check the ids exist (the requirements
+  //     store may be re-seeded or scope-switched).
+  //   - `moduleId` — id in the module catalog this node maps to.
+  //     Same one-way-read discipline as `boundRequirementIds`.
+  //   - `logicalPosition` — separate `(x, y)` slot reserved for a
+  //     future Phase where the logical diagram diverges from the
+  //     EAStudio physical layout. Phase 3 still authors `x` / `y`
+  //     directly; the field is persisted when a caller supplies it.
+  //   - `logicalParentId` — separate `parentId` slot for the same
+  //     reason. Phase 3 still uses the structural `parentId`; the
+  //     field is persisted when supplied.
+  //   - `logicalStyle` — free-form string-to-string record for
+  //     diagram-specific render hints (e.g. `{ "stroke": "dashed" }`).
+  //     The validator checks the shape; the canvas chooses how to
+  //     interpret keys.
+  readonly diagramType?: AcwDiagramType;
+  readonly diagramSubtype?: string;
+  readonly boundRequirementIds?: readonly string[];
+  readonly moduleId?: string;
+  readonly logicalPosition?: AcwLogicalPosition;
+  readonly logicalParentId?: string;
+  readonly logicalStyle?: Readonly<Record<string, string>>;
 }
 
 export interface AcwEdge {
@@ -142,6 +254,15 @@ export interface AcwEdge {
   readonly kind: AcwExplicitEdgeKind;
   readonly fromId: string;
   readonly toId: string;
+  // CTAD Phase 3 — same diagram metadata as `AcwNode`. Edges
+  // authored by the CTAD design canvas carry the same
+  // `(diagramType, diagramSubtype)` pair as the nodes they connect
+  // so the canvas filter can partition edges per diagram, and may
+  // optionally cite the requirements they realise. Absent on every
+  // pre-Phase-3 edge.
+  readonly diagramType?: AcwDiagramType;
+  readonly diagramSubtype?: string;
+  readonly boundRequirementIds?: readonly string[];
 }
 
 export interface AcwStructureGraph {
@@ -189,8 +310,37 @@ const ALLOWED_NODE = [
   // accepts both absence and well-formed presence (a non-empty
   // string id).
   "organisationalUnitId",
+  // CTAD Phase 3 (Multi-Diagram Logical Design) — optional
+  // metadata stamped onto nodes the CTAD design canvas authors.
+  // Every field is absent on every pre-Phase-3 document; the
+  // read-validator accepts absence and well-formed presence and
+  // rejects malformed values. The schema version stays
+  // `acw-1.0` — this widening is purely additive on the v1
+  // shape, so a build that pre-dates Phase 3 still loads every
+  // Phase-3-authored document (it simply cannot re-validate the
+  // new fields).
+  "diagramType",
+  "diagramSubtype",
+  "boundRequirementIds",
+  "moduleId",
+  "logicalPosition",
+  "logicalParentId",
+  "logicalStyle",
 ] as const;
-const ALLOWED_EDGE = ["id", "kind", "fromId", "toId"] as const;
+const ALLOWED_EDGE = [
+  "id",
+  "kind",
+  "fromId",
+  "toId",
+  // CTAD Phase 3 — optional diagram metadata. Edges authored by
+  // the CTAD design canvas carry the same `(diagramType,
+  // diagramSubtype)` pair as the nodes they connect so the canvas
+  // filter can partition edges per diagram. Absent on every
+  // pre-Phase-3 edge.
+  "diagramType",
+  "diagramSubtype",
+  "boundRequirementIds",
+] as const;
 
 const EXPLICIT_EDGE_KINDS = new Set<AcwExplicitEdgeKind>([
   "CONTAINS",
@@ -363,6 +513,67 @@ function assertAllowedFields(workspace: unknown): void {
         );
       }
     }
+    // CTAD Phase 3 — Multi-Diagram Logical Design. Each field below
+    // is independently optional; absence reads as undefined.
+    if (
+      node.diagramType !== undefined &&
+      !isAcwDiagramType(node.diagramType)
+    ) {
+      throw new Error(
+        "ACW node.diagramType, when present, must be one of: bpmn, erd, ddl, sequence, class.",
+      );
+    }
+    if (node.diagramSubtype !== undefined) {
+      if (
+        typeof node.diagramSubtype !== "string" ||
+        node.diagramSubtype.length === 0
+      ) {
+        throw new Error(
+          "ACW node.diagramSubtype, when present, must be a non-empty string.",
+        );
+      }
+    }
+    if (
+      node.boundRequirementIds !== undefined &&
+      !isAcwBoundRequirementIdsShape(node.boundRequirementIds)
+    ) {
+      throw new Error(
+        "ACW node.boundRequirementIds, when present, must be an array of non-empty strings.",
+      );
+    }
+    if (node.moduleId !== undefined) {
+      if (typeof node.moduleId !== "string" || node.moduleId.length === 0) {
+        throw new Error(
+          "ACW node.moduleId, when present, must be a non-empty string.",
+        );
+      }
+    }
+    if (
+      node.logicalPosition !== undefined &&
+      !isAcwLogicalPositionShape(node.logicalPosition)
+    ) {
+      throw new Error(
+        "ACW node.logicalPosition, when present, must be an object with finite numeric x and y fields only.",
+      );
+    }
+    if (node.logicalParentId !== undefined) {
+      if (
+        typeof node.logicalParentId !== "string" ||
+        node.logicalParentId.length === 0
+      ) {
+        throw new Error(
+          "ACW node.logicalParentId, when present, must be a non-empty string.",
+        );
+      }
+    }
+    if (
+      node.logicalStyle !== undefined &&
+      !isAcwLogicalStyleShape(node.logicalStyle)
+    ) {
+      throw new Error(
+        "ACW node.logicalStyle, when present, must be a string-to-string record with non-empty keys.",
+      );
+    }
     nodeIds.add(node.id);
   }
   for (const e of g.edges) {
@@ -385,6 +596,33 @@ function assertAllowedFields(workspace: unknown): void {
     }
     if (!nodeIds.has(edge.fromId) || !nodeIds.has(edge.toId)) {
       throw new Error("ACW edge endpoints must reference existing nodes.");
+    }
+    // CTAD Phase 3 — optional edge metadata.
+    if (
+      edge.diagramType !== undefined &&
+      !isAcwDiagramType(edge.diagramType)
+    ) {
+      throw new Error(
+        "ACW edge.diagramType, when present, must be one of: bpmn, erd, ddl, sequence, class.",
+      );
+    }
+    if (edge.diagramSubtype !== undefined) {
+      if (
+        typeof edge.diagramSubtype !== "string" ||
+        edge.diagramSubtype.length === 0
+      ) {
+        throw new Error(
+          "ACW edge.diagramSubtype, when present, must be a non-empty string.",
+        );
+      }
+    }
+    if (
+      edge.boundRequirementIds !== undefined &&
+      !isAcwBoundRequirementIdsShape(edge.boundRequirementIds)
+    ) {
+      throw new Error(
+        "ACW edge.boundRequirementIds, when present, must be an array of non-empty strings.",
+      );
     }
   }
 
@@ -576,12 +814,29 @@ export interface CreateNodeRequest {
   // the request type keeps the createNode contract additive and
   // future-proof.
   readonly organisationalUnitId?: string;
+  // CTAD Phase 3 — Multi-Diagram Logical Design. Each field is
+  // forwarded onto the new node verbatim when present; absence
+  // persists no field, leaving the node byte-identical to its
+  // pre-Phase-3 shape on disk. The CTAD design canvas is the only
+  // caller that wires these today.
+  readonly diagramType?: AcwDiagramType;
+  readonly diagramSubtype?: string;
+  readonly boundRequirementIds?: readonly string[];
+  readonly moduleId?: string;
+  readonly logicalPosition?: AcwLogicalPosition;
+  readonly logicalParentId?: string;
+  readonly logicalStyle?: Readonly<Record<string, string>>;
 }
 
 export interface CreateEdgeRequest {
   readonly kind: AcwExplicitEdgeKind;
   readonly fromId: string;
   readonly toId: string;
+  // CTAD Phase 3 — optional diagram metadata. Forwarded verbatim
+  // when present; absence persists no field.
+  readonly diagramType?: AcwDiagramType;
+  readonly diagramSubtype?: string;
+  readonly boundRequirementIds?: readonly string[];
 }
 
 export type StoreResult =
@@ -661,6 +916,76 @@ export function createNode(req: CreateNodeRequest): CreateNodeResult {
         "organisationalUnitId, when supplied, must be a non-empty string.",
     };
   }
+  // CTAD Phase 3 — defensive shape checks for caller-supplied
+  // multi-diagram fields. Mirrors the read-validator pass so a
+  // malformed value surfaces a precise refusal reason at the
+  // mutation entry point instead of an opaque storage error.
+  if (req.diagramType !== undefined && !isAcwDiagramType(req.diagramType)) {
+    return {
+      ok: false,
+      reason:
+        "diagramType, when supplied, must be one of: bpmn, erd, ddl, sequence, class.",
+    };
+  }
+  if (
+    req.diagramSubtype !== undefined &&
+    (typeof req.diagramSubtype !== "string" ||
+      req.diagramSubtype.length === 0)
+  ) {
+    return {
+      ok: false,
+      reason: "diagramSubtype, when supplied, must be a non-empty string.",
+    };
+  }
+  if (
+    req.boundRequirementIds !== undefined &&
+    !isAcwBoundRequirementIdsShape(req.boundRequirementIds)
+  ) {
+    return {
+      ok: false,
+      reason:
+        "boundRequirementIds, when supplied, must be an array of non-empty strings.",
+    };
+  }
+  if (
+    req.moduleId !== undefined &&
+    (typeof req.moduleId !== "string" || req.moduleId.length === 0)
+  ) {
+    return {
+      ok: false,
+      reason: "moduleId, when supplied, must be a non-empty string.",
+    };
+  }
+  if (
+    req.logicalPosition !== undefined &&
+    !isAcwLogicalPositionShape(req.logicalPosition)
+  ) {
+    return {
+      ok: false,
+      reason:
+        "logicalPosition, when supplied, must be { x: finite-number, y: finite-number }.",
+    };
+  }
+  if (
+    req.logicalParentId !== undefined &&
+    (typeof req.logicalParentId !== "string" ||
+      req.logicalParentId.length === 0)
+  ) {
+    return {
+      ok: false,
+      reason: "logicalParentId, when supplied, must be a non-empty string.",
+    };
+  }
+  if (
+    req.logicalStyle !== undefined &&
+    !isAcwLogicalStyleShape(req.logicalStyle)
+  ) {
+    return {
+      ok: false,
+      reason:
+        "logicalStyle, when supplied, must be a string-to-string record with non-empty keys.",
+    };
+  }
   if (req.id !== undefined) {
     if (typeof req.id !== "string" || req.id.length === 0) {
       return {
@@ -708,6 +1033,34 @@ export function createNode(req: CreateNodeRequest): CreateNodeResult {
     ...(req.organisationalUnitId !== undefined
       ? { organisationalUnitId: req.organisationalUnitId }
       : {}),
+    // CTAD Phase 3 — preserve multi-diagram fields when supplied.
+    // Object.freeze on the inner array / record so a downstream
+    // mutation cannot rewrite the persisted shape from outside
+    // the validator-gated mutators.
+    ...(req.diagramType !== undefined ? { diagramType: req.diagramType } : {}),
+    ...(req.diagramSubtype !== undefined
+      ? { diagramSubtype: req.diagramSubtype }
+      : {}),
+    ...(req.boundRequirementIds !== undefined
+      ? {
+          boundRequirementIds: Object.freeze([...req.boundRequirementIds]),
+        }
+      : {}),
+    ...(req.moduleId !== undefined ? { moduleId: req.moduleId } : {}),
+    ...(req.logicalPosition !== undefined
+      ? {
+          logicalPosition: Object.freeze({
+            x: req.logicalPosition.x,
+            y: req.logicalPosition.y,
+          }),
+        }
+      : {}),
+    ...(req.logicalParentId !== undefined
+      ? { logicalParentId: req.logicalParentId }
+      : {}),
+    ...(req.logicalStyle !== undefined
+      ? { logicalStyle: Object.freeze({ ...req.logicalStyle }) }
+      : {}),
   });
   const next: AcwWorkspace = Object.freeze({
     schemaVersion: ACW_SCHEMA_VERSION,
@@ -734,11 +1087,50 @@ export function createEdge(req: CreateEdgeRequest): StoreResult {
     viewFor(ws),
   );
   if (!result.ok) return { ok: false, reason: result.reason };
+  // CTAD Phase 3 — defensive shape checks for caller-supplied edge
+  // metadata. Mirrors the read-validator pass so a malformed value
+  // surfaces a precise refusal reason at the mutation entry point.
+  if (req.diagramType !== undefined && !isAcwDiagramType(req.diagramType)) {
+    return {
+      ok: false,
+      reason:
+        "diagramType, when supplied, must be one of: bpmn, erd, ddl, sequence, class.",
+    };
+  }
+  if (
+    req.diagramSubtype !== undefined &&
+    (typeof req.diagramSubtype !== "string" ||
+      req.diagramSubtype.length === 0)
+  ) {
+    return {
+      ok: false,
+      reason: "diagramSubtype, when supplied, must be a non-empty string.",
+    };
+  }
+  if (
+    req.boundRequirementIds !== undefined &&
+    !isAcwBoundRequirementIdsShape(req.boundRequirementIds)
+  ) {
+    return {
+      ok: false,
+      reason:
+        "boundRequirementIds, when supplied, must be an array of non-empty strings.",
+    };
+  }
   const edge: AcwEdge = Object.freeze({
     id: freshId("edge"),
     kind: req.kind,
     fromId: req.fromId,
     toId: req.toId,
+    ...(req.diagramType !== undefined ? { diagramType: req.diagramType } : {}),
+    ...(req.diagramSubtype !== undefined
+      ? { diagramSubtype: req.diagramSubtype }
+      : {}),
+    ...(req.boundRequirementIds !== undefined
+      ? {
+          boundRequirementIds: Object.freeze([...req.boundRequirementIds]),
+        }
+      : {}),
   });
   const next: AcwWorkspace = Object.freeze({
     schemaVersion: ACW_SCHEMA_VERSION,
@@ -988,6 +1380,21 @@ export interface UpdateNodePropertiesRequest {
   // registry is a separate visual-overlay store), but the read-
   // validation still rejects empty strings at the storage boundary.
   readonly organisationalUnitId?: string | null;
+  // CTAD Phase 3 — Multi-Diagram Logical Design. Pass `undefined`
+  // to leave unchanged; pass `null` to clear; pass a well-formed
+  // value to set. `diagramType` and `diagramSubtype` are
+  // intentionally omitted — they are stamped at creation time and
+  // must not be edited after the fact (re-classifying a node into
+  // a different diagram is a delete-and-recreate flow). The
+  // validator has no opinion about the bound id sets (the
+  // requirements / module catalog stores own that), but the read-
+  // validation still rejects empty strings and malformed shapes
+  // at the storage boundary.
+  readonly boundRequirementIds?: readonly string[] | null;
+  readonly moduleId?: string | null;
+  readonly logicalPosition?: AcwLogicalPosition | null;
+  readonly logicalParentId?: string | null;
+  readonly logicalStyle?: Readonly<Record<string, string>> | null;
 }
 
 export function updateNodeProperties(
@@ -1068,6 +1475,60 @@ export function updateNodeProperties(
       };
     }
   }
+  // CTAD Phase 3 — defensive shape checks for the new editable
+  // fields. Mirrors the read-validator pass.
+  if (
+    req.boundRequirementIds !== undefined &&
+    req.boundRequirementIds !== null &&
+    !isAcwBoundRequirementIdsShape(req.boundRequirementIds)
+  ) {
+    return {
+      ok: false,
+      reason:
+        "boundRequirementIds, when supplied, must be an array of non-empty strings.",
+    };
+  }
+  if (req.moduleId !== undefined && req.moduleId !== null) {
+    if (typeof req.moduleId !== "string" || req.moduleId.length === 0) {
+      return {
+        ok: false,
+        reason: "moduleId, when supplied, must be a non-empty string.",
+      };
+    }
+  }
+  if (
+    req.logicalPosition !== undefined &&
+    req.logicalPosition !== null &&
+    !isAcwLogicalPositionShape(req.logicalPosition)
+  ) {
+    return {
+      ok: false,
+      reason:
+        "logicalPosition, when supplied, must be { x: finite-number, y: finite-number }.",
+    };
+  }
+  if (req.logicalParentId !== undefined && req.logicalParentId !== null) {
+    if (
+      typeof req.logicalParentId !== "string" ||
+      req.logicalParentId.length === 0
+    ) {
+      return {
+        ok: false,
+        reason: "logicalParentId, when supplied, must be a non-empty string.",
+      };
+    }
+  }
+  if (
+    req.logicalStyle !== undefined &&
+    req.logicalStyle !== null &&
+    !isAcwLogicalStyleShape(req.logicalStyle)
+  ) {
+    return {
+      ok: false,
+      reason:
+        "logicalStyle, when supplied, must be a string-to-string record with non-empty keys.",
+    };
+  }
   const nextDescription =
     req.description === undefined ? prev.description : req.description ?? undefined;
   const nextOwner =
@@ -1082,6 +1543,38 @@ export function updateNodeProperties(
     req.organisationalUnitId === undefined
       ? prev.organisationalUnitId
       : req.organisationalUnitId ?? undefined;
+  // CTAD Phase 3 — fold the new fields. `undefined` means
+  // "leave unchanged"; `null` means "clear". Both `boundRequirementIds`
+  // and `logicalStyle` are deep-frozen so a downstream mutation
+  // cannot rewrite the persisted shape from outside the validator-
+  // gated mutators.
+  const nextBoundRequirementIds: readonly string[] | undefined =
+    req.boundRequirementIds === undefined
+      ? prev.boundRequirementIds
+      : req.boundRequirementIds === null
+        ? undefined
+        : Object.freeze([...req.boundRequirementIds]);
+  const nextModuleId =
+    req.moduleId === undefined ? prev.moduleId : req.moduleId ?? undefined;
+  const nextLogicalPosition: AcwLogicalPosition | undefined =
+    req.logicalPosition === undefined
+      ? prev.logicalPosition
+      : req.logicalPosition === null
+        ? undefined
+        : Object.freeze({
+            x: req.logicalPosition.x,
+            y: req.logicalPosition.y,
+          });
+  const nextLogicalParentId =
+    req.logicalParentId === undefined
+      ? prev.logicalParentId
+      : req.logicalParentId ?? undefined;
+  const nextLogicalStyle: Readonly<Record<string, string>> | undefined =
+    req.logicalStyle === undefined
+      ? prev.logicalStyle
+      : req.logicalStyle === null
+        ? undefined
+        : Object.freeze({ ...req.logicalStyle });
   const updated: AcwNode = Object.freeze({
     id: prev.id,
     type: prev.type,
@@ -1105,6 +1598,27 @@ export function updateNodeProperties(
     ...(prev.lodRange !== undefined ? { lodRange: prev.lodRange } : {}),
     ...(nextOrganisationalUnitId !== undefined
       ? { organisationalUnitId: nextOrganisationalUnitId }
+      : {}),
+    // CTAD Phase 3 — diagramType / diagramSubtype are immutable
+    // post-creation; preserve verbatim from `prev`.
+    ...(prev.diagramType !== undefined
+      ? { diagramType: prev.diagramType }
+      : {}),
+    ...(prev.diagramSubtype !== undefined
+      ? { diagramSubtype: prev.diagramSubtype }
+      : {}),
+    ...(nextBoundRequirementIds !== undefined
+      ? { boundRequirementIds: nextBoundRequirementIds }
+      : {}),
+    ...(nextModuleId !== undefined ? { moduleId: nextModuleId } : {}),
+    ...(nextLogicalPosition !== undefined
+      ? { logicalPosition: nextLogicalPosition }
+      : {}),
+    ...(nextLogicalParentId !== undefined
+      ? { logicalParentId: nextLogicalParentId }
+      : {}),
+    ...(nextLogicalStyle !== undefined
+      ? { logicalStyle: nextLogicalStyle }
       : {}),
   });
   const nodes = ws.structureGraph.nodes.slice();

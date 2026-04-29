@@ -29,6 +29,7 @@ import StudioCanvas from "@/pages/acw/views/StudioCanvas";
 import CtadEntry from "@/pages/ctad/CtadEntry";
 import CtadShell from "@/pages/ctad/CtadShell";
 import CtadArchitectureShell from "@/pages/ctad/CtadArchitectureShell";
+import CtadDesignShell from "@/pages/ctad/CtadDesignShell";
 import Track3Entry from "@/pages/acw/track3/Track3Entry";
 import Track3Shell from "@/pages/acw/track3/Track3Shell";
 // Phase 6 — module-load side effect: importing this module runs the
@@ -78,6 +79,10 @@ import "@/acw/acw3DForbiddenSemantics.test-shape";
 // (parameter registry shape locked at "ctad-1.0").
 import "@/ctad/ctadIsolationInvariants.test-shape";
 import "@/ctad/ctadGrammarInvariants.test-shape";
+// CTAD Phase 3 (Task #152) — multi-diagram logical design palette
+// shape probe (paletteKind uniqueness, diagramType validity,
+// element-type root-droppability, vocabulary-clean labels).
+import "@/ctad/paletteRegistryInvariants.test-shape";
 // CNCF reference catalog — module-load side effects: build-time
 // isolation invariant (no decision-pipeline imports, no fetch /
 // dynamic import — the catalog is bundled, never fetched) and
@@ -306,6 +311,11 @@ function Router() {
       <Route path="/ctad">
         <ToolGate>
           <CtadEntry />
+        </ToolGate>
+      </Route>
+      <Route path="/ctad/design">
+        <ToolGate>
+          <CtadDesignShell />
         </ToolGate>
       </Route>
       <Route path="/ctad/arch/:architectureId">
