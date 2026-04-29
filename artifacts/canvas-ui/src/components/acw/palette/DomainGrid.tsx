@@ -36,10 +36,28 @@
 //     the lens's inline banner surfaces them verbatim.
 //   - Zone accent colours and card border-left tints are pure UI
 //     styling — no traffic-light, no judgement, no animation.
-import type { DragEvent } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeftRight, Lock } from "lucide-react";
+import type { DragEvent, MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowLeftRight,
+  Locate,
+  Lock,
+  Maximize,
+  RefreshCcw,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
+import {
+  ACW_CANVAS_CAMERA_DEFAULT,
+  ACW_CANVAS_CAMERA_MAX_ZOOM,
+  ACW_CANVAS_CAMERA_MIN_ZOOM,
+  clampAcwCameraZoom,
+  getAcwCanvasCamera,
+  setAcwCanvasCamera,
+  subscribeAcwCanvasCameraReload,
+  type AcwCanvasCameraState,
+} from "@/acw/eastudioCameraStore";
 import {
   ACW_DOMAIN_LABEL,
   ACW_DOMAIN_ICON,
@@ -90,6 +108,19 @@ const EDGE_DELETE_CONFIRM = "Delete this connection?";
 // Asserted against the placeholder vocabulary so the parenthetical
 // phrasing required by the brief cannot drift.
 const OU_ARIA_PREFIX = "(organisational unit:";
+// Task #161 — camera toolbar / minimap labels. Mirror the
+// vocabulary used by the InteractiveCanvas2D camera toolbar so the
+// two surfaces feel identical and the same placeholder-vocabulary
+// guard applies.
+const CAMERA_ZOOM_IN_LABEL = "Zoom in";
+const CAMERA_ZOOM_OUT_LABEL = "Zoom out";
+const CAMERA_RESET_LABEL = "Reset camera";
+const CAMERA_FIT_LABEL = "Fit visible content";
+const CAMERA_RECENTRE_LABEL = "Recentre on selection";
+const CAMERA_ZOOM_LEVEL_LABEL = "Camera zoom level";
+const CAMERA_PAN_HINT_LABEL =
+  "Hold space, Alt, or the middle mouse button to pan. Hold Ctrl or Cmd while scrolling to pinch-zoom toward the cursor. Press F to recentre on the selection.";
+const MINIMAP_LABEL = "Canvas minimap";
 
 assertAllAcwPlaceholderLanguage([
   SEAL_LABEL,
@@ -97,7 +128,38 @@ assertAllAcwPlaceholderLanguage([
   CONNECT_HINT,
   EDGE_DELETE_CONFIRM,
   OU_ARIA_PREFIX,
+  CAMERA_ZOOM_IN_LABEL,
+  CAMERA_ZOOM_OUT_LABEL,
+  CAMERA_RESET_LABEL,
+  CAMERA_FIT_LABEL,
+  CAMERA_RECENTRE_LABEL,
+  CAMERA_ZOOM_LEVEL_LABEL,
+  CAMERA_PAN_HINT_LABEL,
+  MINIMAP_LABEL,
 ]);
+
+// Local view state shape — same convention as
+// InteractiveCanvas2D so a reader who knows one knows the other.
+// `panX` / `panY` is the canonical store field; we keep `x` / `y`
+// internally to match the math vocabulary.
+interface DomainGridView {
+  x: number;
+  y: number;
+  zoom: number;
+}
+const DG_INITIAL_VIEW: DomainGridView = {
+  x: ACW_CANVAS_CAMERA_DEFAULT.panX,
+  y: ACW_CANVAS_CAMERA_DEFAULT.panY,
+  zoom: ACW_CANVAS_CAMERA_DEFAULT.zoom,
+};
+function dgViewFromCamera(c: AcwCanvasCameraState): DomainGridView {
+  return { x: c.panX, y: c.panY, zoom: c.zoom };
+}
+function dgCameraFromView(v: DomainGridView): AcwCanvasCameraState {
+  return { panX: v.x, panY: v.y, zoom: v.zoom };
+}
+const DG_CAMERA_ZOOM_BUTTON_STEP = 1.2;
+const DG_CAMERA_WHEEL_PINCH_SCALE = 0.0015;
 
 export interface DomainGridProps {
   readonly lensId: string;
@@ -152,6 +214,248 @@ export function DomainGrid({ lensId }: DomainGridProps) {
   // must not appear in the L1 / L2 flat grids).
   const activeLod = getActiveLod(lensId);
   const gridRef = useRef<HTMLDivElement | null>(null);
+  // Task #161 — camera viewport (the camera-transformed surface
+  // the user pans / zooms across). The four-quadrant grid plus
+  // StudioEdgeOverlay live inside this viewport; the toolbar and
+  // minimap sit OUTSIDE it (absolutely positioned over the wrap)
+  // so they ignore the camera transform.
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  // Persistent per-(org, workItem, lensId) camera state. The store
+  // is the source of persistence; React state mirrors it at runtime
+  // and `commitView` is the single mutation point.
+  const [view, setViewRaw] = useState<DomainGridView>(() =>
+    dgViewFromCamera(getAcwCanvasCamera(lensId)),
+  );
+  useEffect(() => {
+    setViewRaw(dgViewFromCamera(getAcwCanvasCamera(lensId)));
+  }, [lensId]);
+  useEffect(() => {
+    return subscribeAcwCanvasCameraReload(() => {
+      setViewRaw(dgViewFromCamera(getAcwCanvasCamera(lensId)));
+    });
+  }, [lensId]);
+  const commitView = useCallback(
+    (next: DomainGridView | ((prev: DomainGridView) => DomainGridView)) => {
+      setViewRaw((prev) => {
+        const candidate = typeof next === "function" ? next(prev) : next;
+        const safe: DomainGridView = {
+          x: Number.isFinite(candidate.x) ? candidate.x : prev.x,
+          y: Number.isFinite(candidate.y) ? candidate.y : prev.y,
+          zoom: clampAcwCameraZoom(candidate.zoom),
+        };
+        setAcwCanvasCamera(lensId, dgCameraFromView(safe));
+        return safe;
+      });
+    },
+    [lensId],
+  );
+
+  // Spacebar-pan modifier (mirrors InteractiveCanvas2D / CTAD).
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  const spaceHeldRef = useRef(false);
+  useEffect(() => {
+    spaceHeldRef.current = spaceHeld;
+  }, [spaceHeld]);
+
+  // Pan-drag scratch state. Held in a ref so mouse handlers stay
+  // synchronous and never need a render to observe the latest pan
+  // origin (matching the InteractiveCanvas2D pattern).
+  const panRef = useRef<{
+    startX: number;
+    startY: number;
+    vx: number;
+    vy: number;
+  } | null>(null);
+
+  // ---- Camera viewport pan / pinch handlers --------------------
+  const isPanGesture = useCallback(
+    (e: ReactMouseEvent<HTMLDivElement>) =>
+      e.button === 1 || (e.button === 0 && (e.altKey || spaceHeldRef.current)),
+    [],
+  );
+  const onViewportMouseDown = (e: ReactMouseEvent<HTMLDivElement>) => {
+    if (!isPanGesture(e)) return;
+    // Stop propagation so the page selection never starts when the
+    // user pans, and so the underlying card click handlers never
+    // fire on a pan-intent left-click.
+    e.preventDefault();
+    e.stopPropagation();
+    panRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      vx: view.x,
+      vy: view.y,
+    };
+  };
+  const onViewportMouseMove = (e: ReactMouseEvent<HTMLDivElement>) => {
+    const pan = panRef.current;
+    if (pan === null) return;
+    const dx = e.clientX - pan.startX;
+    const dy = e.clientY - pan.startY;
+    commitView((v) => ({ ...v, x: pan.vx + dx, y: pan.vy + dy }));
+  };
+  const onViewportMouseUp = () => {
+    panRef.current = null;
+  };
+  // Native (non-passive) wheel handler — Ctrl/Cmd + wheel = pinch
+  // zoom toward cursor; bare wheel = identity-preserving zoom.
+  // Kept in a useEffect so we can pass `{passive: false}` and call
+  // preventDefault to suppress the host page scroll.
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const handler = (ev: globalThis.WheelEvent) => {
+      ev.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const cx = ev.clientX - rect.left;
+      const cy = ev.clientY - rect.top;
+      if (ev.ctrlKey || ev.metaKey) {
+        commitView((v) => {
+          const factor = Math.exp(-ev.deltaY * DG_CAMERA_WHEEL_PINCH_SCALE);
+          const nextZoom = clampAcwCameraZoom(v.zoom * factor);
+          if (nextZoom === v.zoom) return v;
+          const ax = (cx - v.x) / v.zoom;
+          const ay = (cy - v.y) / v.zoom;
+          return { x: cx - ax * nextZoom, y: cy - ay * nextZoom, zoom: nextZoom };
+        });
+        return;
+      }
+      const delta = -ev.deltaY * 0.001;
+      commitView((v) => ({ ...v, zoom: clampAcwCameraZoom(v.zoom + delta) }));
+    };
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
+  }, [commitView]);
+
+  // ---- Camera helpers (toolbar / F-key) ------------------------
+  const viewportSize = useCallback((): { w: number; h: number } => {
+    const el = viewportRef.current;
+    if (!el) return { w: 0, h: 0 };
+    const r = el.getBoundingClientRect();
+    return { w: r.width, h: r.height };
+  }, []);
+  const gridLayoutSize = useCallback((): { w: number; h: number } => {
+    const g = gridRef.current;
+    if (!g) return { w: 0, h: 0 };
+    // offsetWidth / offsetHeight are the UNtransformed layout box
+    // — exactly what we need to compute the fit-to-content zoom
+    // (transform: scale(...) does not change offsetWidth).
+    return { w: g.offsetWidth, h: g.offsetHeight };
+  }, []);
+  const fitContent = useCallback(() => {
+    const { w: vw, h: vh } = viewportSize();
+    const { w: gw, h: gh } = gridLayoutSize();
+    if (vw === 0 || vh === 0 || gw === 0 || gh === 0) return;
+    const margin = 0.05;
+    const targetW = vw * (1 - margin * 2);
+    const targetH = vh * (1 - margin * 2);
+    const zoom = clampAcwCameraZoom(Math.min(targetW / gw, targetH / gh));
+    const x = (vw - gw * zoom) / 2;
+    const y = (vh - gh * zoom) / 2;
+    commitView({ x, y, zoom });
+  }, [commitView, gridLayoutSize, viewportSize]);
+  const recentreOnSelection = useCallback(() => {
+    // Recentre = keep current zoom, translate so the selected
+    // node's centre is in the viewport centre. Falls back to fit-
+    // content when no node is selected (the closest "show me what
+    // there is" affordance available without a selection).
+    const { w: vw, h: vh } = viewportSize();
+    if (vw === 0 || vh === 0) {
+      fitContent();
+      return;
+    }
+    const grid = gridRef.current;
+    const vp = viewportRef.current;
+    if (!grid || !vp || selectedNodeId === null) {
+      fitContent();
+      return;
+    }
+    const target = grid.querySelector<HTMLElement>(
+      `[data-acw-node-id="${CSS.escape(selectedNodeId)}"]`,
+    );
+    if (target === null) {
+      fitContent();
+      return;
+    }
+    const cardRect = target.getBoundingClientRect();
+    const vpRect = vp.getBoundingClientRect();
+    // Card centre, in viewport-screen coordinates (already includes
+    // the current pan / zoom).
+    const cardCenterScreenX = cardRect.left + cardRect.width / 2 - vpRect.left;
+    const cardCenterScreenY = cardRect.top + cardRect.height / 2 - vpRect.top;
+    // Desired: card centre at viewport centre. Shift pan by the
+    // delta. Zoom stays the same.
+    commitView((v) => ({
+      x: v.x + (vw / 2 - cardCenterScreenX),
+      y: v.y + (vh / 2 - cardCenterScreenY),
+      zoom: v.zoom,
+    }));
+  }, [commitView, fitContent, selectedNodeId, viewportSize]);
+  const zoomAroundCentre = useCallback(
+    (factor: number) => {
+      const { w: vw, h: vh } = viewportSize();
+      if (vw === 0 || vh === 0) return;
+      commitView((v) => {
+        const nextZoom = clampAcwCameraZoom(v.zoom * factor);
+        if (nextZoom === v.zoom) return v;
+        const cx = vw / 2;
+        const cy = vh / 2;
+        const ax = (cx - v.x) / v.zoom;
+        const ay = (cy - v.y) / v.zoom;
+        return { x: cx - ax * nextZoom, y: cy - ay * nextZoom, zoom: nextZoom };
+      });
+    },
+    [commitView, viewportSize],
+  );
+  const resetCamera = useCallback(() => {
+    commitView(DG_INITIAL_VIEW);
+  }, [commitView]);
+
+  // Keyboard listener: spacebar = pan modifier; F = recentre on
+  // selection. Skipped while the user is typing in an input /
+  // textarea / contenteditable so the Properties panel never loses
+  // a keystroke.
+  useEffect(() => {
+    function isTypingTarget(t: EventTarget | null): boolean {
+      if (!(t instanceof HTMLElement)) return false;
+      const tag = t.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+      if (t.isContentEditable) return true;
+      return false;
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (isTypingTarget(e.target)) return;
+      if (e.code === "Space") {
+        if (!spaceHeldRef.current) {
+          spaceHeldRef.current = true;
+          setSpaceHeld(true);
+        }
+        e.preventDefault();
+        return;
+      }
+      if (
+        (e.key === "f" || e.key === "F") &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey
+      ) {
+        e.preventDefault();
+        recentreOnSelection();
+      }
+    }
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.code === "Space") {
+        spaceHeldRef.current = false;
+        setSpaceHeld(false);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, [recentreOnSelection]);
 
   const nodeById = useMemo(() => {
     const m = new Map<string, AcwNode>();
@@ -217,13 +521,191 @@ export function DomainGrid({ lensId }: DomainGridProps) {
     }
   };
 
+  // Minimap geometry (Task #161). Renders one rectangle per zone
+  // (the four immutable domain quadrants are the natural minimap
+  // landmarks here) plus a viewport rectangle showing what's
+  // currently visible in the camera. The minimap is read-only —
+  // no click-to-pan — so the camera viewport's existing pan / pinch
+  // / drop semantics remain unambiguous.
+  const minimapDescriptor = (() => {
+    const grid = gridRef.current;
+    const vp = viewportRef.current;
+    if (!grid || !vp) return null;
+    const gw = grid.offsetWidth;
+    const gh = grid.offsetHeight;
+    if (gw === 0 || gh === 0) return null;
+    const vpRect = vp.getBoundingClientRect();
+    const vw = vpRect.width;
+    const vh = vpRect.height;
+    if (vw === 0 || vh === 0) return null;
+    // Viewport rectangle in grid (untransformed) coordinates.
+    const vbX = view.zoom > 0 ? -view.x / view.zoom : 0;
+    const vbY = view.zoom > 0 ? -view.y / view.zoom : 0;
+    const vbW = view.zoom > 0 ? vw / view.zoom : gw;
+    const vbH = view.zoom > 0 ? vh / view.zoom : gh;
+    const worldMinX = Math.min(0, vbX);
+    const worldMinY = Math.min(0, vbY);
+    const worldMaxX = Math.max(gw, vbX + vbW);
+    const worldMaxY = Math.max(gh, vbY + vbH);
+    const worldW = Math.max(1, worldMaxX - worldMinX);
+    const worldH = Math.max(1, worldMaxY - worldMinY);
+    const MM_W = 140;
+    const MM_H = 90;
+    const scale = Math.min(MM_W / worldW, MM_H / worldH);
+    const offsetX = (MM_W - worldW * scale) / 2;
+    const offsetY = (MM_H - worldH * scale) / 2;
+    const project = (x: number, y: number, w: number, h: number) => ({
+      x: offsetX + (x - worldMinX) * scale,
+      y: offsetY + (y - worldMinY) * scale,
+      w: Math.max(1, w * scale),
+      h: Math.max(1, h * scale),
+    });
+    const grid4 = project(0, 0, gw, gh);
+    const halfW = grid4.w / 2;
+    const halfH = grid4.h / 2;
+    const quadrants = [
+      { key: "tl", x: grid4.x, y: grid4.y, w: halfW, h: halfH },
+      { key: "tr", x: grid4.x + halfW, y: grid4.y, w: halfW, h: halfH },
+      { key: "bl", x: grid4.x, y: grid4.y + halfH, w: halfW, h: halfH },
+      { key: "br", x: grid4.x + halfW, y: grid4.y + halfH, w: halfW, h: halfH },
+    ];
+    const viewportBox = project(vbX, vbY, vbW, vbH);
+    return {
+      MM_W,
+      MM_H,
+      gridProjected: grid4,
+      quadrants,
+      viewportBox,
+    };
+  })();
+
   return (
-    <div className="es-canvas-wrap">
+    <div className="es-canvas-wrap" style={{ overflow: "hidden" }}>
+      {/* Camera toolbar (Task #161). Top-left so it never collides
+          with StudioTopBar affordances and stays visible at every
+          zoom level. */}
+      <div
+        className="absolute z-20 flex items-center gap-1 rounded-md border border-border/60 bg-background/80 px-1 py-0.5 backdrop-blur-sm"
+        style={{ position: "absolute", top: 8, left: 8 }}
+        data-testid="acw-studio-camera-toolbar"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={() => zoomAroundCentre(DG_CAMERA_ZOOM_BUTTON_STEP)}
+          disabled={view.zoom >= ACW_CANVAS_CAMERA_MAX_ZOOM - 1e-6}
+          className="p-1 rounded hover:bg-muted/40 disabled:opacity-40 disabled:cursor-not-allowed"
+          title={CAMERA_ZOOM_IN_LABEL}
+          aria-label={CAMERA_ZOOM_IN_LABEL}
+          data-testid="acw-studio-camera-zoom-in"
+        >
+          <ZoomIn aria-hidden="true" size={12} />
+        </button>
+        <button
+          type="button"
+          onClick={() => zoomAroundCentre(1 / DG_CAMERA_ZOOM_BUTTON_STEP)}
+          disabled={view.zoom <= ACW_CANVAS_CAMERA_MIN_ZOOM + 1e-6}
+          className="p-1 rounded hover:bg-muted/40 disabled:opacity-40 disabled:cursor-not-allowed"
+          title={CAMERA_ZOOM_OUT_LABEL}
+          aria-label={CAMERA_ZOOM_OUT_LABEL}
+          data-testid="acw-studio-camera-zoom-out"
+        >
+          <ZoomOut aria-hidden="true" size={12} />
+        </button>
+        <button
+          type="button"
+          onClick={resetCamera}
+          className="p-1 rounded hover:bg-muted/40"
+          title={CAMERA_RESET_LABEL}
+          aria-label={CAMERA_RESET_LABEL}
+          data-testid="acw-studio-camera-reset"
+        >
+          <RefreshCcw aria-hidden="true" size={12} />
+        </button>
+        <button
+          type="button"
+          onClick={fitContent}
+          className="p-1 rounded hover:bg-muted/40"
+          title={CAMERA_FIT_LABEL}
+          aria-label={CAMERA_FIT_LABEL}
+          data-testid="acw-studio-camera-fit"
+        >
+          <Maximize aria-hidden="true" size={12} />
+        </button>
+        <button
+          type="button"
+          onClick={recentreOnSelection}
+          disabled={selectedNodeId === null}
+          className="p-1 rounded hover:bg-muted/40 disabled:opacity-40 disabled:cursor-not-allowed"
+          title={CAMERA_RECENTRE_LABEL}
+          aria-label={CAMERA_RECENTRE_LABEL}
+          data-testid="acw-studio-camera-recentre"
+        >
+          <Locate aria-hidden="true" size={12} />
+        </button>
+        <span
+          className="px-1 text-[10px] tabular-nums tracking-tight text-muted-foreground"
+          data-testid="acw-studio-camera-zoom-readout"
+          aria-label={CAMERA_ZOOM_LEVEL_LABEL}
+          title={CAMERA_ZOOM_LEVEL_LABEL}
+        >
+          {Math.round(view.zoom * 100)}%
+        </span>
+      </div>
+      {/* Pan-hint for discoverability — bottom-left, low priority. */}
+      <div
+        style={{
+          position: "absolute",
+          bottom: 4,
+          left: 8,
+          zIndex: 20,
+          fontSize: 9,
+          letterSpacing: "0.04em",
+          color: "var(--text3)",
+          pointerEvents: "none",
+        }}
+        data-testid="acw-studio-camera-pan-hint"
+        title={CAMERA_PAN_HINT_LABEL}
+      >
+        {CAMERA_PAN_HINT_LABEL}
+      </div>
+      {/* Camera viewport. Captures pan / pinch gestures; the
+          transformed `.es-zones` grid lives inside. */}
+      <div
+        ref={viewportRef}
+        data-testid="acw-studio-camera-viewport"
+        onMouseDown={onViewportMouseDown}
+        onMouseMove={onViewportMouseMove}
+        onMouseUp={onViewportMouseUp}
+        onMouseLeave={onViewportMouseUp}
+        style={{
+          position: "absolute",
+          inset: 0,
+          overflow: "hidden",
+          cursor: panRef.current
+            ? "grabbing"
+            : spaceHeld
+              ? "grab"
+              : "default",
+        }}
+      >
+        <div
+          data-testid="acw-studio-camera-transform"
+          style={{
+            position: "absolute",
+            inset: 0,
+            transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`,
+            transformOrigin: "0 0",
+            // Without an explicit width/height the inner grid would
+            // collapse because the parent is positioned (inset:0
+            // gives it size, the transform inherits it).
+          }}
+        >
       <div
         ref={gridRef}
         data-testid="acw-studio-domain-grid"
         className="es-zones"
-        style={{ position: "relative" }}
+        style={{ position: "relative", width: "100%", height: "100%" }}
       >
         {ACW_DOMAIN_CONTAINERS.map((spec) => {
           const container = findDomainContainerById(spec.id);
@@ -282,6 +764,57 @@ export function DomainGrid({ lensId }: DomainGridProps) {
           onEdgeDelete={onEdgeOverlayDelete}
         />
       </div>
+        </div>
+      </div>
+      {/* Camera minimap (Task #161). Bottom-right; read-only. */}
+      {minimapDescriptor !== null ? (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 8,
+            right: 8,
+            zIndex: 20,
+            background: "var(--bg1)",
+            border: "1px solid var(--border2)",
+            borderRadius: 6,
+            padding: 4,
+            pointerEvents: "none",
+          }}
+          data-testid="acw-studio-camera-minimap"
+          aria-label={MINIMAP_LABEL}
+          title={MINIMAP_LABEL}
+        >
+          <svg
+            width={minimapDescriptor.MM_W}
+            height={minimapDescriptor.MM_H}
+            style={{ display: "block" }}
+            aria-hidden="true"
+          >
+            {minimapDescriptor.quadrants.map((q) => (
+              <rect
+                key={q.key}
+                x={q.x}
+                y={q.y}
+                width={q.w}
+                height={q.h}
+                fill="var(--bg2)"
+                stroke="var(--border2)"
+                strokeWidth={0.5}
+              />
+            ))}
+            <rect
+              data-testid="acw-studio-camera-minimap-viewport"
+              x={minimapDescriptor.viewportBox.x}
+              y={minimapDescriptor.viewportBox.y}
+              width={minimapDescriptor.viewportBox.w}
+              height={minimapDescriptor.viewportBox.h}
+              fill="rgba(120, 180, 240, 0.18)"
+              stroke="var(--accent, #6aa6ff)"
+              strokeWidth={1}
+            />
+          </svg>
+        </div>
+      ) : null}
       {/*
         Phase 3 right-click "Swap technology" menu — anchored at the
         cursor coordinates the host captured. The host listens for

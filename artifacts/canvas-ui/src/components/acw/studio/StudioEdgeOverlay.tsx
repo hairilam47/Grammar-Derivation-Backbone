@@ -127,7 +127,14 @@ export function StudioEdgeOverlay(props: StudioEdgeOverlayProps) {
     }
     const onMove = (e: PointerEvent) => {
       const r = grid.getBoundingClientRect();
-      setCursor({ x: e.clientX - r.left, y: e.clientY - r.top });
+      // Same transform-correction as the position tick: divide by
+      // the effective parent scale so the in-progress connect line
+      // is drawn in the grid's UNtransformed coordinate space.
+      const layoutW = grid.offsetWidth;
+      const layoutH = grid.offsetHeight;
+      const sx = layoutW > 0 ? r.width / layoutW : 1;
+      const sy = layoutH > 0 ? r.height / layoutH : 1;
+      setCursor({ x: (e.clientX - r.left) / sx, y: (e.clientY - r.top) / sy });
     };
     const onLeave = () => setCursor(null);
     window.addEventListener("pointermove", onMove);
@@ -144,6 +151,24 @@ export function StudioEdgeOverlay(props: StudioEdgeOverlayProps) {
       const grid = gridRef.current;
       if (grid !== null) {
         const gridRect = grid.getBoundingClientRect();
+        // Task #161 — when the EAStudio canvas host (DomainGrid)
+        // wraps `.es-zones` in a CSS-transform-scaled camera
+        // viewport, `getBoundingClientRect()` returns coordinates
+        // in the post-transform screen space. The overlay's <svg>
+        // sits INSIDE the same transform, so if we use those
+        // post-transform numbers verbatim the parent transform
+        // re-scales them and edges drift. We divide every screen-
+        // space measurement by the effective parent scale, so
+        // size + positions are expressed in the grid's UNtransformed
+        // coordinate space. At zoom = 1 (every other host) the
+        // scale rounds to 1 and the math degenerates to the prior
+        // behaviour modulo sub-pixel rounding (`offsetWidth` is an
+        // integer, `getBoundingClientRect()` is fractional, so on
+        // fractional layouts there can be a <1px difference).
+        const layoutW = grid.offsetWidth;
+        const layoutH = grid.offsetHeight;
+        const scaleX = layoutW > 0 ? gridRect.width / layoutW : 1;
+        const scaleY = layoutH > 0 ? gridRect.height / layoutH : 1;
         const next = new Map<string, NodeRect>();
         const els = grid.querySelectorAll<SVGGraphicsElement>(
           "[data-acw-node-id]",
@@ -158,11 +183,15 @@ export function StudioEdgeOverlay(props: StudioEdgeOverlayProps) {
           // a (0,0)-sized rect would put a stray edge in the
           // top-left corner of the overlay.
           if (r.width === 0 && r.height === 0) return;
+          const localLeft = (r.left - gridRect.left) / scaleX;
+          const localTop = (r.top - gridRect.top) / scaleY;
+          const localW = r.width / scaleX;
+          const localH = r.height / scaleY;
           next.set(id, {
-            cx: r.left - gridRect.left + r.width / 2,
-            cy: r.top - gridRect.top + r.height / 2,
-            w: r.width,
-            h: r.height,
+            cx: localLeft + localW / 2,
+            cy: localTop + localH / 2,
+            w: localW,
+            h: localH,
           });
         });
         // Cheap change key: sorted (id, cx, cy) tuples rounded to
@@ -173,11 +202,11 @@ export function StudioEdgeOverlay(props: StudioEdgeOverlayProps) {
           entries.push(`${k}:${v.cx.toFixed(1)},${v.cy.toFixed(1)}`);
         });
         entries.sort();
-        const key = `${gridRect.width.toFixed(1)}x${gridRect.height.toFixed(1)}|${entries.join("|")}`;
+        const key = `${layoutW.toFixed(1)}x${layoutH.toFixed(1)}|${entries.join("|")}`;
         if (key !== prevKeyRef.current) {
           prevKeyRef.current = key;
           setPositions(next);
-          setSize({ w: gridRect.width, h: gridRect.height });
+          setSize({ w: layoutW, h: layoutH });
         }
       }
       rafId = window.requestAnimationFrame(tick);

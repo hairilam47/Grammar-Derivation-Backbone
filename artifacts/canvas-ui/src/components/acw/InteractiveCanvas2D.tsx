@@ -25,8 +25,9 @@
 //   - No labels implying judgement (the static labels in this
 //     module are asserted against ACW_PLACEHOLDER_FORBIDDEN at
 //     module load).
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent } from "react";
+import { Locate, Maximize, RefreshCcw, ZoomIn, ZoomOut } from "lucide-react";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 import {
   ACW_ELEMENT_TYPE_LABEL,
@@ -45,6 +46,16 @@ import {
   subscribeViewState,
   toggleCollapsed,
 } from "@/acw/acwViewState";
+import {
+  ACW_CANVAS_CAMERA_DEFAULT,
+  ACW_CANVAS_CAMERA_MAX_ZOOM,
+  ACW_CANVAS_CAMERA_MIN_ZOOM,
+  clampAcwCameraZoom,
+  getAcwCanvasCamera,
+  setAcwCanvasCamera,
+  subscribeAcwCanvasCameraReload,
+  type AcwCanvasCameraState,
+} from "@/acw/eastudioCameraStore";
 // v3 — structural enumeration is shared with the 3D renderer so
 // neither canvas can fabricate visibility the other does not also
 // surface. The build-time structural-identity invariant
@@ -63,12 +74,26 @@ const RESET_LABEL = "Reset view";
 const GROUP_LABEL = "Group selection";
 const GROUP_HINT_NEED_COMPUTE =
   "Select at least two siblings of the same type whose grammar permits a shared container.";
-const PAN_LABEL = "Hold Alt or use middle button to pan; drag the background to select an area.";
+const PAN_LABEL = "Hold Alt, space, or middle button to pan; drag the background to select an area.";
 const COLLAPSE_LABEL = "Collapse";
 const EXPAND_LABEL = "Expand";
 const CONTAINED_PREFIX = "contained";
 const SELECTION_LABEL = "Selection";
 const NEW_ZONE_LABEL = "Zone";
+// Task #161 — camera toolbar labels (mirroring the CTAD design
+// shell vocabulary so the two surfaces feel identical). Each
+// string is asserted against `ACW_PLACEHOLDER_FORBIDDEN` at module
+// load so a future edit cannot silently introduce judgement
+// vocabulary into the camera affordances.
+const CAMERA_ZOOM_IN_LABEL = "Zoom in";
+const CAMERA_ZOOM_OUT_LABEL = "Zoom out";
+const CAMERA_RESET_LABEL = "Reset camera";
+const CAMERA_FIT_LABEL = "Fit visible content";
+const CAMERA_RECENTRE_LABEL = "Recentre on selection";
+const CAMERA_ZOOM_LEVEL_LABEL = "Camera zoom level";
+const CAMERA_PAN_HINT_LABEL =
+  "Hold space, Alt, or the middle mouse button to pan. Hold Ctrl or Cmd while scrolling to pinch-zoom toward the cursor. Press F to recentre on the selection.";
+const MINIMAP_LABEL = "Canvas minimap";
 
 assertAllAcwPlaceholderLanguage([
   EMPTY_TITLE,
@@ -83,6 +108,14 @@ assertAllAcwPlaceholderLanguage([
   CONTAINED_PREFIX,
   SELECTION_LABEL,
   NEW_ZONE_LABEL,
+  CAMERA_ZOOM_IN_LABEL,
+  CAMERA_ZOOM_OUT_LABEL,
+  CAMERA_RESET_LABEL,
+  CAMERA_FIT_LABEL,
+  CAMERA_RECENTRE_LABEL,
+  CAMERA_ZOOM_LEVEL_LABEL,
+  CAMERA_PAN_HINT_LABEL,
+  MINIMAP_LABEL,
 ]);
 
 // Visual constants. Pure rendering geometry — no semantics.
@@ -92,12 +125,39 @@ const GRID = 24; // matches the dotted background spacing
 const CONTAINER_PADDING = 24;
 const ALIGN_TOLERANCE = 4; // px in canvas-space
 
+// View state mirrors the camera store's shape, but we keep the
+// terser `x` / `y` aliases internally so the existing clientToCanvas
+// and transform math remain pixel-identical to the pre-Task-#161
+// implementation. The camera store keeps the canonical `panX` /
+// `panY` field names; the helpers below are the single conversion
+// point between the two shapes.
 interface ViewState {
   x: number;
   y: number;
   zoom: number;
 }
-const INITIAL_VIEW: ViewState = { x: 0, y: 0, zoom: 1 };
+const INITIAL_VIEW: ViewState = {
+  x: ACW_CANVAS_CAMERA_DEFAULT.panX,
+  y: ACW_CANVAS_CAMERA_DEFAULT.panY,
+  zoom: ACW_CANVAS_CAMERA_DEFAULT.zoom,
+};
+function viewFromCamera(c: AcwCanvasCameraState): ViewState {
+  return { x: c.panX, y: c.panY, zoom: c.zoom };
+}
+function cameraFromView(v: ViewState): AcwCanvasCameraState {
+  return { panX: v.x, panY: v.y, zoom: v.zoom };
+}
+// Multiplicative zoom step matching the CTAD design shell so a
+// click on the camera toolbar's zoom buttons feels the same in
+// both surfaces.
+const CAMERA_ZOOM_BUTTON_STEP = 1.2;
+// Ctrl/Cmd+wheel pinch tunable. CTAD uses an exponential factor
+// keyed to deltaY so high-resolution trackpads do not overshoot
+// when the user makes a slow pinch gesture; we mirror it here.
+const CAMERA_WHEEL_PINCH_SCALE = 0.0015;
+function clampViewZoom(z: number): number {
+  return clampAcwCameraZoom(z);
+}
 
 export interface InteractiveCanvas2DProps {
   /** Lens identity used to scope per-lens view-state (collapse). */
@@ -211,10 +271,61 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
     suppressEdgeRendering = false,
   } = props;
 
-  const [view, setView] = useState<ViewState>(INITIAL_VIEW);
+  // Camera state is persisted per (org, workItem, lensId) via the
+  // ACW canvas camera store (Task #161). On mount we hydrate from
+  // the store; the React state is the source of truth at runtime
+  // and `commitView` is the single mutation point so persistence
+  // and clamp can never drift.
+  const [view, setViewRaw] = useState<ViewState>(() =>
+    viewFromCamera(getAcwCanvasCamera(lensId)),
+  );
+  // Re-hydrate when the lens identity changes (the lens id is
+  // routing-scoped, so this fires when the user navigates to a
+  // different ACW lens that mounts a fresh InteractiveCanvas2D
+  // instance) and when the underlying scope changes (org / work-
+  // item switch or hydration response from the api-server lands).
+  useEffect(() => {
+    setViewRaw(viewFromCamera(getAcwCanvasCamera(lensId)));
+  }, [lensId]);
+  useEffect(() => {
+    return subscribeAcwCanvasCameraReload(() => {
+      setViewRaw(viewFromCamera(getAcwCanvasCamera(lensId)));
+    });
+  }, [lensId]);
+  // Single mutation point. Funnels every camera write through the
+  // store so a future addition (debounce, telemetry, undo) only
+  // needs to be added in one place. Accepts either a direct value
+  // or an updater function so existing call-sites that previously
+  // used the React functional setter shape continue to work.
+  const commitView = useCallback(
+    (next: ViewState | ((prev: ViewState) => ViewState)) => {
+      setViewRaw((prev) => {
+        const candidate = typeof next === "function" ? next(prev) : next;
+        const safe: ViewState = {
+          x: Number.isFinite(candidate.x) ? candidate.x : prev.x,
+          y: Number.isFinite(candidate.y) ? candidate.y : prev.y,
+          zoom: clampViewZoom(candidate.zoom),
+        };
+        setAcwCanvasCamera(lensId, cameraFromView(safe));
+        return safe;
+      });
+    },
+    [lensId],
+  );
   const panRef = useRef<{ startX: number; startY: number; vx: number; vy: number } | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  // Spacebar-held pan flag (Task #161). Mirrors the CTAD design
+  // shell affordance so a user who learned the gesture in one
+  // surface gets the same behaviour in the other. The ref form is
+  // used inside event handlers that must read the latest value
+  // without triggering a re-render; the React state form drives
+  // the cursor: grab affordance.
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  const spaceHeldRef = useRef(false);
+  useEffect(() => {
+    spaceHeldRef.current = spaceHeld;
+  }, [spaceHeld]);
   const [selection, setSelection] = useState<readonly string[]>([]);
   const [drag, setDrag] = useState<DragState | null>(null);
   // Marquee (drag-rectangle) selection state. Coordinates are in
@@ -361,7 +472,13 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
   //   - Shift+left = additive marquee (extends current selection)
   // Pan is unchanged from v1; marquee is the v2 addition that
   // satisfies the "single-select / marquee-select" requirement.
-  const isPanGesture = (e: MouseEvent) => e.button === 1 || (e.button === 0 && e.altKey);
+  // Task #161 — spacebar-held pan also counts as a pan gesture, in
+  // addition to the long-standing Alt+left and middle-button paths.
+  // The CTAD design shell uses the same "modifier-or-space" rule
+  // so the affordance is portable across the two surfaces.
+  const isPanGesture = (e: MouseEvent) =>
+    e.button === 1 ||
+    (e.button === 0 && (e.altKey || spaceHeldRef.current));
   const onBgMouseDown = (e: MouseEvent<HTMLDivElement>) => {
     if (drag !== null) return;
     if (isPanGesture(e)) {
@@ -396,7 +513,7 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
     if (pan) {
       const dx = e.clientX - pan.startX;
       const dy = e.clientY - pan.startY;
-      setView((v) => ({ ...v, x: pan.vx + dx, y: pan.vy + dy }));
+      commitView((v) => ({ ...v, x: pan.vx + dx, y: pan.vy + dy }));
       return;
     }
     if (marquee) {
@@ -434,18 +551,210 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
     }
   };
 
-  // Native wheel handler for zoom
+  // Native wheel handler for zoom (Task #161 update).
+  //
+  //   - Bare wheel: identity-preserving incremental zoom (the
+  //     pre-Task-#161 behaviour) so muscle memory is preserved.
+  //   - Ctrl OR Meta + wheel: exponential pinch-zoom anchored to
+  //     the cursor — the canvas point under the cursor stays put
+  //     while the zoom scales around it. Mirrors the CTAD design
+  //     shell's pinch gesture.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const handler = (ev: globalThis.WheelEvent) => {
       ev.preventDefault();
+      if (ev.ctrlKey || ev.metaKey) {
+        // Pinch toward cursor. Solve for new pan such that the
+        // canvas-space point under the cursor before the zoom is
+        // also under the cursor after the zoom.
+        const rect = el.getBoundingClientRect();
+        const cx = ev.clientX - rect.left;
+        const cy = ev.clientY - rect.top;
+        commitView((v) => {
+          const factor = Math.exp(-ev.deltaY * CAMERA_WHEEL_PINCH_SCALE);
+          const nextZoom = clampViewZoom(v.zoom * factor);
+          if (nextZoom === v.zoom) return v;
+          // Canvas-space anchor (using the OLD view).
+          const ax = (cx - v.x) / v.zoom;
+          const ay = (cy - v.y) / v.zoom;
+          // Solve: cx = nextX + ax * nextZoom  =>  nextX = cx - ax * nextZoom
+          const nextX = cx - ax * nextZoom;
+          const nextY = cy - ay * nextZoom;
+          return { x: nextX, y: nextY, zoom: nextZoom };
+        });
+        return;
+      }
       const delta = -ev.deltaY * 0.001;
-      setView((v) => ({ ...v, zoom: Math.min(4, Math.max(0.25, v.zoom + delta)) }));
+      commitView((v) => ({ ...v, zoom: clampViewZoom(v.zoom + delta) }));
     };
     el.addEventListener("wheel", handler, { passive: false });
     return () => el.removeEventListener("wheel", handler);
-  }, []);
+  }, [commitView]);
+
+  // ---- Camera helpers (Task #161) -------------------------------
+  // The camera affordances all derive from `drawables` (already
+  // memoised above with full pan/zoom-independent canvas-space
+  // coordinates) and from the live container size, so they stay
+  // correct after any combination of pan, zoom, drag-to-reparent,
+  // collapse / expand, or marquee selection.
+  function visibleContentBounds():
+    | { x: number; y: number; w: number; h: number }
+    | null {
+    if (drawables.length === 0) return null;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const d of drawables) {
+      const box = d.isContainer ? containerBox(d) : leafBox(d);
+      if (box.x < minX) minX = box.x;
+      if (box.y < minY) minY = box.y;
+      if (box.x + box.w > maxX) maxX = box.x + box.w;
+      if (box.y + box.h > maxY) maxY = box.y + box.h;
+    }
+    if (
+      !Number.isFinite(minX) ||
+      !Number.isFinite(minY) ||
+      !Number.isFinite(maxX) ||
+      !Number.isFinite(maxY)
+    ) {
+      return null;
+    }
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }
+  function selectionBounds():
+    | { x: number; y: number; w: number; h: number }
+    | null {
+    if (selection.length === 0) return null;
+    const drawableById = new Map<string, Drawable>();
+    for (const d of drawables) drawableById.set(d.node.id, d);
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    let hits = 0;
+    for (const id of selection) {
+      const d = drawableById.get(id);
+      if (!d) continue;
+      const box = d.isContainer ? containerBox(d) : leafBox(d);
+      if (box.x < minX) minX = box.x;
+      if (box.y < minY) minY = box.y;
+      if (box.x + box.w > maxX) maxX = box.x + box.w;
+      if (box.y + box.h > maxY) maxY = box.y + box.h;
+      hits += 1;
+    }
+    if (hits === 0) return null;
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }
+  function viewportSize(): { w: number; h: number } {
+    const el = containerRef.current;
+    if (!el) return { w: 0, h: 0 };
+    const r = el.getBoundingClientRect();
+    return { w: r.width, h: r.height };
+  }
+  function fitView(box: { x: number; y: number; w: number; h: number }) {
+    const { w: vw, h: vh } = viewportSize();
+    if (vw === 0 || vh === 0 || box.w === 0 || box.h === 0) return;
+    // Leave a small margin (10% on each side) so the content never
+    // butts up against the viewport edges.
+    const margin = 0.1;
+    const targetW = vw * (1 - margin * 2);
+    const targetH = vh * (1 - margin * 2);
+    const zoom = clampViewZoom(Math.min(targetW / box.w, targetH / box.h));
+    // Centre `box` (in canvas space) inside the viewport.
+    const cxCanvas = box.x + box.w / 2;
+    const cyCanvas = box.y + box.h / 2;
+    const x = vw / 2 - cxCanvas * zoom;
+    const y = vh / 2 - cyCanvas * zoom;
+    commitView({ x, y, zoom });
+  }
+  function recentreOnSelection() {
+    const sb = selectionBounds();
+    if (sb !== null) {
+      // Keep the current zoom, just translate so the selection
+      // centroid sits in the viewport centre. Recentre — not a
+      // re-fit — matches the CTAD `f`-key UX exactly.
+      const { w: vw, h: vh } = viewportSize();
+      if (vw === 0 || vh === 0) return;
+      commitView((v) => {
+        const cx = sb.x + sb.w / 2;
+        const cy = sb.y + sb.h / 2;
+        return { x: vw / 2 - cx * v.zoom, y: vh / 2 - cy * v.zoom, zoom: v.zoom };
+      });
+      return;
+    }
+    // No selection → fall through to fit-content, which is the
+    // closest "show me everything" affordance available.
+    const cb = visibleContentBounds();
+    if (cb !== null) fitView(cb);
+  }
+  function fitContent() {
+    const cb = visibleContentBounds();
+    if (cb !== null) fitView(cb);
+  }
+  function zoomAroundCentre(factor: number) {
+    const { w: vw, h: vh } = viewportSize();
+    if (vw === 0 || vh === 0) return;
+    commitView((v) => {
+      const nextZoom = clampViewZoom(v.zoom * factor);
+      if (nextZoom === v.zoom) return v;
+      // Anchor at viewport centre so a click on +/- doesn't drift
+      // the canvas content sideways.
+      const cx = vw / 2;
+      const cy = vh / 2;
+      const ax = (cx - v.x) / v.zoom;
+      const ay = (cy - v.y) / v.zoom;
+      return { x: cx - ax * nextZoom, y: cy - ay * nextZoom, zoom: nextZoom };
+    });
+  }
+  function resetCamera() {
+    commitView(INITIAL_VIEW);
+  }
+
+  // Keyboard listener: spacebar holds the pan modifier; F recenters
+  // on the selection. Keys are intercepted only when the active
+  // element is NOT a text input / textarea / contenteditable, so
+  // typing in the Properties panel never accidentally pans.
+  useEffect(() => {
+    function isTypingTarget(t: EventTarget | null): boolean {
+      if (!(t instanceof HTMLElement)) return false;
+      const tag = t.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+      if (t.isContentEditable) return true;
+      return false;
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (isTypingTarget(e.target)) return;
+      if (e.code === "Space") {
+        if (!spaceHeldRef.current) {
+          spaceHeldRef.current = true;
+          setSpaceHeld(true);
+        }
+        e.preventDefault();
+        return;
+      }
+      if ((e.key === "f" || e.key === "F") && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        recentreOnSelection();
+      }
+    }
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.code === "Space") {
+        spaceHeldRef.current = false;
+        setSpaceHeld(false);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+    // recentreOnSelection captures live `selection` and `drawables`
+    // through closure; we re-bind every render so the F-key always
+    // operates on the latest state.
+  });
 
   // ---- Drag a node ----------------------------------------------
   function onNodeMouseDown(e: MouseEvent, node: AcwNode) {
@@ -734,7 +1043,13 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
         position: "relative",
         height,
         overflow: "hidden",
-        cursor: drag ? "grabbing" : panRef.current ? "grabbing" : "grab",
+        cursor: drag
+          ? "grabbing"
+          : panRef.current
+            ? "grabbing"
+            : spaceHeld
+              ? "grab"
+              : "default",
         backgroundImage:
           "radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px)",
         backgroundSize: `${GRID}px ${GRID}px`,
@@ -757,7 +1072,7 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
         </span>
         <button
           type="button"
-          onClick={() => setView(INITIAL_VIEW)}
+          onClick={resetCamera}
           className="px-2 py-0.5 border border-border/60 rounded hover:text-primary hover:border-primary/60 transition-colors"
           data-testid={`${testId}-reset`}
         >
@@ -783,9 +1098,178 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
       <div
         className="absolute bottom-1 left-2 z-10 text-[9px] tracking-wide text-muted-foreground/60 pointer-events-none normal-case"
         data-testid={`${testId}-pan-hint`}
+        title={CAMERA_PAN_HINT_LABEL}
       >
         {PAN_LABEL}
       </div>
+
+      {/* Camera toolbar (Task #161). Top-left so it does not
+          collide with the existing top-right HUD (Reset / Group /
+          selection count). Buttons are vector-only icons so the
+          surface stays icon-driven; titles carry the label text. */}
+      <div
+        className="absolute top-2 left-2 z-10 flex items-center gap-1 rounded-md border border-border/60 bg-background/80 px-1 py-0.5 backdrop-blur-sm"
+        data-testid={`${testId}-camera-toolbar`}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={() => zoomAroundCentre(CAMERA_ZOOM_BUTTON_STEP)}
+          disabled={view.zoom >= ACW_CANVAS_CAMERA_MAX_ZOOM - 1e-6}
+          className="p-1 rounded hover:bg-muted/40 disabled:opacity-40 disabled:cursor-not-allowed"
+          title={CAMERA_ZOOM_IN_LABEL}
+          aria-label={CAMERA_ZOOM_IN_LABEL}
+          data-testid={`${testId}-camera-zoom-in`}
+        >
+          <ZoomIn aria-hidden="true" size={12} />
+        </button>
+        <button
+          type="button"
+          onClick={() => zoomAroundCentre(1 / CAMERA_ZOOM_BUTTON_STEP)}
+          disabled={view.zoom <= ACW_CANVAS_CAMERA_MIN_ZOOM + 1e-6}
+          className="p-1 rounded hover:bg-muted/40 disabled:opacity-40 disabled:cursor-not-allowed"
+          title={CAMERA_ZOOM_OUT_LABEL}
+          aria-label={CAMERA_ZOOM_OUT_LABEL}
+          data-testid={`${testId}-camera-zoom-out`}
+        >
+          <ZoomOut aria-hidden="true" size={12} />
+        </button>
+        <button
+          type="button"
+          onClick={resetCamera}
+          className="p-1 rounded hover:bg-muted/40"
+          title={CAMERA_RESET_LABEL}
+          aria-label={CAMERA_RESET_LABEL}
+          data-testid={`${testId}-camera-reset`}
+        >
+          <RefreshCcw aria-hidden="true" size={12} />
+        </button>
+        <button
+          type="button"
+          onClick={fitContent}
+          disabled={drawables.length === 0}
+          className="p-1 rounded hover:bg-muted/40 disabled:opacity-40 disabled:cursor-not-allowed"
+          title={CAMERA_FIT_LABEL}
+          aria-label={CAMERA_FIT_LABEL}
+          data-testid={`${testId}-camera-fit`}
+        >
+          <Maximize aria-hidden="true" size={12} />
+        </button>
+        <button
+          type="button"
+          onClick={recentreOnSelection}
+          disabled={selection.length === 0 && drawables.length === 0}
+          className="p-1 rounded hover:bg-muted/40 disabled:opacity-40 disabled:cursor-not-allowed"
+          title={CAMERA_RECENTRE_LABEL}
+          aria-label={CAMERA_RECENTRE_LABEL}
+          data-testid={`${testId}-camera-recentre`}
+        >
+          <Locate aria-hidden="true" size={12} />
+        </button>
+        <span
+          className="px-1 text-[10px] tabular-nums tracking-tight text-muted-foreground"
+          data-testid={`${testId}-camera-zoom-readout`}
+          aria-label={CAMERA_ZOOM_LEVEL_LABEL}
+          title={CAMERA_ZOOM_LEVEL_LABEL}
+        >
+          {Math.round(view.zoom * 100)}%
+        </span>
+      </div>
+
+      {/* Minimap (Task #161). Bottom-right. Renders one rectangle
+          per visible drawable plus a viewport box that tracks the
+          current camera. Read-only — no click-to-pan — so the
+          existing marquee / pan / drag gestures inside the canvas
+          remain unambiguous. */}
+      {(() => {
+        const cb = visibleContentBounds();
+        if (cb === null) return null;
+        const { w: vw, h: vh } = viewportSize();
+        // Stable minimap size; sized so it never crowds the
+        // bottom-right pan-hint or the top-right HUD.
+        const MM_W = 140;
+        const MM_H = 90;
+        // Inflate the world bounds so the minimap viewport is a
+        // window onto the same coordinate space the user can pan
+        // away into. We pick max(content-bounds, current-viewport-
+        // in-canvas-space) so panning beyond the content still
+        // moves the viewport rectangle.
+        const vbX = view.zoom > 0 ? -view.x / view.zoom : 0;
+        const vbY = view.zoom > 0 ? -view.y / view.zoom : 0;
+        const vbW = view.zoom > 0 ? vw / view.zoom : cb.w;
+        const vbH = view.zoom > 0 ? vh / view.zoom : cb.h;
+        const worldMinX = Math.min(cb.x, vbX);
+        const worldMinY = Math.min(cb.y, vbY);
+        const worldMaxX = Math.max(cb.x + cb.w, vbX + vbW);
+        const worldMaxY = Math.max(cb.y + cb.h, vbY + vbH);
+        const worldW = Math.max(1, worldMaxX - worldMinX);
+        const worldH = Math.max(1, worldMaxY - worldMinY);
+        const scale = Math.min(MM_W / worldW, MM_H / worldH);
+        const offsetX = (MM_W - worldW * scale) / 2;
+        const offsetY = (MM_H - worldH * scale) / 2;
+        const project = (
+          x: number,
+          y: number,
+          w: number,
+          h: number,
+        ): { x: number; y: number; w: number; h: number } => ({
+          x: offsetX + (x - worldMinX) * scale,
+          y: offsetY + (y - worldMinY) * scale,
+          w: Math.max(1, w * scale),
+          h: Math.max(1, h * scale),
+        });
+        return (
+          <div
+            className="absolute bottom-2 right-2 z-10 rounded-md border border-border/60 bg-background/80 p-1 backdrop-blur-sm pointer-events-none"
+            data-testid={`${testId}-minimap`}
+            aria-label={MINIMAP_LABEL}
+            title={MINIMAP_LABEL}
+          >
+            <svg width={MM_W} height={MM_H} role="img" aria-hidden="true">
+              <rect
+                x={0}
+                y={0}
+                width={MM_W}
+                height={MM_H}
+                fill="rgba(255,255,255,0.02)"
+                stroke="rgba(255,255,255,0.15)"
+                strokeWidth={0.5}
+              />
+              {drawables.map((d) => {
+                const box = d.isContainer ? containerBox(d) : leafBox(d);
+                const p = project(box.x, box.y, box.w, box.h);
+                return (
+                  <rect
+                    key={`mm-${d.node.id}`}
+                    x={p.x}
+                    y={p.y}
+                    width={p.w}
+                    height={p.h}
+                    fill={d.isContainer ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.5)"}
+                    stroke="rgba(255,255,255,0.3)"
+                    strokeWidth={0.4}
+                  />
+                );
+              })}
+              {(() => {
+                const p = project(vbX, vbY, vbW, vbH);
+                return (
+                  <rect
+                    x={p.x}
+                    y={p.y}
+                    width={p.w}
+                    height={p.h}
+                    fill="rgba(255,255,255,0)"
+                    stroke="rgba(120,180,255,0.85)"
+                    strokeWidth={1}
+                    data-testid={`${testId}-minimap-viewport`}
+                  />
+                );
+              })()}
+            </svg>
+          </div>
+        );
+      })()}
 
       {isEmpty ? (
         <div
