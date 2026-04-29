@@ -1,0 +1,17 @@
+@startuml code-structure
+' Generated from designs/system-model.yaml — do not hand-edit.
+' Regenerate with: node .agents/skills/code-structure-design/scripts/generate.mjs designs/system-model.yaml
+title Code Structure — Module View
+
+package "module:checkout" as mod_checkout {
+  component "Order Service" as svc_OrderService
+}
+package "module:payment" as mod_payment {
+  component "Payment Service" as svc_PaymentService
+}
+package "module:kitchen" as mod_kitchen {
+  component "Kitchen Service" as svc_KitchenService
+}
+
+
+@enduml

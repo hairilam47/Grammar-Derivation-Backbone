@@ -1,0 +1,18 @@
+@startuml usecase-ops
+' Generated from designs/system-model.yaml — do not hand-edit.
+' System boundary: ops
+' Regenerate with: node .agents/skills/use-case-design/scripts/generate.mjs designs/system-model.yaml
+title ops
+left to right direction
+skinparam packageStyle rectangle
+skinparam backgroundColor white
+
+actor "Operations" as actor_Ops
+
+rectangle "ops" {
+  usecase "Archive Old Orders" as uc_archive_old_orders
+}
+
+actor_Ops --> uc_archive_old_orders
+
+@enduml

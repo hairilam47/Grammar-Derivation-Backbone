@@ -1,0 +1,81 @@
+@startuml ea-overview
+' Generated from designs/system-model.yaml — do not hand-edit.
+' Regenerate with: node .agents/skills/enterprise-architecture/scripts/generate.mjs designs/system-model.yaml
+title Enterprise Architecture — Overview
+
+rectangle "Requirements Layer (stories, use cases)" as L_requirements #E1D5E7 {
+  rectangle "epic: Ordering" as L_req_epic_ordering {
+    rectangle "story:customer-views-menu (must)" as story_customer_views_menu
+    rectangle "story:customer-orders-food (must)" as story_customer_orders_food
+  }
+  rectangle "epic: Payment" as L_req_epic_payment {
+    rectangle "story:customer-pays (should)" as story_customer_pays
+  }
+  rectangle "epic: Platform" as L_req_epic_platform {
+    rectangle "story:upgrade-postgres (could)" as story_upgrade_postgres
+  }
+  rectangle "system: ops" as L_req_sys_ops {
+    usecase "usecase:archive-old-orders\nArchive Old Orders" as uc_archive_old_orders
+  }
+  rectangle "system: restaurant" as L_req_sys_restaurant {
+    usecase "usecase:order-food\nOrder Food" as uc_order_food
+    usecase "usecase:pay-bill\nPay Bill" as uc_pay_bill
+  }
+}
+
+rectangle "Business Layer (BPMN — processes, actors)" as L_business #FFF2CC {
+  rectangle "process:order-fulfilment\nOrder Fulfilment" as proc_order_fulfilment {
+    rectangle "task:place-order\nPlace order" as task_place_order
+    rectangle "task:take-payment\nTake payment" as task_take_payment
+    rectangle "task:fulfil\nShip the order" as task_fulfil
+  }
+  rectangle "actor:Customer\nCustomer" as actor_Customer
+  rectangle "actor:Kitchen\nKitchen" as actor_Kitchen
+  rectangle "actor:Ops\nOperations" as actor_Ops
+}
+
+rectangle "Data Layer (ERD — entities)" as L_data #DAE8FC {
+  rectangle "entity:Customer" as ent_Customer
+  rectangle "entity:Order" as ent_Order
+  rectangle "entity:Payment" as ent_Payment
+}
+
+rectangle "Application Layer (services, functions, modules)" as L_application #D5E8D4 {
+  rectangle "module:checkout" as mod_checkout {
+    component "Order Service" as svc_OrderService
+  }
+  rectangle "module:payment" as mod_payment {
+    component "Payment Service" as svc_PaymentService
+  }
+  rectangle "module:kitchen" as mod_kitchen {
+    component "Kitchen Service" as svc_KitchenService
+  }
+  component "OrderService.placeOrder" as fn_OrderService_placeOrder
+  component "PaymentService.charge" as fn_PaymentService_charge
+  component "KitchenService.dispatch" as fn_KitchenService_dispatch
+}
+
+rectangle "Technology Layer (deployment nodes)" as L_technology #F8CECC {
+  rectangle "node:api-host\n«container»\n[Production, Staging]" as node_api_host
+  rectangle "node:postgres-cluster\n«managed-service»\n[Production, Staging]" as node_postgres_cluster
+  rectangle "node:legacy-vm\n«vm»" as node_legacy_vm
+}
+
+proc_order_fulfilment ..> fn_OrderService_placeOrder : "implementedBy"
+proc_order_fulfilment ..> fn_PaymentService_charge : "implementedBy"
+proc_order_fulfilment ..> fn_KitchenService_dispatch : "implementedBy"
+fn_OrderService_placeOrder ..> ent_Customer : "reads"
+fn_OrderService_placeOrder ..> ent_Order : "writes"
+fn_PaymentService_charge ..> ent_Order : "reads"
+fn_PaymentService_charge ..> ent_Payment : "writes"
+fn_KitchenService_dispatch ..> ent_Order : "reads"
+mod_checkout ..> node_api_host : "deployedTo"
+mod_payment ..> node_api_host : "deployedTo"
+mod_kitchen ..> node_api_host : "deployedTo"
+story_customer_views_menu ..> uc_order_food : "realizes"
+story_customer_orders_food ..> uc_order_food : "realizes"
+story_customer_pays ..> uc_pay_bill : "realizes"
+uc_order_food ..> task_place_order : "implementedBy"
+uc_pay_bill ..> task_take_payment : "implementedBy"
+
+@enduml

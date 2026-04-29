@@ -1,0 +1,25 @@
+@startuml system-c4
+' Generated from designs/system-model.yaml — do not hand-edit.
+' Regenerate with: node .agents/skills/system-design/scripts/generate.mjs designs/system-model.yaml
+title System — Component View
+skinparam component {
+  BackgroundColor<<service>>  LightBlue
+  BorderColor<<service>>      SteelBlue
+}
+skinparam rectangle {
+  BackgroundColor<<module>>   #FAFAFA
+  BorderColor<<module>>       #888888
+}
+
+rectangle "module:checkout" <<module>> {
+  component "Order Service" as svc_OrderService <<service>>
+}
+rectangle "module:payment" <<module>> {
+  component "Payment Service" as svc_PaymentService <<service>>
+}
+rectangle "module:kitchen" <<module>> {
+  component "Kitchen Service" as svc_KitchenService <<service>>
+}
+
+
+@enduml

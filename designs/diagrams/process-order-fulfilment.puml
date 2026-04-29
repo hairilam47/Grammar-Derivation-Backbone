@@ -1,0 +1,50 @@
+@startuml process-order-fulfilment
+' Generated from designs/system-model.yaml — do not hand-edit.
+' Process: process:order-fulfilment (Order Fulfilment)
+' Regenerate with: node .agents/skills/bpmn-design/scripts/generate.mjs designs/system-model.yaml
+title Order Fulfilment
+hide empty description
+skinparam backgroundColor white
+skinparam state {
+  BackgroundColor<<task>>    LightSkyBlue
+  BackgroundColor<<event>>   PaleGreen
+  BorderColor<<event>>       SeaGreen
+  BackgroundColor<<gateway>> LightYellow
+  BorderColor<<gateway>>     Orange
+}
+
+state "Restaurant" as pool_restaurant {
+  state "Customer" as lane_customer {
+    state "Hungry" as e_start <<event>>
+    state "Place order" as t_place_order <<task>>
+    state "Take payment" as t_take_payment <<task>>
+  }
+  state "Kitchen" as lane_kitchen {
+    state "Fed" as e_end <<event>>
+    state "Ship the order" as t_fulfil <<task>>
+  }
+}
+
+note right of t_place_order
+  impl: function:OrderService.placeOrder
+  consumes: entity:Customer
+  produces: entity:Order
+end note
+note right of t_take_payment
+  impl: function:PaymentService.charge
+  consumes: entity:Order
+  produces: entity:Payment
+end note
+note right of t_fulfil
+  impl: function:KitchenService.dispatch
+  consumes: entity:Order
+end note
+
+[*] --> e_start
+e_start --> t_place_order
+t_place_order --> t_take_payment
+t_take_payment --> t_fulfil
+t_fulfil --> e_end
+e_end --> [*]
+
+@enduml

@@ -150,6 +150,8 @@ stories:
 
 The foundation validator enforces ID grammar and cross-reference resolution. This skill's generator additionally treats missing `role`, `goal`, or `benefit` as **errors** (exit 1) — without all three halves of the Connextra template ("As a … I want … so that …") a story is not a story. Layer-specific checks (priority within the MoSCoW set, points within the Fibonacci or t-shirt domain, acceptance criteria well-formedness, dependency cycles) are reported as warnings (exit 0).
 
+When a required field is missing, the generator still writes the partial backlog to disk with a visible placeholder (`_(no benefit declared — fill in the user value)_`) before exiting 1. This way a CI run sees the actual gap rendered in the file as well as the non-zero exit code, and a developer regenerating mid-edit can read the rest of the backlog while they fix the missing field.
+
 ## Backlog markdown convention
 
 `designs/stories.md` is regenerated on every run, sorted by epic (alphabetical, with "Unassigned" last) and within each epic by priority (must → should → could → wont, then by ID).

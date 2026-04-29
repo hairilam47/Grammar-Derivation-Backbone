@@ -1,0 +1,32 @@
+@startuml ERD
+' Generated from designs/system-model.yaml — do not hand-edit.
+' Regenerate with: node .agents/skills/erd-design/scripts/generate.mjs designs/system-model.yaml
+hide circle
+skinparam linetype ortho
+
+entity "Customer" as Customer {
+  * id : uuid <<PK>>
+  --
+  * email : string <<UK>>
+  * name : string
+}
+
+entity "Order" as Order {
+  * id : uuid <<PK>>
+  --
+  * customerId : uuid <<FK>>
+  * total : decimal
+  * placedAt : timestamp
+}
+
+entity "Payment" as Payment {
+  * id : uuid <<PK>>
+  --
+  * orderId : uuid <<FK>>
+  * amount : decimal
+  * paidAt : timestamp
+}
+
+Order }|--|| Customer : "orders (customer)"
+
+@enduml

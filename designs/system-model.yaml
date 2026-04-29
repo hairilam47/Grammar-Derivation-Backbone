@@ -1,0 +1,281 @@
+metadata:
+  name: Restaurant Smoke-Test
+  version: 0.1.0
+  description: >
+    Extended restaurant fixture used to exercise the cross-layer design
+    model end-to-end: stories + use cases on top of the existing process
+    / data / application / technology layers, with deliberate gaps to
+    exercise the EA orchestrator's informational gap categories.
+
+# ─── Actors ───────────────────────────────────────────────────────────────
+actors:
+  - id: actor:Customer
+    name: Customer
+    type: person
+    description: Diner who places orders and pays.
+  - id: actor:Kitchen
+    name: Kitchen
+    type: person
+    description: Kitchen staff who fulfil tickets.
+  - id: actor:Ops
+    name: Operations
+    type: person
+    description: Back-office operator (archives, reporting).
+
+# ─── Use cases ────────────────────────────────────────────────────────────
+usecases:
+  - id: usecase:order-food
+    name: Order Food
+    system: restaurant
+    actors: [actor:Customer]
+    description: Customer browses the menu, picks items, places an order.
+
+  - id: usecase:pay-bill
+    name: Pay Bill
+    system: restaurant
+    actors: [actor:Customer]
+    description: Customer pays for an open order.
+
+  - id: usecase:archive-old-orders
+    name: Archive Old Orders
+    system: ops
+    actors: [actor:Ops]
+    description: >
+      Operator archives orders older than 90 days. Intentionally has no
+      story realizing it — exercises the "use cases not realized by any
+      story" informational gap.
+
+# ─── User stories ─────────────────────────────────────────────────────────
+stories:
+  - id: story:customer-views-menu
+    role: actor:Customer
+    goal: see the menu
+    benefit: I know what I can order
+    priority: must
+    points: 2
+    epic: Ordering
+    realizes: [usecase:order-food]
+    implementedBy: [function:OrderService.placeOrder]
+    acceptanceCriteria:
+      - given: the menu is published
+        when: the customer opens the ordering page
+        then: every available item is visible with name and price
+
+  - id: story:customer-orders-food
+    role: actor:Customer
+    goal: order food
+    benefit: I can eat
+    priority: must
+    points: 5
+    epic: Ordering
+    realizes: [usecase:order-food]
+    implementedBy: [function:OrderService.placeOrder]
+    dependsOn: [story:customer-views-menu]
+    acceptanceCriteria:
+      - given: the menu is loaded
+        when: the customer adds an item to the order
+        then: the order shows the new item with the correct price
+      - given: the cart has at least one item
+        when: the customer submits the order
+        then: the kitchen receives a ticket within one second
+
+  - id: story:customer-pays
+    role: actor:Customer
+    goal: pay the bill
+    benefit: I can leave the restaurant
+    priority: should
+    points: 3
+    epic: Payment
+    realizes: [usecase:pay-bill]
+    implementedBy: [function:PaymentService.charge]
+    dependsOn: [story:customer-orders-food]
+    acceptanceCriteria:
+      - given: the order is open
+        when: the customer presents a card
+        then: the order is marked paid within five seconds
+
+  - id: story:upgrade-postgres
+    role: actor:Ops
+    goal: upgrade the database
+    benefit: we get the latest security patches
+    priority: could
+    points: 8
+    epic: Platform
+    # No `realizes[]` — exercises the "stories that realize no use case"
+    # informational gap on purpose.
+
+# ─── Entities ─────────────────────────────────────────────────────────────
+entities:
+  - id: entity:Customer
+    name: Customer
+    description: A registered diner.
+    attributes:
+      - { name: id,    type: uuid,   required: true, primaryKey: true }
+      - { name: email, type: string, required: true, unique: true }
+      - { name: name,  type: string, required: true }
+
+  - id: entity:Order
+    name: Order
+    description: An order placed by a customer.
+    attributes:
+      - { name: id,         type: uuid,      required: true, primaryKey: true }
+      - { name: customerId, type: uuid,      required: true, foreignKey: "entity:Customer.id" }
+      - { name: total,      type: decimal,   required: true }
+      - { name: placedAt,   type: timestamp, required: true }
+    relationships:
+      - to: entity:Customer
+        cardinality: many-to-one
+        roleNameSource: orders
+        roleNameTarget: customer
+        optional: false
+
+  - id: entity:Payment
+    name: Payment
+    description: A payment against an order.
+    attributes:
+      - { name: id,      type: uuid,    required: true, primaryKey: true }
+      - { name: orderId, type: uuid,    required: true, foreignKey: "entity:Order.id" }
+      - { name: amount,  type: decimal, required: true }
+      - { name: paidAt,  type: timestamp, required: true }
+
+# ─── Processes ────────────────────────────────────────────────────────────
+processes:
+  - id: process:order-fulfilment
+    name: Order Fulfilment
+    description: Customer orders, pays, kitchen ships.
+    pools:
+      - id: pool:restaurant
+        name: Restaurant
+        lanes:
+          - { id: lane:customer, name: Customer, actor: actor:Customer }
+          - { id: lane:kitchen,  name: Kitchen,  actor: actor:Kitchen  }
+    events:
+      - { id: event:start, name: Hungry,    type: start, lane: lane:customer }
+      - { id: event:end,   name: Fed,       type: end,   lane: lane:kitchen  }
+    tasks:
+      - id: task:place-order
+        name: Place order
+        type: user
+        lane: lane:customer
+        implementedBy: [function:OrderService.placeOrder]
+        consumes: [entity:Customer]
+        produces: [entity:Order]
+      - id: task:take-payment
+        name: Take payment
+        type: service
+        lane: lane:customer
+        implementedBy: [function:PaymentService.charge]
+        consumes: [entity:Order]
+        produces: [entity:Payment]
+      - id: task:fulfil
+        name: Ship the order
+        type: user
+        lane: lane:kitchen
+        implementedBy: [function:KitchenService.dispatch]
+        consumes: [entity:Order]
+    gateways: []
+    flows:
+      - { from: event:start,       to: task:place-order  }
+      - { from: task:place-order,  to: task:take-payment }
+      - { from: task:take-payment, to: task:fulfil       }
+      - { from: task:fulfil,       to: event:end         }
+
+# ─── Services ─────────────────────────────────────────────────────────────
+services:
+  - id: service:OrderService
+    name: Order Service
+    module: module:checkout
+    description: Owns the order lifecycle.
+    exposes: [function:OrderService.placeOrder]
+
+  - id: service:PaymentService
+    name: Payment Service
+    module: module:payment
+    description: Charges cards.
+    exposes: [function:PaymentService.charge]
+
+  - id: service:KitchenService
+    name: Kitchen Service
+    module: module:kitchen
+    description: Dispatches tickets to the line.
+    exposes: [function:KitchenService.dispatch]
+
+# ─── Functions ────────────────────────────────────────────────────────────
+functions:
+  - id: function:OrderService.placeOrder
+    name: placeOrder
+    service: service:OrderService
+    description: Validate the cart and write a new order.
+    reads:  [entity:Customer]
+    writes: [entity:Order]
+
+  - id: function:PaymentService.charge
+    name: charge
+    service: service:PaymentService
+    description: Charge the customer's card and record the payment.
+    reads:  [entity:Order]
+    writes: [entity:Payment]
+
+  - id: function:KitchenService.dispatch
+    name: dispatch
+    service: service:KitchenService
+    description: Forward the ticket to the kitchen line.
+    reads:  [entity:Order]
+
+# ─── Modules ──────────────────────────────────────────────────────────────
+modules:
+  - id: module:checkout
+    name: Checkout
+    intendedFolderPath: src/checkout
+    description: Cart and order placement.
+    contains: [service:OrderService]
+    deployedTo: [node:api-host]
+
+  - id: module:payment
+    name: Payment
+    intendedFolderPath: src/payment
+    description: Card charges.
+    contains: [service:PaymentService]
+    deployedTo: [node:api-host]
+
+  - id: module:kitchen
+    name: Kitchen
+    intendedFolderPath: src/kitchen
+    description: Kitchen dispatch.
+    contains: [service:KitchenService]
+    deployedTo: [node:api-host]
+
+# ─── Technology ───────────────────────────────────────────────────────────
+technology:
+  nodes:
+    - id: node:api-host
+      name: API Host
+      kind: container
+      runtime: nodejs-20
+      provider: aws
+      region: us-east-1
+      description: Stateless API container.
+    - id: node:postgres-cluster
+      name: Postgres Cluster
+      kind: managed-service
+      runtime: postgres-15
+      provider: aws
+      region: us-east-1
+      description: Managed Postgres for orders, customers, payments.
+    - id: node:legacy-vm
+      name: Legacy VM
+      kind: vm
+      description: >
+        Old VM kept around for documentation reasons. No module deploys
+        to it — exercises the "nodes referenced by no module"
+        informational gap on purpose.
+
+  environments:
+    - name: Production
+      nodes: [node:api-host, node:postgres-cluster]
+    - name: Staging
+      nodes: [node:api-host, node:postgres-cluster]
+
+  runtimes:
+    - { name: Node.js 20 LTS, usedBy: [node:api-host] }
+    - { name: PostgreSQL 15,  usedBy: [node:postgres-cluster] }

@@ -1,0 +1,20 @@
+@startuml usecase-restaurant
+' Generated from designs/system-model.yaml — do not hand-edit.
+' System boundary: restaurant
+' Regenerate with: node .agents/skills/use-case-design/scripts/generate.mjs designs/system-model.yaml
+title restaurant
+left to right direction
+skinparam packageStyle rectangle
+skinparam backgroundColor white
+
+actor "Customer" as actor_Customer
+
+rectangle "restaurant" {
+  usecase "Order Food" as uc_order_food
+  usecase "Pay Bill" as uc_pay_bill
+}
+
+actor_Customer --> uc_order_food
+actor_Customer --> uc_pay_bill
+
+@enduml

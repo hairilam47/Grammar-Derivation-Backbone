@@ -110,7 +110,7 @@ Every object has an ID of the form `<kind>:<name>`. The kind tags the object's t
 - **`Service.method` for functions** keeps the link from a function back to its owning service explicit even when the function is referenced in isolation.
 - **Namespacing slot** (`entity:billing/Invoice`, `module:checkout/cart`) is reserved now so future bounded-context work does not require renaming every ID in the model.
 
-### Six worked examples
+### Eight worked examples
 
 ```yaml
 # 1. An actor — a person or external system that participates in processes
@@ -147,6 +147,23 @@ modules:
     name: Checkout
     contains:
       - service:OrderService
+
+# 7. A use case — a goal an actor achieves through the system
+usecases:
+  - id: usecase:order-food
+    name: Order Food
+    system: restaurant
+    actors: [actor:Customer]
+
+# 8. A user story — a thin vertical slice of value the team can ship
+stories:
+  - id: story:customer-orders-food
+    role: actor:Customer
+    goal: order food
+    benefit: I can eat
+    priority: must
+    realizes: [usecase:order-food]
+    implementedBy: [function:OrderService.placeOrder]
 ```
 
 ## Cross-reference fields
