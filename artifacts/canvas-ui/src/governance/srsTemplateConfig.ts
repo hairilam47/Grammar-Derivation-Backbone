@@ -45,7 +45,6 @@ export type SrsGeneratorKey =
 export interface SrsSubsection {
   readonly title: string;
   readonly contentGenerator: SrsGeneratorKey;
-  readonly fields?: readonly string[];
 }
 
 export interface SrsSection {
@@ -59,24 +58,38 @@ export interface SrsTemplateMetadata {
   readonly lastUpdated: string;
 }
 
-// Title-page block. All labels rendered on the SRS title page —
-// document title, field captions, status text, and revision-history
-// table — are declared here so a template author can reorder, rename,
-// or translate them without touching the exporter. The exporter is
-// not allowed to hard-code any title-page label that is not derived
-// from this block. Every string in this block is asserted against
-// `assertAllGovernanceLanguage` at module load.
+// Title-page block. The full title-page layout — which fields appear,
+// in which order, with which label, and at which emphasis — is
+// declared here so a template author can reorder, rename, omit, or
+// translate fields without touching the exporter. The exporter is
+// not allowed to hard-code any title-page label or field ordering
+// that is not derived from this block. Every string in this block
+// is asserted against `assertAllGovernanceLanguage` at module load.
+
+// Identifier of a value the renderer can resolve from the live
+// document context. New value-keys can be added to this union as
+// the data model grows; the renderer must handle every key.
+export type SrsTitlePageFieldKey =
+  | "project"
+  | "standard"
+  | "templateVersion"
+  | "templateLastUpdated"
+  | "documentDate"
+  | "approvingAuthority"
+  | "status";
+
+export interface SrsTitlePageField {
+  readonly key: SrsTitlePageFieldKey;
+  readonly label: string;
+  readonly emphasis?: "normal" | "bold";
+}
+
 export interface SrsTitlePageConfig {
   readonly documentTitle: string;
-  readonly fieldLabels: {
-    readonly project: string;
-    readonly standard: string;
-    readonly templateVersion: string;
-    readonly templateLastUpdated: string;
-    readonly documentDate: string;
-    readonly approvingAuthority: string;
-    readonly status: string;
-  };
+  // Ordered list of fields. The renderer walks this array in
+  // declaration order; reordering or omitting an entry here changes
+  // the title page without touching renderer code.
+  readonly fields: readonly SrsTitlePageField[];
   readonly statusLabels: {
     readonly draft: string;
     readonly frozen: string;
@@ -102,15 +115,21 @@ export const DEFAULT_SRS_TEMPLATE: SrsTemplateConfig = Object.freeze({
   }),
   titlePage: Object.freeze({
     documentTitle: "Software Requirements Specification",
-    fieldLabels: Object.freeze({
-      project: "Project",
-      standard: "Standard",
-      templateVersion: "Template Version",
-      templateLastUpdated: "Template Last Updated",
-      documentDate: "Document Date",
-      approvingAuthority: "Approving Authority",
-      status: "Status",
-    }),
+    fields: Object.freeze([
+      Object.freeze({ key: "project", label: "Project" }),
+      Object.freeze({ key: "standard", label: "Standard" }),
+      Object.freeze({ key: "templateVersion", label: "Template Version" }),
+      Object.freeze({
+        key: "templateLastUpdated",
+        label: "Template Last Updated",
+      }),
+      Object.freeze({ key: "documentDate", label: "Document Date" }),
+      Object.freeze({
+        key: "approvingAuthority",
+        label: "Approving Authority",
+      }),
+      Object.freeze({ key: "status", label: "Status", emphasis: "bold" }),
+    ]) as readonly SrsTitlePageField[],
     statusLabels: Object.freeze({
       draft: "DRAFT",
       frozen: "FROZEN",
@@ -218,13 +237,7 @@ function collectStaticTitles(cfg: SrsTemplateConfig): string[] {
   const tp = cfg.titlePage;
   out.push(
     tp.documentTitle,
-    tp.fieldLabels.project,
-    tp.fieldLabels.standard,
-    tp.fieldLabels.templateVersion,
-    tp.fieldLabels.templateLastUpdated,
-    tp.fieldLabels.documentDate,
-    tp.fieldLabels.approvingAuthority,
-    tp.fieldLabels.status,
+    ...tp.fields.map((f) => f.label),
     tp.statusLabels.draft,
     tp.statusLabels.frozen,
     tp.pendingFreezeLabel,

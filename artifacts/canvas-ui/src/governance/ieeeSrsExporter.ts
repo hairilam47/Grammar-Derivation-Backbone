@@ -39,6 +39,7 @@ import {
 import {
   DEFAULT_SRS_TEMPLATE,
   type SrsTemplateConfig,
+  type SrsTitlePageFieldKey,
 } from "./srsTemplateConfig";
 import {
   SRS_GENERATORS,
@@ -143,6 +144,33 @@ interface TitlePageData {
   readonly contractLine: string;
   readonly revisionLine: string;
   readonly revisionHistory: readonly RevisionEntry[];
+}
+
+// Field-key → value resolver. Renderers walk cfg.titlePage.fields
+// in declaration order and call this to resolve each entry's value.
+// Adding a new key requires extending both SrsTitlePageFieldKey
+// (in the config module) and this resolver; TypeScript will flag
+// the missing case via the exhaustive switch.
+function resolveTitleFieldValue(
+  key: SrsTitlePageFieldKey,
+  title: TitlePageData,
+): string {
+  switch (key) {
+    case "project":
+      return title.projectName;
+    case "standard":
+      return title.standardValue;
+    case "templateVersion":
+      return title.templateVersionValue;
+    case "templateLastUpdated":
+      return title.templateLastUpdatedValue;
+    case "documentDate":
+      return title.documentDate;
+    case "approvingAuthority":
+      return title.approvingAuthority;
+    case "status":
+      return title.statusValue;
+  }
 }
 
 function buildTitlePage(
@@ -365,20 +393,22 @@ function renderPdf(
   }
 
   // --- Title page ---
-  // All labels below are read from cfg.titlePage so a template
-  // author can rename or reorder them without touching this file.
+  // The title-page layout — document title plus the ordered field
+  // list — is read entirely from cfg.titlePage. A template author
+  // who reorders, renames, or omits a field in srsTemplateConfig
+  // changes the rendered title page without touching this file.
   const tp = cfg.titlePage;
   addHeader();
   writeWrapped(tp.documentTitle, 22, "bold");
   y += 6;
-  writeWrapped(`${tp.fieldLabels.project}: ${title.projectName}`, 12, "normal");
-  y += 4;
-  writeWrapped(`${tp.fieldLabels.standard}: ${title.standardValue}`, 11, "normal");
-  writeWrapped(`${tp.fieldLabels.templateVersion}: ${title.templateVersionValue}`, 11, "normal");
-  writeWrapped(`${tp.fieldLabels.templateLastUpdated}: ${title.templateLastUpdatedValue}`, 11, "normal");
-  writeWrapped(`${tp.fieldLabels.documentDate}: ${title.documentDate}`, 11, "normal");
-  writeWrapped(`${tp.fieldLabels.approvingAuthority}: ${title.approvingAuthority}`, 11, "normal");
-  writeWrapped(`${tp.fieldLabels.status}: ${title.statusValue}`, 11, "bold");
+  tp.fields.forEach((field, idx) => {
+    const value = resolveTitleFieldValue(field.key, title);
+    const style: "normal" | "bold" =
+      field.emphasis === "bold" ? "bold" : "normal";
+    // First field gets a slightly larger size (project name).
+    const fontSize = idx === 0 ? 12 : 11;
+    writeWrapped(`${field.label}: ${value}`, fontSize, style);
+  });
   writeWrapped(title.contractLine, 10, "italic");
   writeWrapped(title.revisionLine, 10, "italic");
   y += 10;
@@ -517,37 +547,43 @@ async function renderDocx(
   const draftHeaderText = `${tp.statusLabels.draft} — Not Frozen`;
 
   const children: (Paragraph | Table)[] = [];
-  // Title page — every label below is read from cfg.titlePage so a
-  // template author can rename or reorder them without touching this
-  // file.
+  // Title page — the document title and the ordered field list are
+  // read entirely from cfg.titlePage. A template author who
+  // reorders, renames, or omits a field in srsTemplateConfig
+  // changes the rendered title page without touching this file.
   children.push(
     new Paragraph({
       heading: HeadingLevel.TITLE,
       children: [new TextRun({ text: tp.documentTitle, bold: true, size: 44 })],
     }),
-    new Paragraph({
-      children: [new TextRun({ text: `${tp.fieldLabels.project}: ${title.projectName}`, size: 24 })],
-      spacing: { after: 120 },
-    }),
-    new Paragraph({
-      children: [new TextRun({ text: `${tp.fieldLabels.standard}: ${title.standardValue}`, size: 22 })],
-    }),
-    new Paragraph({
-      children: [new TextRun({ text: `${tp.fieldLabels.templateVersion}: ${title.templateVersionValue}`, size: 22 })],
-    }),
-    new Paragraph({
-      children: [new TextRun({ text: `${tp.fieldLabels.templateLastUpdated}: ${title.templateLastUpdatedValue}`, size: 22 })],
-    }),
-    new Paragraph({
-      children: [new TextRun({ text: `${tp.fieldLabels.documentDate}: ${title.documentDate}`, size: 22 })],
-    }),
-    new Paragraph({
-      children: [new TextRun({ text: `${tp.fieldLabels.approvingAuthority}: ${title.approvingAuthority}`, size: 22 })],
-    }),
-    new Paragraph({
-      children: [new TextRun({ text: `${tp.fieldLabels.status}: ${title.statusValue}`, bold: true, size: 22 })],
-      spacing: { after: 120 },
-    }),
+  );
+  tp.fields.forEach((field, idx) => {
+    const value = resolveTitleFieldValue(field.key, title);
+    const isBold = field.emphasis === "bold";
+    // First field gets larger size (24, project name); status row
+    // (when bold) gets a small after-spacing to separate it from the
+    // contract/revision lines below.
+    const size = idx === 0 ? 24 : 22;
+    const spacing =
+      idx === 0
+        ? { after: 120 }
+        : isBold
+          ? { after: 120 }
+          : undefined;
+    children.push(
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: `${field.label}: ${value}`,
+            bold: isBold,
+            size,
+          }),
+        ],
+        ...(spacing ? { spacing } : {}),
+      }),
+    );
+  });
+  children.push(
     new Paragraph({
       children: [new TextRun({ text: title.contractLine, italics: true, size: 20 })],
     }),
