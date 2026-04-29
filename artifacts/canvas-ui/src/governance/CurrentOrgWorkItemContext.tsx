@@ -29,6 +29,8 @@ import {
   type CurrentScope,
 } from "./storageKeyUtils";
 import { migrateLegacyFlatKeysIfNeeded } from "./legacyMigration";
+import { getOrganisation } from "./orgStore";
+import { getWorkItem } from "./workItemStore";
 
 const ORG_LS_KEY = "app:currentOrgId";
 const WORK_ITEM_LS_KEY = "app:currentWorkItemId";
@@ -55,6 +57,30 @@ function readPersistedScope(): CurrentScope {
   };
 }
 
+// Startup reconciliation. Persisted org / work-item ids may point
+// at registry rows that no longer exist (manually-cleared store
+// document, downgrade from a future schema, manual localStorage
+// edit, etc.). Drop any id whose registry row is missing, and
+// drop the work-item id whenever its parent org is missing or
+// when the work item belongs to a different org. Returning a
+// reconciled scope here lets the gates render the right
+// onboarding step instead of leaving the user in a logically
+// invalid state until they switch tenants.
+function reconcilePersistedScope(scope: CurrentScope): CurrentScope {
+  let { orgId, workItemId } = scope;
+  if (orgId !== null && getOrganisation(orgId) === null) {
+    orgId = null;
+    workItemId = null;
+  }
+  if (workItemId !== null) {
+    const wi = getWorkItem(workItemId);
+    if (wi === null || (orgId !== null && wi.orgId !== orgId)) {
+      workItemId = null;
+    }
+  }
+  return { orgId, workItemId };
+}
+
 function writePersistedScope(scope: CurrentScope): void {
   if (typeof window === "undefined" || !window.localStorage) return;
   if (scope.orgId === null) window.localStorage.removeItem(ORG_LS_KEY);
@@ -65,7 +91,9 @@ function writePersistedScope(scope: CurrentScope): void {
 
 export function CurrentOrgWorkItemProvider({ children }: { children: ReactNode }) {
   const initial = useRef<CurrentScope | null>(null);
-  if (initial.current === null) initial.current = readPersistedScope();
+  if (initial.current === null) {
+    initial.current = reconcilePersistedScope(readPersistedScope());
+  }
   const [orgId, setOrgIdState] = useState<string | null>(initial.current.orgId);
   const [workItemId, setWorkItemIdState] = useState<string | null>(
     initial.current.workItemId,

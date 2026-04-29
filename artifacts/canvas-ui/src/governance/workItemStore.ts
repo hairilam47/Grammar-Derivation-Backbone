@@ -13,9 +13,13 @@
 //   - Schema-version locked at `wi-1.0`.
 //   - `id` matches `^wi-[a-z0-9]+$` (12 hex chars by default).
 //   - `orgId` matches `^org-[a-z0-9]+$` (mirrors the orgStore id
-//     format) — the registry does NOT verify that the org exists
-//     here (orgStore owns that invariant); it only validates the
-//     id shape so a malformed payload is refused.
+//     format). The registry validates the id shape on read so a
+//     malformed payload is refused, AND on `createWorkItem` it
+//     verifies that the referenced Organisation actually exists
+//     in `orgStore` — a defensive belt-and-suspenders against
+//     orphan rows under tampered localStorage. (The on-read pass
+//     intentionally stays shape-only so a temporarily-missing org
+//     document does not silently nuke its Work Items.)
 //   - `type ∈ { "ea-blueprint", "project", "enhancement",
 //     "change-request" }`.
 //   - At most one `ea-blueprint` Work Item per organisation
@@ -23,6 +27,8 @@
 //   - Enhancement / Change-Request Work Items can only be created
 //     when an `ea-blueprint` Work Item already exists in the same
 //     organisation.
+
+import { getOrganisation } from "./orgStore";
 
 const STORAGE_KEY = "app.work-items.v1";
 export const WORK_ITEM_SCHEMA_VERSION = "wi-1.0" as const;
@@ -176,6 +182,17 @@ export function createWorkItem(input: CreateWorkItemInput): WorkItem {
   if (!isValidOrgId(input.orgId)) {
     throw new Error(
       `workItemStore: invalid orgId "${String(input.orgId)}". Expected pattern ${ORG_ID_RE.source}.`,
+    );
+  }
+  // Belt-and-suspenders against orphan rows under tampered
+  // localStorage: refuse to mint a Work Item whose orgId is not
+  // registered in the orgStore. Read-side queries stay
+  // shape-only so a temporarily-missing org document does not
+  // silently nuke its existing Work Items.
+  if (getOrganisation(input.orgId) === null) {
+    throw new Error(
+      `workItemStore: cannot create a Work Item under organisation "${input.orgId}" — ` +
+        `no such Organisation is registered.`,
     );
   }
   if (typeof input.type !== "string" || !WORK_ITEM_TYPE_SET.has(input.type)) {

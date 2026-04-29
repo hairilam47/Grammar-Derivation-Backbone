@@ -22,6 +22,44 @@ import {
 
 const EXPECTED_SCHEMA_VERSION = "wi-1.0";
 const STORAGE_KEY = "app.work-items.v1";
+// `createWorkItem` now verifies the referenced organisation
+// exists in `orgStore` (defensive guard against orphan rows under
+// tampered localStorage). The probe pre-seeds two synthetic
+// organisations directly into the org-store key for the duration
+// of the probe and restores the prior content afterwards.
+const ORG_STORAGE_KEY = "app.organisations.v1";
+const PROBE_ORGS_DOC = JSON.stringify({
+  schemaVersion: "org-1.0",
+  organisations: {
+    "org-probeaaaaaa": {
+      id: "org-probeaaaaaa",
+      name: "Probe Org A",
+      slug: "probe-org-a",
+      sector: "private-sector",
+      natureOfBusiness: "other",
+      logo: "",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    },
+    "org-probebbbbbb": {
+      id: "org-probebbbbbb",
+      name: "Probe Org B",
+      slug: "probe-org-b",
+      sector: "private-sector",
+      natureOfBusiness: "other",
+      logo: "",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    },
+    "org-probexxxxx1": {
+      id: "org-probexxxxx1",
+      name: "Probe Org X",
+      slug: "probe-org-x",
+      sector: "private-sector",
+      natureOfBusiness: "other",
+      logo: "",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    },
+  },
+});
 
 if (WORK_ITEM_SCHEMA_VERSION !== EXPECTED_SCHEMA_VERSION) {
   throw new Error(
@@ -44,13 +82,21 @@ if (
 function withIsolatedStorage(probe: () => void): void {
   const hasWindow = typeof window !== "undefined" && !!window.localStorage;
   const prior = hasWindow ? window.localStorage.getItem(STORAGE_KEY) : null;
-  if (hasWindow) window.localStorage.removeItem(STORAGE_KEY);
+  const priorOrgs = hasWindow
+    ? window.localStorage.getItem(ORG_STORAGE_KEY)
+    : null;
+  if (hasWindow) {
+    window.localStorage.removeItem(STORAGE_KEY);
+    window.localStorage.setItem(ORG_STORAGE_KEY, PROBE_ORGS_DOC);
+  }
   try {
     probe();
   } finally {
     if (hasWindow) {
       if (prior === null) window.localStorage.removeItem(STORAGE_KEY);
       else window.localStorage.setItem(STORAGE_KEY, prior);
+      if (priorOrgs === null) window.localStorage.removeItem(ORG_STORAGE_KEY);
+      else window.localStorage.setItem(ORG_STORAGE_KEY, priorOrgs);
     }
   }
 }
@@ -180,6 +226,13 @@ function probeRoundTrip(): void {
 function probeRejections(): void {
   expectThrow("malformed orgId", () =>
     createWorkItem({ orgId: "not-an-org-id", type: "project", title: "x" }),
+  );
+  expectThrow("orgId not registered in orgStore", () =>
+    createWorkItem({
+      orgId: "org-doesnotexist",
+      type: "project",
+      title: "x",
+    }),
   );
   expectThrow("invalid type", () =>
     createWorkItem({
