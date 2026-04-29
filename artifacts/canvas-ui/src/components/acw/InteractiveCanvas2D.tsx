@@ -726,6 +726,16 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
   // on the selection. Keys are intercepted only when the active
   // element is NOT a text input / textarea / contenteditable, so
   // typing in the Properties panel never accidentally pans.
+  //
+  // The handler must always call the LATEST `recentreOnSelection`
+  // closure (which captures fresh `selection` and `drawables`), but
+  // we don't want to add and remove window listeners on every render
+  // — that's a lot of churn during high-frequency pan/zoom/drag
+  // interactions. Instead we hold the latest closure in a ref,
+  // refresh that ref on every render, and bind the window listeners
+  // exactly once on mount.
+  const recentreOnSelectionRef = useRef(recentreOnSelection);
+  recentreOnSelectionRef.current = recentreOnSelection;
   useEffect(() => {
     function isTypingTarget(t: EventTarget | null): boolean {
       if (!(t instanceof HTMLElement)) return false;
@@ -746,7 +756,7 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
       }
       if ((e.key === "f" || e.key === "F") && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
-        recentreOnSelection();
+        recentreOnSelectionRef.current();
       }
     }
     function onKeyUp(e: KeyboardEvent) {
@@ -761,10 +771,7 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-    // recentreOnSelection captures live `selection` and `drawables`
-    // through closure; we re-bind every render so the F-key always
-    // operates on the latest state.
-  });
+  }, []);
 
   // ---- Drag a node ----------------------------------------------
   function onNodeMouseDown(e: MouseEvent, node: AcwNode) {

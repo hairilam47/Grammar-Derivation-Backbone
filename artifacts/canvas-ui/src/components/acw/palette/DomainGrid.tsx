@@ -424,6 +424,16 @@ export function DomainGrid({ lensId }: DomainGridProps) {
   // selection. Skipped while the user is typing in an input /
   // textarea / contenteditable so the Properties panel never loses
   // a keystroke.
+  //
+  // The handler must always invoke the LATEST `recentreOnSelection`
+  // (its useCallback identity depends on `selectedNodeId`,
+  // `viewportSize`, and `commitView` — any of those changing would
+  // otherwise add+remove window listeners on every render). To avoid
+  // that listener churn during high-frequency pan/zoom/drag, we hold
+  // the latest closure in a ref, refresh that ref on every render,
+  // and bind the window listeners exactly once on mount.
+  const recentreOnSelectionRef = useRef(recentreOnSelection);
+  recentreOnSelectionRef.current = recentreOnSelection;
   useEffect(() => {
     function isTypingTarget(t: EventTarget | null): boolean {
       if (!(t instanceof HTMLElement)) return false;
@@ -449,7 +459,7 @@ export function DomainGrid({ lensId }: DomainGridProps) {
         !e.altKey
       ) {
         e.preventDefault();
-        recentreOnSelection();
+        recentreOnSelectionRef.current();
       }
     }
     function onKeyUp(e: KeyboardEvent) {
@@ -464,7 +474,7 @@ export function DomainGrid({ lensId }: DomainGridProps) {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [recentreOnSelection]);
+  }, []);
 
   const nodeById = useMemo(() => {
     const m = new Map<string, AcwNode>();
