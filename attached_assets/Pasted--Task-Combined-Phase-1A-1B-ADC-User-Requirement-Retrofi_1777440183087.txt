@@ -1,0 +1,256 @@
+## Task: Combined Phase 1A + 1B – ADC User Requirement Retrofit & Configurable SRS Export
+
+You are working on `Grammar-Derivation-Backbone`. This task is a major rework of the ADC wizard and introduces a configurable IEEE‑830‑style SRS document export. It is one integrated implementation, but logically divided into two stages.
+
+**Core principle:** The new data model (User Requirements, Modules, Contracts) and the wizard UI are built first, without any dependency on the SRS template. The SRS export engine is a separate module that reads the stored data and formats it according to a **mutable template configuration**. The template never defines the UI or workflow; it only controls how existing data is rendered into a document.
+
+---
+
+## Stage A – ADC Rework: User Requirement Management & Architectural Decision Flow
+
+### A1. New Data Stores
+
+#### Module Catalogue Store
+- **File:** `governance/moduleCatalogStore.ts`
+- **Key:** `adc.module-catalog.v1` (unscoped for now; later prefixed by org/work‑item)
+- **Schema version:** `mod‑1.0`
+- **Shape:**
+  ```ts
+  interface Module {
+    id: string;                // "module:payment-billing"
+    name: string;
+    description: string;
+    owningOrgUnitId?: string;
+    parentModuleId?: string;
+    relatedCapabilityIds?: string[];
+  }
+Functions: createModule, updateModule, removeModule, listModules, getModule.
+
+Validation: id must match ^module:[a-z0-9-]+$; name required; relatedCapabilityIds must reference valid capability IDs.
+
+Requirements Store
+File: governance/requirementsStore.ts
+
+Key: adc.requirements.v1
+
+Schema version: req‑1.0
+
+Shape:
+
+ts
+interface UserRequirement {
+  id: string;                // "req‑001"
+  title: string;
+  description: string;
+  type: 'functional' | 'non‑functional' | 'constraint' | 'hardware';
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  moduleId?: string;        // references Module, or null → draft
+  hardwareDetails?: {
+    itemName: string;
+    model?: string;
+    quantity: number;
+    unitCost?: number;
+    totalEstimatedCost?: number;
+    notes?: string;
+  };
+  status: 'draft' | 'reviewed' | 'approved' | 'frozen';
+  useCaseIds?: string[];
+  componentIds?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+Functions: saveRequirement, deleteRequirement, getRequirement, listRequirements, approveRequirement, freezeRequirements.
+
+Business rules enforced:
+
+If moduleId is missing on save, status is forced to draft (even if caller passes another status).
+
+Only approved requirements can be frozen; freezeRequirements rejects any with status !== 'approved'.
+
+When type === 'hardware', hardwareDetails must be present and valid (quantity > 0).
+
+Requirements Contract Store
+File: governance/requirementsContractStore.ts
+
+Key: adc.requirements-contracts.v1
+
+Schema version: rc‑1.0
+
+Shape:
+
+ts
+interface RequirementsContract {
+  contractId: string;
+  workItemId?: string;
+  requirements: UserRequirement[];
+  frozenAt: string;
+  frozenBy: string;
+  summary: { total: number; byType: Record<string,number>; byModule: Record<string,number> };
+}
+Function: freezeContract(requirements: UserRequirement[], userId: string) – copies the requirements, saves the contract, marks each requirement as frozen. Idempotent: cannot refreeze already‑frozen requirements.
+
+A2. New ADC Wizard Flow (Replaces Old Wizard)
+Route: / remains the wizard. All old wizard components are removed or left unused.
+
+Screen 1 – Requirements Capture (RequirementsCapture.tsx)
+Lists all requirements for the current work item (hard‑coded placeholder id for now).
+
+"New Requirement" button → inline form:
+
+Fields: Title, Description, Type dropdown, Priority dropdown.
+
+Module selector (populated from listModules()). If left blank → draft only.
+
+If Type = Hardware, show additional fields: item name, model, quantity, unit cost, notes.
+
+Each row shows: title, type badge, module (or "No module — Draft" warning), status, actions.
+
+Draft rule: the store enforces; UI just calls saveRequirement.
+
+Screen 2 – Capability Mapping (CapabilityMapping.tsx)
+Displays the 7 canonical capabilities with their names and descriptions.
+
+For each capability, show a list of Modules that have that capability in relatedCapabilityIds (read-only). This helps the architect decide which capabilities to include.
+
+User selects each capability as IN_SCOPE, DEFERRED, or OUT_OF_SCOPE (same as old selector, but enhanced with context).
+
+The selection is used later in derivation.
+
+Screen 3 – Architecture Derivation (ArchitectureDerivationDisplay.tsx)
+Calls deriveArchitecture with the organisation context (placeholder) and selected capabilities.
+
+Shows derived components, risks, indicators.
+
+New traceability panel: For each IN_SCOPE capability, list the Modules that contributed to it (via relatedCapabilityIds) and the approved requirements linked to those Modules. This is a pure read‑only join for transparency.
+
+Screen 4 – Enhanced Trade‑Off Explorer (TradeOffExplorer.tsx)
+Two‑column comparison: Baseline posture (placeholder balanced) vs. Explored posture (user‑adjusted, with the same settings as before – cost, risk, performance sliders, or the existing posture enum).
+
+Component & Risk Deltas: For each layer, show components with + / - / = symbols relative to baseline.
+
+Business Impact Table: For each Module, list its linked requirements and flag if a required component disappears or appears under the explored posture.
+
+Rule Explanations: For each changed component/risk, display a brief, neutral explanation derived from the grammar rule (e.g., "Cost‑Optimized posture removes automatic backup infrastructure").
+
+Override & Justification: Allow the architect to temporarily override component inclusion for the explored posture. Type a justification. Override is not committed unless explicitly applied.
+
+What‑If History: In‑memory list of the last few explored postures.
+
+Hardware cost exposure: If hardware requirements exist, show total estimated cost and whether posture change could imply additional hardware (descriptive only).
+
+Screen 5 – Freeze (FreezeScreen.tsx)
+Two‑part freeze:
+
+Freeze Requirements Contract – If there are approved requirements, a "Freeze Requirements" button is enabled. Click freezes them into a contract (stores in requirementsContractStore), marks them frozen, and offers PDF/DOCX download of the contract (a simple formatted list for now; SRS export in Stage B will enhance this).
+Freeze Decision Contract – Same as old wizard: enter Project Name, Approving Authority, click "Freeze Decision & Export" to create ADS/ECP and write portfolio entry. The decision contract is linked to the requirements contract via an optional new portfolio field requirementsContractId.
+The portfolio entry schema is extended from 17 fields to 18 (additive). Update portfolioStore.ts, portfolioFields.ts, and the invariant togafContainmentInvariants.test-shape.ts to allow this field (it is a plain id, not a computed score; should be safe).
+
+A3. Backward Compatibility
+Old wizard screen components are removed. The existing portfolio entries remain readable; the new field is optional.
+
+Placeholder organisation/work‑item ids used until onboarding rework is done later.
+
+A4. Vocabulary & Invariants
+New UI labels ("Hardware", "Urgency", "Module", "Requirements Contract", etc.) must be asserted via assertAllGovernanceLanguage or an appropriate tier. Use "Urgency" for the priority label (values: Routine/Standard/Elevated/Acute) to avoid forbidden "priority" token.
+
+Add build‑time invariant modules:
+
+moduleCatalogInvariants.test-shape.ts
+
+requirementsStoreInvariants.test-shape.ts (draft‑rule, hardware validation, freeze logic)
+
+requirementsContractStoreInvariants.test-shape.ts
+
+Ensure all existing invariants still pass.
+
+Stage B – Configurable IEEE‑830 SRS Export Engine
+B1. Template Configuration
+Create a mutable configuration file governance/srsTemplateConfig.ts that defines how to map the live data to an IEEE‑830 document structure. It does not influence any UI or workflow. It is pure mapping.
+
+The configuration is a TypeScript object conforming to:
+
+ts
+interface SrsTemplateConfig {
+  metadata: { standard: string; version: string; lastUpdated: string };
+  sections: SrsSection[];
+}
+
+interface SrsSection {
+  title: string;                   // e.g. "1. Introduction"
+  subsections: SrsSubSection[];
+}
+
+interface SrsSubSection {
+  title: string;                   // e.g. "1.1 Purpose"
+  contentGenerator: string;        // key of a generator function (see below)
+  fields?: string[];               // optional: which fields to pull from the WorkItem
+}
+Generator keys correspond to pure functions in governance/srsGenerators.ts that take the WorkItem, list of Modules, list of Requirements, CTAD state, and ACW workspace (if available) and return a string or object to be rendered.
+
+Example:
+
+"purpose" → generates text from WorkItem’s purpose field.
+
+"scope" → generates product scope from WorkItem description.
+
+"systemFeatures" → iterates Modules and their linked requirements to build a list of features.
+
+"hardwareInterfaces" → lists hardware requirements with details.
+
+"nonFunctional" → lists non‑functional and constraint requirements.
+
+"glossary" → collects unique terms from all requirement descriptions.
+
+The default configuration must implement the IEEE 830 skeleton from the uploaded srs_template-ieee.pdf, with all sections mapped to available data. Empty sections are still generated with a placeholder "[No data]" to match the standard.
+
+B2. Export Engine
+File: governance/ieeeSrsExporter.ts
+
+Exports a function exportSRS(format: 'pdf' | 'docx') that:
+
+Reads the template configuration.
+Fetches all required data (WorkItem, Modules, Requirements, etc.).
+Iterates through the template sections and calls the appropriate generator for each.
+Assembles a document with proper headings, numbering, and tables.
+Uses the existing jspdf for PDF and docx libraries for DOCX.
+The document metadata (title page, revision history) is auto‑populated from the WorkItem and contract.
+
+The final document includes the standard appendix for Glossary and TBD list (auto‑collected from unresolved references).
+
+B3. UI Integration
+Add a "Generate SRS" button in the Requirements Capture screen and/or the Freeze screen. It opens a dropdown to select PDF or DOCX, then triggers the export.
+
+The button is available even before freezing, to preview the SRS. The generated document should include a prominent "DRAFT" watermark if the requirements are not frozen.
+
+All generated labels in the export UI must pass vocabulary guard.
+
+B4. Evolvability
+The template configuration can be modified at any time. Future updates to IEEE 29148 or custom corporate templates only require editing srsTemplateConfig.ts and possibly adding new generator functions.
+
+The export engine treats the configuration as the definition of the document structure; no hard‑coded section ordering.
+
+Organisations can later clone and override the configuration per WorkItem if needed (future enhancement).
+
+General Requirements
+All new stores must use the same allow‑list, read‑validate, and frozen‑snapshot patterns as existing stores.
+
+Build‑time invariants for the new stores must be imported from App.tsx.
+
+The acw‑1.0 schema, grammar engine, CNCF catalog, and ACW/CTAD isolation invariants remain completely untouched.
+
+All static labels introduced in UI must be asserted against the appropriate vocabulary tier (likely TOGAF_CONTAINMENT_FORBIDDEN since these are ADC decision surfaces, but verify; may need assertAllGovernanceLanguage).
+
+Acceptance Criteria
+Users can create and link requirements to Modules; draft rule enforced.
+
+Capability mapping step shows module context and derived selections.
+
+Trade‑Off Explorer shows business impact and allows override with justification.
+
+Requirements Contract and Decision Contract can be frozen and linked.
+
+The "Generate SRS" button produces a properly formatted IEEE‑830 document (PDF/DOCX) reflecting current data.
+
+Modifying the template configuration changes the export without touching other code.
+
+All existing invariants pass; new invariant modules for stores pass.
