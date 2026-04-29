@@ -112,22 +112,32 @@ export function CurrentOrgWorkItemProvider({ children }: { children: ReactNode }
     writePersistedScope({ orgId, workItemId });
   }, [orgId, workItemId]);
 
-  // Legacy migration — runs once, the first time both ids are
-  // resolved, guarded by an internal sentinel inside the migration
-  // module itself.
+  // Legacy migration — runs once, anchored to the DETERMINISTIC
+  // first-created-org + EA-Blueprint pair (resolved internally by
+  // `migrateLegacyFlatKeysIfNeeded`). NOT keyed on the user's
+  // current selection: a user who creates two orgs and immediately
+  // opens a Project under the second org still has their pre-
+  // Phase-2 data migrated into Org #1's blueprint scope, never
+  // into the active selection. Guarded by an internal sentinel
+  // inside the migration module itself.
+  //
+  // We retry the migration whenever orgId transitions to non-null
+  // (i.e. the first time an org is created or selected), which
+  // gives the resolver a chance to find a target before the
+  // sentinel is spent. The internal "no anchor → return without
+  // setting sentinel" branch keeps subsequent retries cheap.
   useEffect(() => {
-    if (orgId !== null && workItemId !== null) {
-      try {
-        migrateLegacyFlatKeysIfNeeded(orgId, workItemId);
-      } catch (e) {
-        // Migration failures are non-fatal at runtime — the legacy
-        // sentinel is left unset so a later resolve attempt can
-        // retry. The error surfaces in the console for diagnosis.
-        // eslint-disable-next-line no-console
-        console.error("[scope] legacy migration failed:", e);
-      }
+    if (orgId === null) return;
+    try {
+      migrateLegacyFlatKeysIfNeeded();
+    } catch (e) {
+      // Migration failures are non-fatal at runtime — the legacy
+      // sentinel is left unset so a later resolve attempt can
+      // retry. The error surfaces in the console for diagnosis.
+      // eslint-disable-next-line no-console
+      console.error("[scope] legacy migration failed:", e);
     }
-  }, [orgId, workItemId]);
+  }, [orgId]);
 
   const setOrgId = useCallback((next: string | null) => {
     setOrgIdState((prev) => {
