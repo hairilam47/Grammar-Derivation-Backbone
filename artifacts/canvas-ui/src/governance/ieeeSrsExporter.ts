@@ -510,12 +510,11 @@ async function renderDocx(
 ): Promise<void> {
   const tp = cfg.titlePage;
   const headerLine = `${title.standardValue}  ·  v${title.templateVersionValue}  ·  ${title.templateLastUpdatedValue}  ·  ${title.statusValue}`;
-  // Document running-header banner: derived from the same data flag
-  // that drives the DRAFT watermark, with the visible label coming
-  // from the title-page status labels in the template config.
-  const draftHeaderText = isDraft
-    ? `${tp.statusLabels.draft} — Not Frozen`
-    : "Frozen Requirements Contract";
+  // DRAFT banner text. Renders only when the dataset is draft;
+  // frozen documents carry no banner, only the neutral metadata
+  // header line above. This matches the watermark policy on the PDF
+  // side (no DRAFT overlay when frozen).
+  const draftHeaderText = `${tp.statusLabels.draft} — Not Frozen`;
 
   const children: (Paragraph | Table)[] = [];
   // Title page — every label below is read from cfg.titlePage so a
@@ -620,17 +619,21 @@ async function renderDocx(
                   new TextRun({ text: headerLine, size: 16, color: "808080" }),
                 ],
               }),
-              new Paragraph({
-                alignment: AlignmentType.CENTER,
-                children: [
-                  new TextRun({
-                    text: draftHeaderText,
-                    bold: true,
-                    size: 18,
-                    color: isDraft ? "B00020" : "808080",
-                  }),
-                ],
-              }),
+              ...(isDraft
+                ? [
+                    new Paragraph({
+                      alignment: AlignmentType.CENTER,
+                      children: [
+                        new TextRun({
+                          text: draftHeaderText,
+                          bold: true,
+                          size: 18,
+                          color: "B00020",
+                        }),
+                      ],
+                    }),
+                  ]
+                : []),
             ],
           }),
         },
