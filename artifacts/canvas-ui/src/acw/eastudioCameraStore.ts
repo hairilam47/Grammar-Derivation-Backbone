@@ -51,10 +51,11 @@ export const ACW_CANVAS_CAMERA_DEFAULT: AcwCanvasCameraState = Object.freeze({
   panY: 0,
 });
 
-// Sane bounds. Below 0.2 the cards become unreadable; above 4 the
-// canvas edges and grid start to alias unpleasantly. Matches the
-// CTAD camera bounds so the two surfaces feel identical.
-export const ACW_CANVAS_CAMERA_MIN_ZOOM = 0.2;
+// Sane bounds. Below 0.25 the cards become unreadable; above 4 the
+// canvas edges and grid start to alias unpleasantly. The 0.25
+// minimum preserves the pre-Task-#161 ACW zoom contract that
+// InteractiveCanvas2D enforced via Math.max(0.25, ...).
+export const ACW_CANVAS_CAMERA_MIN_ZOOM = 0.25;
 export const ACW_CANVAS_CAMERA_MAX_ZOOM = 4;
 
 const STORAGE_BASE_KEY = "acw.canvas-camera.v1";
