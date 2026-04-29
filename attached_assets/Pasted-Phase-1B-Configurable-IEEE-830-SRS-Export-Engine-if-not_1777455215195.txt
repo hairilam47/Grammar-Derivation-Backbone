@@ -1,0 +1,81 @@
+Phase 1B – Configurable IEEE‑830 SRS Export Engine (if not already done)
+Context: Task #133 (Phase 1A) is complete—the Module Catalogue, Requirements Store, Requirements Contract Store, and the new 5‑screen wizard are all merged and working. The SRS export engine must now be built on top of that real data.
+
+What the Replit agent must deliver
+governance/srsTemplateConfig.ts – a mutable configuration object of type SrsTemplateConfig describing the IEEE‑830 skeleton. Each sub‑section maps to a contentGenerator string.
+
+governance/srsGenerators.ts – pure generator functions (e.g., purpose, scope, systemFeatures, hardwareInterfaces, nonFunctional, glossary, tbdList) that return strings or structured blocks from the live data.
+
+governance/ieeeSrsExporter.ts – exportSRS(format: 'pdf' | 'docx') reads the config, walks the sections, calls the generators, and assembles a PDF (via jspdf) or DOCX (via docx) with proper hierarchical numbering, tables, title page, revision history, glossary, and TBD list.
+
+DRAFT watermark – the exporter must detect when any requirement is not frozen, and render a diagonal “DRAFT” watermark on every page (PDF) or header/footer marker (DOCX). Frozen contracts suppress the watermark.
+
+UI button – a “Generate SRS” button (with PDF/DOCX dropdown) on both the RequirementsCapture screen and the FreezeScreen. The button calls exportSRS and triggers a browser download.
+
+Vocabulary guard – all new static labels in the UI (button text, dropdown items) must be asserted via assertAllGovernanceLanguage.
+
+No store modifications – the exporter only reads existing stores; it never writes.
+
+Evolvability – changing the template config or adding a new generator function must affect the export without changing any other code.
+
+Phase 2 – SaaS Onboarding: Organisations & Work Items
+Context: No onboarding, no org/work‑item stores, no scoped storage yet. The system still uses a placeholder work‑item ID.
+
+What the Replit agent must deliver
+New stores
+
+governance/orgStore.ts → key adc.organizations.v1, schema org‑1.0. Fields: orgId, name, sector, natureOfBusiness, logo?, timestamps.
+
+governance/workItemStore.ts → key adc.work‑items.v1, schema wi‑1.0. Fields: workItemId, orgId, type, name, description, derivedFromWorkItemId?, purpose?, audience?, assumptions?, timestamps.
+
+Both stores follow the existing allow‑list / read‑validate / frozen‑snapshot pattern.
+
+createOrganization must automatically create an ea‑blueprint work item (id=ea‑blueprint, type=ea‑blueprint).
+
+createWorkItem must refuse enhancement / change‑request if the org does not have an existing ea‑blueprint work item.
+
+Invariant modules: orgStoreInvariants.test-shape.ts, workItemStoreInvariants.test-shape.ts, imported from App.tsx.
+
+Storage key scoping
+
+governance/storageKeyUtils.ts with getScopedKey(baseKey, orgId, workItemId).
+
+All existing stores (portfolio, signals, requirements, module catalog, CTAD, ACW, view‑state, track 3 prefs, attachments, OUs) must be updated to use scoped keys.
+
+Module Catalogue and Organisational Units are scoped by orgId only; all others by orgId + workItemId.
+
+Current context
+
+CurrentOrgWorkItemContext React context providing orgId, workItemId, and setters.
+
+AppShell component wrapping the router; reads app:currentOrgId / app:currentWorkItemId from localStorage; if missing, redirects to onboarding.
+
+Onboarding UI
+
+Route /onboarding (or / when no org is set). Glass‑morphism cards for existing orgs; “New Organisation” button.
+
+“New Organisation” form → name, sector, nature of business. On submit, org is created (plus ea‑blueprint work item) and user goes to dashboard.
+
+Work‑Item Dashboard
+
+Route /dashboard (or / after org is selected). Lists work items grouped by type.
+
+“New Work Item” modal – type selector with constraint logic.
+
+Clicking a work item card sets it as current and navigates to /workspace.
+
+Work‑Item Workspace Hub
+
+Route /workspace – three cards linking to ADC, CTAD, ACW.
+
+Data migration
+
+Utility to migrate existing unscoped‑key data to scoped keys on first launch after org selection.
+
+Invariants & vocabulary
+
+All new UI labels must pass vocabulary guard.
+
+ACW isolation invariant must still pass (no new forbidden imports).
+
+All existing *.test-shape.ts invariants still pass.
