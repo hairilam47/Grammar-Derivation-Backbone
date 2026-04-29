@@ -1,0 +1,609 @@
+// IEEE-830 SRS export engine.
+//
+// Phase 1B (Task #144). Reads the live ADC data slices, walks the
+// `srsTemplateConfig` declaration order, calls each generator from
+// `srsGenerators`, and renders the resulting block stream as PDF
+// (jspdf) or DOCX (docx). The configuration is the only source of
+// truth for section ordering, titles, and field choice — this file
+// never hard-codes a heading or a generator key.
+//
+// Architectural constraints:
+//   - Read-only against `moduleCatalogStore`, `requirementsStore`,
+//     `requirementsContractStore`, the CTAD store, and the ACW
+//     store. Never writes back.
+//   - The DRAFT watermark is decided entirely from data
+//     (`isDraftDataset(ctx)`); there is no UI flag that can bypass
+//     it.
+//   - Hierarchical numbering is recomputed from the config
+//     (sections produce "1", "2", "3"; subsections "1.1", "1.2",
+//     ...). A future deeper config would require extending the
+//     numbering walker accordingly.
+
+import { jsPDF } from "jspdf";
+import {
+  Document,
+  Packer,
+  Paragraph,
+  TextRun,
+  HeadingLevel,
+  AlignmentType,
+  Header,
+  Footer,
+  Table,
+  TableRow,
+  TableCell,
+  WidthType,
+  BorderStyle,
+} from "docx";
+
+import {
+  DEFAULT_SRS_TEMPLATE,
+  type SrsTemplateConfig,
+} from "./srsTemplateConfig";
+import {
+  SRS_GENERATORS,
+  isDraftDataset,
+  type SrsBlock,
+  type SrsContext,
+} from "./srsGenerators";
+
+import { getPlaceholderWorkItem } from "./workItemPlaceholder";
+import { listModules } from "./moduleCatalogStore";
+import { listRequirements } from "./requirementsStore";
+import { listContracts } from "./requirementsContractStore";
+import { listArchitectures } from "../ctad/ctadStore";
+import { getWorkspace } from "../acw/acwStore";
+
+const INTEGRITY_FOOTER =
+  "This artefact was system-generated from the live Architecture Decision Canvas data set.";
+
+export type SrsExportFormat = "pdf" | "docx";
+
+export interface ExportSrsOptions {
+  readonly workItemId?: string;
+  readonly template?: SrsTemplateConfig;
+}
+
+// ---------------------------------------------------------------------------
+// Public entry point
+// ---------------------------------------------------------------------------
+
+export async function exportSRS(
+  format: SrsExportFormat,
+  options?: ExportSrsOptions,
+): Promise<void> {
+  const cfg = options?.template ?? DEFAULT_SRS_TEMPLATE;
+  const ctx = buildContext(options?.workItemId);
+  const isDraft = isDraftDataset(ctx);
+  const filename = buildFilename(ctx, format, isDraft);
+  const titlePage = buildTitlePage(ctx, cfg, isDraft);
+  if (format === "pdf") {
+    renderPdf(cfg, ctx, titlePage, isDraft, filename);
+  } else {
+    await renderDocx(cfg, ctx, titlePage, isDraft, filename);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Context assembly
+// ---------------------------------------------------------------------------
+
+function buildContext(workItemIdOpt?: string): SrsContext {
+  const workItem = getPlaceholderWorkItem();
+  const workItemId = workItemIdOpt ?? workItem.workItemId;
+  const modules = listModules();
+  const requirements = listRequirements(workItemId);
+  const contracts = listContracts(workItemId);
+  const contract =
+    contracts.length === 0 ? null : contracts[contracts.length - 1];
+  let acwWorkspace = null;
+  try {
+    acwWorkspace = getWorkspace();
+  } catch {
+    acwWorkspace = null;
+  }
+  let ctadArchitectures: ReturnType<typeof listArchitectures> = [];
+  try {
+    ctadArchitectures = listArchitectures();
+  } catch {
+    ctadArchitectures = [];
+  }
+  return {
+    workItem: { workItemId, title: workItem.title },
+    modules,
+    requirements,
+    contract,
+    ctadArchitectures,
+    acwWorkspace,
+  };
+}
+
+interface TitlePageData {
+  readonly documentTitle: string;
+  readonly projectName: string;
+  readonly standard: string;
+  readonly version: string;
+  readonly lastUpdated: string;
+  readonly status: "DRAFT" | "FROZEN";
+  readonly contractLine: string;
+  readonly revisionLine: string;
+}
+
+function buildTitlePage(
+  ctx: SrsContext,
+  cfg: SrsTemplateConfig,
+  isDraft: boolean,
+): TitlePageData {
+  const status: "DRAFT" | "FROZEN" = isDraft ? "DRAFT" : "FROZEN";
+  const contractLine = ctx.contract
+    ? `Contract ${ctx.contract.contractId} frozen at ${ctx.contract.frozenAt} by ${ctx.contract.frozenBy}`
+    : "No requirements contract on file (live draft data set).";
+  const revisionLine = ctx.contract
+    ? `Revision: contract-bound (${ctx.contract.summary.total} requirement(s) frozen)`
+    : `Revision: live (${ctx.requirements.length} requirement(s) currently captured)`;
+  return {
+    documentTitle: "Software Requirements Specification",
+    projectName: ctx.workItem.title,
+    standard: cfg.metadata.standard,
+    version: cfg.metadata.version,
+    lastUpdated: cfg.metadata.lastUpdated,
+    status,
+    contractLine,
+    revisionLine,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Filename helper
+// ---------------------------------------------------------------------------
+
+function sanitiseFilenameSegment(s: string): string {
+  return (
+    s
+      .normalize("NFKD")
+      .replace(/[^A-Za-z0-9_-]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 60) || "Untitled"
+  );
+}
+
+function buildFilename(
+  ctx: SrsContext,
+  format: SrsExportFormat,
+  isDraft: boolean,
+): string {
+  const project = sanitiseFilenameSegment(ctx.workItem.title);
+  const status = isDraft ? "DRAFT" : "FROZEN";
+  return `SRS_${project}_${status}.${format}`;
+}
+
+// ---------------------------------------------------------------------------
+// PDF renderer
+// ---------------------------------------------------------------------------
+
+function renderPdf(
+  cfg: SrsTemplateConfig,
+  ctx: SrsContext,
+  title: TitlePageData,
+  isDraft: boolean,
+  filename: string,
+): void {
+  const doc = new jsPDF({ format: "a4", unit: "pt" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 50;
+  const contentWidth = pageWidth - 2 * margin;
+  const topAfterHeader = 70;
+  const bottomLimit = pageHeight - 50;
+  let y = topAfterHeader;
+
+  function addHeader(): void {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(120);
+    const headerLine = `${title.standard}  ·  v${title.version}  ·  ${title.lastUpdated}  ·  ${title.status}`;
+    doc.text(headerLine, margin, 30);
+    doc.setDrawColor(200);
+    doc.line(margin, 40, pageWidth - margin, 40);
+    doc.setTextColor(0);
+  }
+
+  function addFooter(): void {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(8);
+    doc.setTextColor(120);
+    doc.text(INTEGRITY_FOOTER, pageWidth / 2, pageHeight - 25, {
+      align: "center",
+    });
+    doc.setTextColor(0);
+  }
+
+  function addWatermark(): void {
+    if (!isDraft) return;
+    doc.saveGraphicsState();
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(120);
+    doc.setTextColor(220, 220, 220);
+    doc.text("DRAFT", pageWidth / 2, pageHeight / 2, {
+      align: "center",
+      angle: 30,
+    });
+    doc.restoreGraphicsState();
+    doc.setTextColor(0);
+  }
+
+  function finishPage(): void {
+    addWatermark();
+    addFooter();
+  }
+
+  function ensureSpace(needed: number): void {
+    if (y + needed > bottomLimit) {
+      finishPage();
+      doc.addPage();
+      addHeader();
+      y = topAfterHeader;
+    }
+  }
+
+  function writeWrapped(
+    text: string,
+    fontSize: number,
+    style: "normal" | "bold" | "italic",
+    indent = 0,
+  ): void {
+    doc.setFont("helvetica", style);
+    doc.setFontSize(fontSize);
+    const lines = doc.splitTextToSize(text, contentWidth - indent) as string[];
+    const lineHeight = fontSize * 1.35;
+    for (const line of lines) {
+      ensureSpace(lineHeight);
+      doc.text(line, margin + indent, y);
+      y += lineHeight;
+    }
+  }
+
+  function drawTable(headers: readonly string[], rows: readonly (readonly string[])[]): void {
+    if (headers.length === 0) return;
+    const colCount = headers.length;
+    const colWidth = contentWidth / colCount;
+    const cellPadding = 4;
+    const fontSize = 9;
+    doc.setFontSize(fontSize);
+
+    function rowHeight(cells: readonly string[], style: "normal" | "bold"): number {
+      doc.setFont("helvetica", style);
+      let maxLines = 1;
+      for (const c of cells) {
+        const lines = doc.splitTextToSize(
+          c || "",
+          colWidth - 2 * cellPadding,
+        ) as string[];
+        if (lines.length > maxLines) maxLines = lines.length;
+      }
+      return maxLines * fontSize * 1.2 + 2 * cellPadding;
+    }
+
+    function drawRow(
+      cells: readonly string[],
+      style: "normal" | "bold",
+      fillHeader: boolean,
+    ): void {
+      const h = rowHeight(cells, style);
+      ensureSpace(h);
+      doc.setFont("helvetica", style);
+      doc.setDrawColor(180);
+      if (fillHeader) {
+        doc.setFillColor(235, 235, 235);
+        doc.rect(margin, y, contentWidth, h, "F");
+      }
+      let x = margin;
+      for (let i = 0; i < colCount; i += 1) {
+        doc.rect(x, y, colWidth, h);
+        const lines = doc.splitTextToSize(
+          cells[i] || "",
+          colWidth - 2 * cellPadding,
+        ) as string[];
+        let textY = y + cellPadding + fontSize;
+        for (const line of lines) {
+          doc.text(line, x + cellPadding, textY);
+          textY += fontSize * 1.2;
+        }
+        x += colWidth;
+      }
+      y += h;
+    }
+
+    drawRow(headers, "bold", true);
+    for (const r of rows) drawRow(r, "normal", false);
+  }
+
+  // --- Title page ---
+  addHeader();
+  writeWrapped(title.documentTitle, 22, "bold");
+  y += 6;
+  writeWrapped(`Project: ${title.projectName}`, 12, "normal");
+  y += 4;
+  writeWrapped(`Standard: ${title.standard}`, 11, "normal");
+  writeWrapped(`Template Version: ${title.version}`, 11, "normal");
+  writeWrapped(`Template Last Updated: ${title.lastUpdated}`, 11, "normal");
+  writeWrapped(`Status: ${title.status}`, 11, "bold");
+  writeWrapped(title.contractLine, 10, "italic");
+  writeWrapped(title.revisionLine, 10, "italic");
+  y += 14;
+
+  // --- Body ---
+  cfg.sections.forEach((section, sectionIdx) => {
+    const sectionNumber = sectionIdx + 1;
+    ensureSpace(40);
+    writeWrapped(`${sectionNumber}. ${section.title}`, 16, "bold");
+    y += 6;
+    section.subsections.forEach((sub, subIdx) => {
+      const subNumber = `${sectionNumber}.${subIdx + 1}`;
+      ensureSpace(28);
+      writeWrapped(`${subNumber} ${sub.title}`, 12, "bold");
+      y += 4;
+      const gen = SRS_GENERATORS[sub.contentGenerator];
+      const blocks: SrsBlock[] = gen
+        ? gen(ctx)
+        : [{ kind: "paragraph", text: `[Missing generator: ${sub.contentGenerator}]` }];
+      for (const block of blocks) {
+        renderPdfBlock(block);
+        y += 4;
+      }
+      y += 6;
+    });
+  });
+
+  finishPage();
+  doc.save(filename);
+
+  function renderPdfBlock(block: SrsBlock): void {
+    switch (block.kind) {
+      case "paragraph":
+        writeWrapped(block.text, 10, "normal");
+        return;
+      case "bullets":
+        for (const item of block.items) {
+          writeWrapped(`•  ${item}`, 10, "normal", 12);
+        }
+        return;
+      case "table":
+        drawTable(block.headers, block.rows);
+        return;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// DOCX renderer
+// ---------------------------------------------------------------------------
+
+async function renderDocx(
+  cfg: SrsTemplateConfig,
+  ctx: SrsContext,
+  title: TitlePageData,
+  isDraft: boolean,
+  filename: string,
+): Promise<void> {
+  const headerLine = `${title.standard}  ·  v${title.version}  ·  ${title.lastUpdated}  ·  ${title.status}`;
+  const draftHeaderText = isDraft
+    ? "DRAFT — Not Frozen"
+    : "Frozen Requirements Contract";
+
+  const children: (Paragraph | Table)[] = [];
+  // Title page
+  children.push(
+    new Paragraph({
+      heading: HeadingLevel.TITLE,
+      children: [new TextRun({ text: title.documentTitle, bold: true, size: 44 })],
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: `Project: ${title.projectName}`, size: 24 })],
+      spacing: { after: 120 },
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: `Standard: ${title.standard}`, size: 22 })],
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: `Template Version: ${title.version}`, size: 22 })],
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: `Template Last Updated: ${title.lastUpdated}`, size: 22 })],
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: `Status: ${title.status}`, bold: true, size: 22 })],
+      spacing: { after: 120 },
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: title.contractLine, italics: true, size: 20 })],
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: title.revisionLine, italics: true, size: 20 })],
+      spacing: { after: 240 },
+    }),
+  );
+
+  cfg.sections.forEach((section, sectionIdx) => {
+    const sectionNumber = sectionIdx + 1;
+    children.push(
+      new Paragraph({
+        heading: HeadingLevel.HEADING_1,
+        children: [
+          new TextRun({
+            text: `${sectionNumber}. ${section.title}`,
+            bold: true,
+          }),
+        ],
+        spacing: { before: 240, after: 120 },
+      }),
+    );
+    section.subsections.forEach((sub, subIdx) => {
+      const subNumber = `${sectionNumber}.${subIdx + 1}`;
+      children.push(
+        new Paragraph({
+          heading: HeadingLevel.HEADING_2,
+          children: [
+            new TextRun({ text: `${subNumber} ${sub.title}`, bold: true }),
+          ],
+          spacing: { before: 180, after: 80 },
+        }),
+      );
+      const gen = SRS_GENERATORS[sub.contentGenerator];
+      const blocks: SrsBlock[] = gen
+        ? gen(ctx)
+        : [{ kind: "paragraph", text: `[Missing generator: ${sub.contentGenerator}]` }];
+      for (const block of blocks) {
+        const rendered = renderDocxBlock(block);
+        for (const node of rendered) children.push(node);
+      }
+    });
+  });
+
+  const doc = new Document({
+    creator: "Architecture Decision Canvas",
+    title: title.documentTitle,
+    sections: [
+      {
+        properties: {
+          page: { size: { width: 11906, height: 16838 } },
+        },
+        headers: {
+          default: new Header({
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.LEFT,
+                children: [
+                  new TextRun({ text: headerLine, size: 16, color: "808080" }),
+                ],
+              }),
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                children: [
+                  new TextRun({
+                    text: draftHeaderText,
+                    bold: true,
+                    size: 18,
+                    color: isDraft ? "B00020" : "808080",
+                  }),
+                ],
+              }),
+            ],
+          }),
+        },
+        footers: {
+          default: new Footer({
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                children: [
+                  new TextRun({
+                    text: INTEGRITY_FOOTER,
+                    italics: true,
+                    size: 16,
+                    color: "808080",
+                  }),
+                ],
+              }),
+              ...(isDraft
+                ? [
+                    new Paragraph({
+                      alignment: AlignmentType.CENTER,
+                      children: [
+                        new TextRun({
+                          text: draftHeaderText,
+                          bold: true,
+                          size: 16,
+                          color: "B00020",
+                        }),
+                      ],
+                    }),
+                  ]
+                : []),
+            ],
+          }),
+        },
+        children,
+      },
+    ],
+  });
+
+  const blob = await Packer.toBlob(doc);
+  triggerDownload(blob, filename);
+}
+
+function renderDocxBlock(block: SrsBlock): (Paragraph | Table)[] {
+  switch (block.kind) {
+    case "paragraph":
+      return [
+        new Paragraph({
+          children: [new TextRun({ text: block.text, size: 22 })],
+          spacing: { after: 120 },
+        }),
+      ];
+    case "bullets":
+      return block.items.map(
+        (item) =>
+          new Paragraph({
+            bullet: { level: 0 },
+            children: [new TextRun({ text: item, size: 22 })],
+          }),
+      );
+    case "table": {
+      const cellBorders = {
+        top: { style: BorderStyle.SINGLE, size: 4, color: "B0B0B0" },
+        bottom: { style: BorderStyle.SINGLE, size: 4, color: "B0B0B0" },
+        left: { style: BorderStyle.SINGLE, size: 4, color: "B0B0B0" },
+        right: { style: BorderStyle.SINGLE, size: 4, color: "B0B0B0" },
+      };
+      const headerRow = new TableRow({
+        tableHeader: true,
+        children: block.headers.map(
+          (h) =>
+            new TableCell({
+              borders: cellBorders,
+              children: [
+                new Paragraph({
+                  children: [new TextRun({ text: h, bold: true, size: 20 })],
+                }),
+              ],
+            }),
+        ),
+      });
+      const bodyRows = block.rows.map(
+        (r) =>
+          new TableRow({
+            children: r.map(
+              (c) =>
+                new TableCell({
+                  borders: cellBorders,
+                  children: [
+                    new Paragraph({
+                      children: [new TextRun({ text: c, size: 20 })],
+                    }),
+                  ],
+                }),
+            ),
+          }),
+      );
+      return [
+        new Table({
+          width: { size: 100, type: WidthType.PERCENTAGE },
+          rows: [headerRow, ...bodyRows],
+        }),
+        new Paragraph({ children: [new TextRun({ text: "" })] }),
+      ];
+    }
+  }
+}
+
+function triggerDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

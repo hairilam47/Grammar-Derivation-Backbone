@@ -51,6 +51,7 @@ import {
 } from "@/governance/moduleCatalogStore";
 import { PLACEHOLDER_WORK_ITEM_ID } from "@/governance/workItemPlaceholder";
 import { assertAllUrgencyLanguage } from "@/governance/staticTextGuard";
+import { SrsExportButton } from "./SrsExportButton";
 
 // Urgency label binding. The internal enum stays
 // 'low' | 'medium' | 'high' | 'critical' and is the only value that
@@ -251,16 +252,19 @@ export function RequirementsCapture({ onBack, onNext }: RequirementsCaptureProps
 
   return (
     <div className="space-y-6 max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div>
-        <div className="text-xs uppercase tracking-widest text-muted-foreground mb-1">
-          Step 3
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <div className="text-xs uppercase tracking-widest text-muted-foreground mb-1">
+            Step 3
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight mb-2">
+            Requirements Capture
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            Capture the requirements that define this work item.
+          </p>
         </div>
-        <h1 className="text-2xl font-bold tracking-tight mb-2">
-          Requirements Capture
-        </h1>
-        <p className="text-muted-foreground text-sm">
-          Capture the requirements that define this work item.
-        </p>
+        <SrsExportButton variant="secondary" testIdSuffix="capture" />
       </div>
 
       <Card>

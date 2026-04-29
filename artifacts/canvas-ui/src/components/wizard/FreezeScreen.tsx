@@ -72,6 +72,7 @@ import {
 } from "@/governance/requirementsContractStore";
 import { PLACEHOLDER_WORK_ITEM_ID } from "@/governance/workItemPlaceholder";
 import { assertAllUrgencyLanguage } from "@/governance/staticTextGuard";
+import { SrsExportButton } from "./SrsExportButton";
 
 const STATIC_LABELS = [
   "Freeze",
@@ -450,6 +451,7 @@ export function FreezeScreen({
             >
               <FileType className="w-4 h-4" /> Export ECP (DOCX)
             </Button>
+            <SrsExportButton testIdSuffix="freeze" />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
