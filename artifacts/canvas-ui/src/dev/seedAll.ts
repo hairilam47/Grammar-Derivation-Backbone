@@ -59,6 +59,7 @@ import {
 import type { CtadEnvironmentDef } from "@/ctad/ctadRegistry";
 import { applyCard } from "@/ctad/cncfApplyService";
 import { CNCF_CARDS } from "@/cncf/cncfCatalog";
+import { __resetScopedStorageForTest } from "@/governance/scopedStorageClient";
 import {
   createNode,
   createEdge,
@@ -310,6 +311,10 @@ function clearAllSeededKeys(): void {
     if (scopedKey === null) continue;
     window.localStorage.removeItem(scopedKey);
   }
+  // Invalidate the L1 in-memory cache used by the scoped storage
+  // client so subsequent reads don't surface stale documents whose
+  // localStorage rows were just removed.
+  __resetScopedStorageForTest();
   // Reload caches for stores that hold an in-memory cache. Stores
   // that read on every call (portfolio, signals, all CTAD stores,
   // architecture-attachment) need no reload.
@@ -795,6 +800,7 @@ export function runSeedProbe(): SeedProbeResult {
         window.localStorage.setItem(scopedKey, prev);
       }
     }
+    __resetScopedStorageForTest();
     __acwStoreInternals.reloadFromStorageForTest();
     __acwViewStateInternals.reloadFromStorageForTest();
     __acwWorkspaceViewPrefsInternals.reloadFromStorageForTest();

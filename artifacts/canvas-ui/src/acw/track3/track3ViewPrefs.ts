@@ -26,6 +26,12 @@ import {
   resolveActiveKey,
   currentScope,
 } from "@/governance/storageKeyUtils";
+import {
+  readScoped,
+  writeScoped,
+  onScopeOrHydrationChange,
+  __resetScopedStorageForTest,
+} from "@/governance/scopedStorageClient";
 
 export const TRACK3_VIEWPREFS_SCHEMA_VERSION = "acw-track3-viewprefs-1.1" as const;
 const LEGACY_SCHEMA_VERSION_V10 = "acw-track3-viewprefs-1.0" as const;
@@ -247,12 +253,9 @@ let cache: Track3ViewPrefsDoc | null = null;
 const subscribers = new Set<() => void>();
 
 function readFromStorage(): Track3ViewPrefsDoc {
-  if (typeof window === "undefined") return emptyDoc();
-  const key = getStorageKey();
-  if (key === null) return emptyDoc();
+  const raw = readScoped(getStorageKey());
+  if (raw === null) return emptyDoc();
   try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return emptyDoc();
     const parsed = JSON.parse(raw);
     // Try v1.0 → v1.1 migration first; if not a v1.0 doc, fall
     // through to the strict v1.1 validator.
@@ -274,14 +277,13 @@ function readFromStorage(): Track3ViewPrefsDoc {
 
 function writeToStorage(doc: Track3ViewPrefsDoc): void {
   assertValidPrefsDoc(doc);
-  if (typeof window === "undefined") return;
   const key = getStorageKey();
   if (key === null) return;
-  window.localStorage.setItem(key, JSON.stringify(doc));
+  writeScoped(key, JSON.stringify(doc));
 }
 
 if (typeof window !== "undefined") {
-  currentScope.subscribe(() => {
+  onScopeOrHydrationChange(() => {
     cache = null;
     notify();
   });
@@ -398,6 +400,7 @@ export const __track3ViewPrefsInternals = Object.freeze({
   ALLOWED_TOP,
   ALLOWED_BINDING,
   reloadFromStorageForTest(): void {
+    __resetScopedStorageForTest();
     cache = null;
     notify();
   },

@@ -30,7 +30,7 @@ import {
 } from "./storageKeyUtils";
 import { migrateLegacyFlatKeysIfNeeded } from "./legacyMigration";
 import { getOrganisation } from "./orgStore";
-import { getWorkItem } from "./workItemStore";
+import { getWorkItem, hydrateWorkItemsFromServerForOrg } from "./workItemStore";
 
 const ORG_LS_KEY = "app:currentOrgId";
 const WORK_ITEM_LS_KEY = "app:currentWorkItemId";
@@ -134,6 +134,16 @@ export function CurrentOrgWorkItemProvider({ children }: { children: ReactNode }
   // gives the resolver a chance to find a target before the
   // sentinel is spent. The internal "no anchor → return without
   // setting sentinel" branch keeps subsequent retries cheap.
+  // Phase 3 — pull every work item for the current org off the
+  // api-server when the active org changes. Best-effort merge:
+  // server rows take precedence, but local-only rows the server
+  // hasn't seen yet are preserved so the legacy server-upload
+  // migration still has a chance to push them up.
+  useEffect(() => {
+    if (orgId === null) return;
+    void hydrateWorkItemsFromServerForOrg(orgId);
+  }, [orgId]);
+
   useEffect(() => {
     if (orgId === null) return;
     try {

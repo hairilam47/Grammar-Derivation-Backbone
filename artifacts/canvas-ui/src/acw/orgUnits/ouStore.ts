@@ -27,6 +27,12 @@ import {
   resolveActiveKey,
   currentScope,
 } from "@/governance/storageKeyUtils";
+import {
+  readScoped,
+  writeScoped,
+  onScopeOrHydrationChange,
+  __resetScopedStorageForTest,
+} from "@/governance/scopedStorageClient";
 
 export const OU_SCHEMA_VERSION = "ou-1.0" as const;
 // Phase 2 (SaaS Onboarding) — Org-only scope. The OU registry is
@@ -153,12 +159,9 @@ function notify(): void {
 }
 
 function readFromStorage(): OrganisationalUnitDocument {
-  if (typeof window === "undefined") return emptyDocument();
-  const key = getStorageKey();
-  if (key === null) return emptyDocument();
+  const raw = readScoped(getStorageKey());
+  if (raw === null) return emptyDocument();
   try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return emptyDocument();
     const parsed = JSON.parse(raw);
     if (!isValid(parsed)) return emptyDocument();
     return parsed;
@@ -169,10 +172,9 @@ function readFromStorage(): OrganisationalUnitDocument {
 
 function writeToStorage(doc: OrganisationalUnitDocument): void {
   assertValid(doc);
-  if (typeof window === "undefined") return;
   const key = getStorageKey();
   if (key === null) return;
-  window.localStorage.setItem(key, JSON.stringify(doc));
+  writeScoped(key, JSON.stringify(doc));
 }
 
 // Phase 2 (SaaS Onboarding) — invalidate the in-memory cache when
@@ -182,7 +184,7 @@ function writeToStorage(doc: OrganisationalUnitDocument): void {
 // units. Dropping the cache forces the next read to pull from the
 // freshly-scoped storage key.
 if (typeof window !== "undefined") {
-  currentScope.subscribe(() => {
+  onScopeOrHydrationChange(() => {
     cache = null;
     notify();
   });
@@ -387,6 +389,7 @@ export const __ouStoreInternals = Object.freeze({
   assertValid,
   emptyDocument,
   reloadFromStorageForTest(): void {
+    __resetScopedStorageForTest();
     cache = null;
     notify();
   },

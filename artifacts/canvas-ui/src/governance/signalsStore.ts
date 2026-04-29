@@ -11,6 +11,7 @@
 // S6-HC9 Interpretation guidance phrased as questions only (validator).
 
 import { resolveActiveKey } from "./storageKeyUtils";
+import { readScoped, writeScoped } from "./scopedStorageClient";
 
 // Phase 2 (SaaS Onboarding) — Org+WorkItem scope. Base key kept for
 // the legacy migration utility; readers / writers go through the
@@ -212,12 +213,9 @@ function isValidSignal(raw: unknown): raw is PolicySignal {
 }
 
 function readAll(): PolicySignal[] {
-  if (typeof window === "undefined") return [];
-  const key = getStorageKey();
-  if (key === null) return [];
+  const raw = readScoped(getStorageKey());
+  if (raw === null) return [];
   try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(isValidSignal);
@@ -227,10 +225,9 @@ function readAll(): PolicySignal[] {
 }
 
 function writeAll(signals: PolicySignal[]): void {
-  if (typeof window === "undefined") return;
   const key = getStorageKey();
   if (key === null) return;
-  window.localStorage.setItem(key, JSON.stringify(signals));
+  writeScoped(key, JSON.stringify(signals));
 }
 
 export function listSignals(): PolicySignal[] {

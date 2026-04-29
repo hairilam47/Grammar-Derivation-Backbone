@@ -24,6 +24,11 @@ import {
 import { getArchitectureDoc } from "@/ctad/ctadStore";
 import { getEntry } from "./portfolioStore";
 import { resolveActiveKey, currentScope } from "./storageKeyUtils";
+import {
+  readScoped,
+  writeScoped,
+  onScopeOrHydrationChange,
+} from "./scopedStorageClient";
 
 // Phase 2 (SaaS Onboarding) — Org+WorkItem scope.
 export const BASE_STORAGE_KEY = "adc.architecture-attachments.v1";
@@ -75,12 +80,9 @@ function isValidLink(value: unknown): value is ArchitectureAttachmentLink {
 }
 
 function readDoc(): AttachmentStoreDoc {
-  if (typeof window === "undefined" || !window.localStorage) return EMPTY_DOC;
-  const key = getStorageKey();
-  if (key === null) return EMPTY_DOC;
+  const raw = readScoped(getStorageKey());
+  if (raw === null) return EMPTY_DOC;
   try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return EMPTY_DOC;
     const parsed = JSON.parse(raw) as Partial<AttachmentStoreDoc>;
     if (
       !parsed ||
@@ -107,15 +109,14 @@ function readDoc(): AttachmentStoreDoc {
 }
 
 function writeDoc(doc: AttachmentStoreDoc): void {
-  if (typeof window === "undefined" || !window.localStorage) return;
   const key = getStorageKey();
   if (key === null) return;
-  window.localStorage.setItem(key, JSON.stringify(doc));
+  writeScoped(key, JSON.stringify(doc));
   bumpVersion();
 }
 
 if (typeof window !== "undefined") {
-  currentScope.subscribe(() => {
+  onScopeOrHydrationChange(() => {
     bumpVersion();
   });
 }

@@ -40,6 +40,11 @@ import {
   resolveActiveKey,
   currentScope,
 } from "@/governance/storageKeyUtils";
+import {
+  readScoped,
+  writeScoped,
+  onScopeOrHydrationChange,
+} from "@/governance/scopedStorageClient";
 
 // Phase 2 (SaaS Onboarding) — Org+WorkItem scope. The CTAD state
 // document is the per-Work-Item exploration workspace; switching
@@ -195,12 +200,9 @@ function migrateArchitectureDoc(raw: unknown): CtadArchitectureDoc | null {
 }
 
 function readDoc(): CtadStoreDoc {
-  if (typeof window === "undefined" || !window.localStorage) return EMPTY_DOC;
-  const key = getStorageKey();
-  if (key === null) return EMPTY_DOC;
+  const raw = readScoped(getStorageKey());
+  if (raw === null) return EMPTY_DOC;
   try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return EMPTY_DOC;
     const parsed = JSON.parse(raw) as Partial<CtadStoreDoc>;
     if (
       !parsed ||
@@ -253,10 +255,9 @@ function readDoc(): CtadStoreDoc {
 }
 
 function writeDoc(doc: CtadStoreDoc): void {
-  if (typeof window === "undefined" || !window.localStorage) return;
   const key = getStorageKey();
   if (key === null) return;
-  window.localStorage.setItem(key, JSON.stringify(doc));
+  writeScoped(key, JSON.stringify(doc));
   storeVersion += 1;
   notify();
 }
@@ -265,7 +266,7 @@ function writeDoc(doc: CtadStoreDoc): void {
 // the active scope changes so the CTAD shell re-reads the document
 // for the newly active Work Item.
 if (typeof window !== "undefined") {
-  currentScope.subscribe(() => {
+  onScopeOrHydrationChange(() => {
     storeVersion += 1;
     notify();
   });

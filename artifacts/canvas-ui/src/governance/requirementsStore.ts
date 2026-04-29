@@ -26,6 +26,11 @@
 //     `quantity > 0`. Other types must NOT carry hardwareDetails.
 
 import { resolveActiveKey, currentScope } from "./storageKeyUtils";
+import {
+  readScoped,
+  writeScoped,
+  onScopeOrHydrationChange,
+} from "./scopedStorageClient";
 
 // Phase 2 (SaaS Onboarding) — Org+WorkItem scope. The base key is
 // preserved for the legacy migration utility; readers/writers go
@@ -183,12 +188,9 @@ export function isValidRequirement(value: unknown): value is Requirement {
 }
 
 function readDoc(): RequirementsDoc {
-  if (typeof window === "undefined" || !window.localStorage) return EMPTY_DOC;
-  const key = getStorageKey();
-  if (key === null) return EMPTY_DOC;
+  const raw = readScoped(getStorageKey());
+  if (raw === null) return EMPTY_DOC;
   try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return EMPTY_DOC;
     const parsed = JSON.parse(raw) as Partial<RequirementsDoc> & Record<string, unknown>;
     if (
       !parsed ||
@@ -218,10 +220,9 @@ function readDoc(): RequirementsDoc {
 }
 
 function writeDoc(doc: RequirementsDoc): void {
-  if (typeof window === "undefined" || !window.localStorage) return;
   const key = getStorageKey();
   if (key === null) return;
-  window.localStorage.setItem(key, JSON.stringify(doc));
+  writeScoped(key, JSON.stringify(doc));
   bumpVersion();
 }
 
@@ -229,7 +230,7 @@ function writeDoc(doc: RequirementsDoc): void {
 // the active scope changes so the Requirements screen re-reads from
 // the new effective key.
 if (typeof window !== "undefined") {
-  currentScope.subscribe(() => {
+  onScopeOrHydrationChange(() => {
     bumpVersion();
   });
 }

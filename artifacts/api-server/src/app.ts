@@ -26,8 +26,12 @@ app.use(
   }),
 );
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Tenant scoped documents (architecture workspaces, portfolios,
+// requirements, etc.) can run to a few MB so we lift the default
+// 100kb body limit. The values are still bounded by a per-document
+// schema validator on the browser side.
+app.use(express.json({ limit: "16mb" }));
+app.use(express.urlencoded({ extended: true, limit: "16mb" }));
 
 app.use("/api", router);
 

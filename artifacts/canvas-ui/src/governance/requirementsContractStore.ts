@@ -34,6 +34,11 @@ import {
 } from "./requirementsStore";
 
 import { resolveActiveKey, currentScope } from "./storageKeyUtils";
+import {
+  readScoped,
+  writeScoped,
+  onScopeOrHydrationChange,
+} from "./scopedStorageClient";
 
 // Phase 2 (SaaS Onboarding) — Org+WorkItem scope.
 export const BASE_STORAGE_KEY = "adc.requirements-contracts.v1";
@@ -124,12 +129,9 @@ function isValidContract(value: unknown): value is RequirementsContract {
 }
 
 function readDoc(): ContractDoc {
-  if (typeof window === "undefined" || !window.localStorage) return EMPTY_DOC;
-  const key = getStorageKey();
-  if (key === null) return EMPTY_DOC;
+  const raw = readScoped(getStorageKey());
+  if (raw === null) return EMPTY_DOC;
   try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return EMPTY_DOC;
     const parsed = JSON.parse(raw) as Partial<ContractDoc> & Record<string, unknown>;
     if (
       !parsed ||
@@ -159,15 +161,14 @@ function readDoc(): ContractDoc {
 }
 
 function writeDoc(doc: ContractDoc): void {
-  if (typeof window === "undefined" || !window.localStorage) return;
   const key = getStorageKey();
   if (key === null) return;
-  window.localStorage.setItem(key, JSON.stringify(doc));
+  writeScoped(key, JSON.stringify(doc));
   bumpVersion();
 }
 
 if (typeof window !== "undefined") {
-  currentScope.subscribe(() => {
+  onScopeOrHydrationChange(() => {
     bumpVersion();
   });
 }

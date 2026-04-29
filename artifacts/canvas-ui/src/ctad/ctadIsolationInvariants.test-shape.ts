@@ -88,6 +88,13 @@ const ALLOWED_IMPORT_PREFIXES: readonly string[] = [
   // CTAD stores import `getScopedKey` so their localStorage
   // documents are partitioned by Organisation + Work Item.
   "@/governance/storageKeyUtils",
+  // Phase 3 (server-backed tenant storage) — synchronous L1 cache
+  // helpers (`readScoped` / `writeScoped` / `removeScoped`) that
+  // wrap localStorage and an opaque write-through to the api-
+  // server. Carries no decision-pipeline state. Required so the
+  // CTAD stores can persist through the same path as every other
+  // tenant-scoped store after the Phase-3 cutover.
+  "@/governance/scopedStorageClient",
   // Portfolio store: read-only access only. The allowlist permits
   // the import path; the named-import scan below ensures CTAD
   // imports only the read symbols (listEntries, getEntry, PortfolioEntry).

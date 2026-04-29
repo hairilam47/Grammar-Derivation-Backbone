@@ -315,18 +315,13 @@ export function runL3Generator(architectureId: string): readonly string[] {
 // Work Item) sees an empty L3 surface instead of a crash.
 // ---------------------------------------------------------------------------
 import { resolveActiveKey } from "@/governance/storageKeyUtils";
+import { readScoped } from "@/governance/scopedStorageClient";
 const CTAD_BASE_STORAGE_KEY = "ctad.state.v1";
 
 function readPersistedArchitectureIds(): readonly string[] {
-  if (typeof window === "undefined") return [];
   const ctadKey = resolveActiveKey(CTAD_BASE_STORAGE_KEY, true);
   if (ctadKey === null) return [];
-  let raw: string | null;
-  try {
-    raw = window.localStorage.getItem(ctadKey);
-  } catch {
-    return [];
-  }
+  const raw = readScoped(ctadKey);
   if (raw === null || raw.length === 0) return [];
   let doc: unknown;
   try {

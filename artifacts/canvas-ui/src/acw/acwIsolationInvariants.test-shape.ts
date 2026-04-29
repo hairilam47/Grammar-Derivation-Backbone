@@ -117,6 +117,17 @@ const ALLOWED_IMPORT_PREFIXES: readonly string[] = [
   "@/governance/storageKeyUtils",
   "../governance/storageKeyUtils",
   "../../governance/storageKeyUtils",
+  // Phase 3 (server-backed tenant storage) — synchronous L1 cache
+  // helpers (`readScoped` / `writeScoped` / `removeScoped`) that
+  // wrap localStorage and an opaque write-through to the api-
+  // server. The client carries no decision-pipeline state — it is
+  // a key→string map plus a fetch wrapper — and is required so
+  // ACW stores (workspace, view-state, view-prefs, OUs, track3
+  // view-prefs) can persist through the same path as every other
+  // tenant-scoped store after the Phase-3 cutover.
+  "@/governance/scopedStorageClient",
+  "../governance/scopedStorageClient",
+  "../../governance/scopedStorageClient",
   // Phase 5 — one-way read of the CTAD parameter REGISTRY
   // (sections, parameters, options) into ACW so the semantic
   // binding helpers in `acw/semantic/*` can resolve a node's

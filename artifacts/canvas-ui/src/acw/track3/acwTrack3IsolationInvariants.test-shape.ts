@@ -103,6 +103,13 @@ const ALLOWED_IMPORT_PREFIXES: readonly string[] = [
   // so its localStorage document is partitioned by Organisation +
   // Work Item; introduces no decision-pipeline coupling.
   "@/governance/storageKeyUtils",
+  // Phase 3 (server-backed tenant storage) — synchronous L1 cache
+  // helpers (`readScoped` / `writeScoped` / `removeScoped`) that
+  // wrap localStorage and an opaque write-through to the api-
+  // server. Carries no decision-pipeline state. Required so the
+  // Track 3 view-prefs store can persist through the same path
+  // as every other tenant-scoped store.
+  "@/governance/scopedStorageClient",
   // Read-only CTAD store. The named-import scan below further
   // constrains Track 3 to a small allow-list of read symbols.
   // The portfolio store is intentionally absent: Phase 3

@@ -11,6 +11,9 @@ import {
   CurrentOrgWorkItemProvider,
   useCurrentScope,
 } from "@/governance/CurrentOrgWorkItemContext";
+import { installScopeAutoHydration } from "@/governance/scopedStorageClient";
+import { hydrateOrgsFromServer } from "@/governance/orgStore";
+import { uploadLegacyTenantsToServerIfNeeded } from "@/governance/legacyMigration";
 import DecisionCanvasShell from "@/components/DecisionCanvasShell";
 import Portfolio from "@/pages/Portfolio";
 import Signals from "@/pages/Signals";
@@ -151,6 +154,26 @@ if (import.meta.env.DEV) {
 function DarkModeApplier() {
   useEffect(() => {
     document.documentElement.classList.add("dark");
+  }, []);
+  return null;
+}
+
+// Phase 3 (server-backed tenant storage) — boot wiring. Runs
+// exactly once per page load:
+//   1. Subscribe the scoped-storage client to scope changes so
+//      switching org / work-item triggers an async hydrate from
+//      the api-server.
+//   2. Pull the org registry off the server and merge it with
+//      whatever is in localStorage.
+//   3. Best-effort one-shot upload of any locally-resident
+//      tenant data (orgs, work items, scoped docs) the user
+//      built up before this build's server cutover. Sentinel-
+//      guarded inside `legacyMigration.ts`; safe to retry.
+function ServerBackedStorageBoot() {
+  useEffect(() => {
+    installScopeAutoHydration();
+    void hydrateOrgsFromServer();
+    void uploadLegacyTenantsToServerIfNeeded();
   }, []);
   return null;
 }
@@ -321,6 +344,7 @@ function App() {
   return (
     <>
       <DarkModeApplier />
+      <ServerBackedStorageBoot />
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
           <CurrentOrgWorkItemProvider>

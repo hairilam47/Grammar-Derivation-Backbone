@@ -77,6 +77,12 @@ const ALLOWED_IMPORT_PREFIXES: readonly string[] = [
   // Required so the L3 generator can resolve the active CTAD state
   // key under the current Organisation + Work-Item scope.
   "@/governance/storageKeyUtils",
+  // Phase 3 (server-backed tenant storage) — synchronous L1 cache
+  // helpers (`readScoped`) wrapping localStorage and an opaque
+  // write-through to the api-server. Carries no decision-pipeline
+  // state. Required so the L3 generator can read the active CTAD
+  // architecture state through the same path as the CTAD store.
+  "@/governance/scopedStorageClient",
   // The L3 carve-out: read-only CTAD store. The named-import scan
   // below further constrains the carve-out to the SINGLE allowed
   // symbol `exportArchitectureState` (no roster enumerator, no

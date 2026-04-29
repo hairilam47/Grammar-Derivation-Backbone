@@ -33,6 +33,12 @@ import {
   resolveActiveKey,
   currentScope,
 } from "@/governance/storageKeyUtils";
+import {
+  readScoped,
+  writeScoped,
+  onScopeOrHydrationChange,
+  __resetScopedStorageForTest,
+} from "@/governance/scopedStorageClient";
 
 export const ACW_WORKSPACE_VIEWPREFS_SCHEMA_VERSION =
   "acw-workspace-viewprefs-1.0" as const;
@@ -144,12 +150,9 @@ let cache: AcwWorkspaceViewPrefsDoc | null = null;
 const subscribers = new Set<() => void>();
 
 function readFromStorage(): AcwWorkspaceViewPrefsDoc {
-  if (typeof window === "undefined") return emptyDoc();
-  const key = getStorageKey();
-  if (key === null) return emptyDoc();
+  const raw = readScoped(getStorageKey());
+  if (raw === null) return emptyDoc();
   try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return emptyDoc();
     const parsed = JSON.parse(raw);
     if (!isValid(parsed)) return emptyDoc();
     return Object.freeze({
@@ -163,14 +166,13 @@ function readFromStorage(): AcwWorkspaceViewPrefsDoc {
 
 function writeToStorage(doc: AcwWorkspaceViewPrefsDoc): void {
   assertValidPrefsDoc(doc);
-  if (typeof window === "undefined") return;
   const key = getStorageKey();
   if (key === null) return;
-  window.localStorage.setItem(key, JSON.stringify(doc));
+  writeScoped(key, JSON.stringify(doc));
 }
 
 if (typeof window !== "undefined") {
-  currentScope.subscribe(() => {
+  onScopeOrHydrationChange(() => {
     cache = null;
     notify();
   });
@@ -246,6 +248,7 @@ export const __acwWorkspaceViewPrefsInternals = Object.freeze({
   BASE_STORAGE_KEY,
   getStorageKey,
   reloadFromStorageForTest(): void {
+    __resetScopedStorageForTest();
     cache = null;
     notify();
   },

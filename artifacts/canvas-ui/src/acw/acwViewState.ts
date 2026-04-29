@@ -35,6 +35,12 @@ import {
   resolveActiveKey,
   currentScope,
 } from "@/governance/storageKeyUtils";
+import {
+  readScoped,
+  writeScoped,
+  onScopeOrHydrationChange,
+  __resetScopedStorageForTest,
+} from "@/governance/scopedStorageClient";
 
 export const ACW_VIEW_SCHEMA_VERSION = "acw-view-1.0" as const;
 // Phase 2 (SaaS Onboarding) — Org+WorkItem scope.
@@ -454,12 +460,9 @@ function normalize(raw: AcwViewState): AcwViewState {
 }
 
 function readFromStorage(): AcwViewState {
-  if (typeof window === "undefined") return emptyView();
-  const key = getStorageKey();
-  if (key === null) return emptyView();
+  const raw = readScoped(getStorageKey());
+  if (raw === null) return emptyView();
   try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return emptyView();
     const parsed = JSON.parse(raw);
     if (!isValid(parsed)) return emptyView();
     return normalize(parsed);
@@ -470,14 +473,13 @@ function readFromStorage(): AcwViewState {
 
 function writeToStorage(state: AcwViewState): void {
   assertValid(state);
-  if (typeof window === "undefined") return;
   const key = getStorageKey();
   if (key === null) return;
-  window.localStorage.setItem(key, JSON.stringify(state));
+  writeScoped(key, JSON.stringify(state));
 }
 
 if (typeof window !== "undefined") {
-  currentScope.subscribe(() => {
+  onScopeOrHydrationChange(() => {
     cache = null;
     notify();
   });
@@ -811,6 +813,7 @@ export const __acwViewStateInternals = Object.freeze({
   ALLOWED_VIEW_MODES,
   DEFAULT_VIEW_MODE,
   reloadFromStorageForTest(): void {
+    __resetScopedStorageForTest();
     cache = null;
     notify();
   },

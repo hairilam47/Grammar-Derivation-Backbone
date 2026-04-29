@@ -22,6 +22,11 @@ import {
   resolveActiveKey,
   currentScope,
 } from "@/governance/storageKeyUtils";
+import {
+  readScoped,
+  writeScoped,
+  onScopeOrHydrationChange,
+} from "@/governance/scopedStorageClient";
 
 // Phase 2 (SaaS Onboarding) — Org+WorkItem scope.
 export const BASE_STORAGE_KEY = "ctad.constraints.v1";
@@ -61,12 +66,9 @@ function bindingKey(b: CtadBinding): string {
 }
 
 function readDoc(): ConstraintsStoreDoc {
-  if (typeof window === "undefined" || !window.localStorage) return EMPTY_DOC;
-  const key = getStorageKey();
-  if (key === null) return EMPTY_DOC;
+  const raw = readScoped(getStorageKey());
+  if (raw === null) return EMPTY_DOC;
   try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return EMPTY_DOC;
     const parsed = JSON.parse(raw) as Partial<ConstraintsStoreDoc>;
     if (
       !parsed ||
@@ -87,16 +89,15 @@ function readDoc(): ConstraintsStoreDoc {
 }
 
 function writeDoc(doc: ConstraintsStoreDoc): void {
-  if (typeof window === "undefined" || !window.localStorage) return;
   const key = getStorageKey();
   if (key === null) return;
-  window.localStorage.setItem(key, JSON.stringify(doc));
+  writeScoped(key, JSON.stringify(doc));
   storeVersion += 1;
   notify();
 }
 
 if (typeof window !== "undefined") {
-  currentScope.subscribe(() => {
+  onScopeOrHydrationChange(() => {
     storeVersion += 1;
     notify();
   });

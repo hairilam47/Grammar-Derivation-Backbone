@@ -23,6 +23,11 @@
 
 import { getCapabilityById } from "@workspace/architecture-grammar";
 import { resolveActiveKey, currentScope } from "./storageKeyUtils";
+import {
+  readScoped,
+  writeScoped,
+  onScopeOrHydrationChange,
+} from "./scopedStorageClient";
 
 // Phase 2 (SaaS Onboarding) — Org-only scope. The Module Catalogue
 // is shared across every Work Item inside a single Organisation
@@ -86,12 +91,9 @@ function isValidModule(value: unknown): value is Module {
 }
 
 function readDoc(): ModuleCatalogDoc {
-  if (typeof window === "undefined" || !window.localStorage) return EMPTY_DOC;
-  const key = getStorageKey();
-  if (key === null) return EMPTY_DOC;
+  const raw = readScoped(getStorageKey());
+  if (raw === null) return EMPTY_DOC;
   try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return EMPTY_DOC;
     const parsed = JSON.parse(raw) as Partial<ModuleCatalogDoc> & Record<string, unknown>;
     if (
       !parsed ||
@@ -121,10 +123,9 @@ function readDoc(): ModuleCatalogDoc {
 }
 
 function writeDoc(doc: ModuleCatalogDoc): void {
-  if (typeof window === "undefined" || !window.localStorage) return;
   const key = getStorageKey();
   if (key === null) return;
-  window.localStorage.setItem(key, JSON.stringify(doc));
+  writeScoped(key, JSON.stringify(doc));
   bumpVersion();
 }
 
@@ -133,7 +134,7 @@ function writeDoc(doc: ModuleCatalogDoc): void {
 // so the Modules screen re-reads the document for the newly active
 // Organisation.
 if (typeof window !== "undefined") {
-  currentScope.subscribe(() => {
+  onScopeOrHydrationChange(() => {
     bumpVersion();
   });
 }

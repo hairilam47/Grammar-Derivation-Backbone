@@ -20,6 +20,11 @@ import {
 import { deriveExposure } from "./exposureDerive";
 import { deriveResponsibilityLens } from "./responsibilityLens";
 import { resolveActiveKey, currentScope } from "./storageKeyUtils";
+import {
+  readScoped,
+  writeScoped,
+  onScopeOrHydrationChange,
+} from "./scopedStorageClient";
 
 // Phase 2 (SaaS Onboarding) — every persisted ADC document is now
 // scoped to the active Organisation + Work Item via
@@ -352,12 +357,9 @@ function withDefaults(entry: PortfolioEntry): PortfolioEntry {
 }
 
 function readAll(): PortfolioEntry[] {
-  if (typeof window === "undefined") return [];
-  const key = getStorageKey();
-  if (key === null) return [];
+  const raw = readScoped(getStorageKey());
+  if (raw === null) return [];
   try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(isValidEntry).map(withDefaults);
@@ -367,10 +369,9 @@ function readAll(): PortfolioEntry[] {
 }
 
 function writeAll(entries: PortfolioEntry[]): void {
-  if (typeof window === "undefined") return;
   const key = getStorageKey();
   if (key === null) return;
-  window.localStorage.setItem(key, JSON.stringify(entries));
+  writeScoped(key, JSON.stringify(entries));
 }
 
 // Re-render every subscribed view when the active scope changes so a
@@ -380,7 +381,7 @@ function writeAll(entries: PortfolioEntry[]): void {
 // but the `currentScope` subscription is preserved so a future
 // caching layer would see the invalidation hook in place.
 if (typeof window !== "undefined") {
-  currentScope.subscribe(() => {
+  onScopeOrHydrationChange(() => {
     /* noop — readers re-fetch via readAll() */
   });
 }

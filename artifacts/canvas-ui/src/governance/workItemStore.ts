@@ -29,6 +29,12 @@
 //     organisation.
 
 import { getOrganisation } from "./orgStore";
+import {
+  apiDeleteWorkItem,
+  apiListWorkItems,
+  apiPutWorkItem,
+} from "./serverApi";
+import { clearScope } from "./scopedStorageClient";
 
 const STORAGE_KEY = "app.work-items.v1";
 export const WORK_ITEM_SCHEMA_VERSION = "wi-1.0" as const;
@@ -163,6 +169,58 @@ function writeDoc(doc: WorkItemDoc): void {
   bumpVersion();
 }
 
+function mirrorWorkItemToServer(wi: WorkItem): void {
+  void apiPutWorkItem(wi).catch((err) => {
+    // eslint-disable-next-line no-console
+    console.warn(`[workItemStore] failed to PUT work item ${wi.id}:`, err);
+  });
+}
+
+function mirrorWorkItemDeleteToServer(orgId: string, wiId: string): void {
+  void apiDeleteWorkItem(orgId, wiId).catch((err) => {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[workItemStore] failed to DELETE work item ${orgId}/${wiId}:`,
+      err,
+    );
+  });
+}
+
+/**
+ * One-shot boot hydration: pull every work item for one org off
+ * the server and merge it into local state. Server rows take
+ * precedence over a co-located localStorage row.
+ */
+export async function hydrateWorkItemsFromServerForOrg(
+  orgId: string,
+): Promise<void> {
+  if (!isValidOrgId(orgId)) return;
+  let rows: readonly WorkItem[];
+  try {
+    rows = (await apiListWorkItems(orgId)) as readonly WorkItem[];
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(`[workItemStore] hydrate failed for ${orgId}:`, err);
+    return;
+  }
+  const local = readDoc();
+  const merged: Record<string, WorkItem> = { ...local.workItems };
+  for (const r of rows) {
+    if (!isValidWorkItem(r)) continue;
+    const archived = typeof r.archived === "boolean" ? r.archived : false;
+    merged[r.id] = Object.freeze({
+      id: r.id,
+      orgId: r.orgId,
+      type: r.type,
+      title: r.title,
+      description: r.description,
+      createdAt: r.createdAt,
+      archived,
+    });
+  }
+  writeDoc({ schemaVersion: WORK_ITEM_SCHEMA_VERSION, workItems: merged });
+}
+
 let storeVersion = 0;
 const listeners = new Set<() => void>();
 function bumpVersion(): void {
@@ -275,6 +333,7 @@ export function createWorkItem(input: CreateWorkItemInput): WorkItem {
     schemaVersion: WORK_ITEM_SCHEMA_VERSION,
     workItems: { ...doc.workItems, [id]: next },
   });
+  mirrorWorkItemToServer(next);
   return next;
 }
 
@@ -306,6 +365,7 @@ export function renameWorkItem(id: string, newTitle: string): WorkItem {
     schemaVersion: WORK_ITEM_SCHEMA_VERSION,
     workItems: { ...doc.workItems, [id]: next },
   });
+  mirrorWorkItemToServer(next);
   return next;
 }
 
@@ -352,6 +412,7 @@ function setArchivedFlag(id: string, archived: boolean): WorkItem {
     schemaVersion: WORK_ITEM_SCHEMA_VERSION,
     workItems: { ...doc.workItems, [id]: next },
   });
+  mirrorWorkItemToServer(next);
   return next;
 }
 
@@ -392,24 +453,36 @@ export function getEaBlueprintForOrg(orgId: string): WorkItem | null {
 export function removeWorkItem(id: string): void {
   if (!isValidWorkItemId(id)) return;
   const doc = readDoc();
-  if (!(id in doc.workItems)) return;
+  const existing = doc.workItems[id];
+  if (!existing) return;
   const next: Record<string, WorkItem> = { ...doc.workItems };
   delete next[id];
   writeDoc({
     schemaVersion: WORK_ITEM_SCHEMA_VERSION,
     workItems: next,
   });
+  mirrorWorkItemDeleteToServer(existing.orgId, id);
+  // Drop any cached scoped docs for this work item so subsequent
+  // reads return null instead of a tombstoned cache hit.
+  clearScope(existing.orgId, id);
 }
 
 export function removeAllWorkItemsForOrg(orgId: string): void {
   if (!isValidOrgId(orgId)) return;
   const doc = readDoc();
   const next: Record<string, WorkItem> = {};
+  const removed: WorkItem[] = [];
   for (const [k, v] of Object.entries(doc.workItems)) {
-    if (v.orgId !== orgId) next[k] = v;
+    if (v.orgId === orgId) removed.push(v);
+    else next[k] = v;
   }
   writeDoc({
     schemaVersion: WORK_ITEM_SCHEMA_VERSION,
     workItems: next,
   });
+  // The org-level cascade on the server side removes the work
+  // items in bulk, so a per-row DELETE is unnecessary. We still
+  // clear the per-wi cache locally so the next render of any
+  // hook subscribed to a removed wi sees an empty scope.
+  for (const wi of removed) clearScope(wi.orgId, wi.id);
 }

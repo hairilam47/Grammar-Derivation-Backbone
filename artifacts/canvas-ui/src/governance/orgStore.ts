@@ -27,6 +27,12 @@
 //     pairing invariant holds at rest.
 
 import { createWorkItem, removeAllWorkItemsForOrg } from "./workItemStore";
+import {
+  apiDeleteOrg,
+  apiListOrgs,
+  apiPutOrg,
+} from "./serverApi";
+import { clearScope } from "./scopedStorageClient";
 
 const STORAGE_KEY = "app.organisations.v1";
 export const ORG_SCHEMA_VERSION = "org-1.0" as const;
@@ -167,6 +173,62 @@ function writeDoc(doc: OrgDoc): void {
   if (typeof window === "undefined" || !window.localStorage) return;
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
   bumpVersion();
+}
+
+function mirrorOrgToServer(org: Organisation): void {
+  void apiPutOrg(org).catch((err) => {
+    // eslint-disable-next-line no-console
+    console.warn(`[orgStore] failed to PUT org ${org.id}:`, err);
+  });
+}
+
+function mirrorOrgDeleteToServer(orgId: string): void {
+  void apiDeleteOrg(orgId).catch((err) => {
+    // eslint-disable-next-line no-console
+    console.warn(`[orgStore] failed to DELETE org ${orgId}:`, err);
+  });
+}
+
+/**
+ * One-shot boot hydration: pull every organisation row off the
+ * server and merge it into local state. Server rows take
+ * precedence over a co-located localStorage row (a fresh device
+ * sees the durable copy), but pre-existing local-only rows that
+ * the server has not seen yet are preserved so the legacy
+ * upload migration still has a chance to push them up.
+ */
+export async function hydrateOrgsFromServer(): Promise<void> {
+  let rows: ReadonlyArray<{
+    id: string;
+    name: string;
+    slug: string;
+    sector: string;
+    natureOfBusiness: string;
+    logo: string;
+    createdAt: string;
+  }>;
+  try {
+    rows = await apiListOrgs();
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn("[orgStore] hydrate failed:", err);
+    return;
+  }
+  const local = readDoc();
+  const merged: Record<string, Organisation> = { ...local.organisations };
+  for (const r of rows) {
+    if (!isValidOrganisation(r)) continue;
+    merged[r.id] = Object.freeze({
+      id: r.id,
+      name: r.name,
+      slug: r.slug,
+      sector: r.sector as OrgSector,
+      natureOfBusiness: r.natureOfBusiness as NatureOfBusiness,
+      logo: r.logo,
+      createdAt: r.createdAt,
+    });
+  }
+  writeDoc({ schemaVersion: ORG_SCHEMA_VERSION, organisations: merged });
 }
 
 let storeVersion = 0;
@@ -313,6 +375,7 @@ export function createOrganisation(
     schemaVersion: ORG_SCHEMA_VERSION,
     organisations: { ...doc.organisations, [id]: next },
   });
+  mirrorOrgToServer(next);
 
   // Stage 2: seed the EA Blueprint Work Item. If this throws we
   // roll the org write back to preserve the
@@ -332,6 +395,7 @@ export function createOrganisation(
       schemaVersion: ORG_SCHEMA_VERSION,
       organisations: doc.organisations,
     });
+    mirrorOrgDeleteToServer(id);
     throw e;
   }
 
@@ -370,6 +434,7 @@ export function removeOrganisation(id: string): void {
     schemaVersion: ORG_SCHEMA_VERSION,
     organisations: next,
   });
+  mirrorOrgDeleteToServer(id);
   removeAllWorkItemsForOrg(id);
 }
 
@@ -403,6 +468,7 @@ export function renameOrganisation(id: string, newName: string): Organisation {
     schemaVersion: ORG_SCHEMA_VERSION,
     organisations: { ...doc.organisations, [id]: next },
   });
+  mirrorOrgToServer(next);
   return next;
 }
 
@@ -452,5 +518,10 @@ export function deleteOrganisation(id: string): number {
     window.localStorage.removeItem(SCOPE_LS_ORG_KEY);
     window.localStorage.removeItem(SCOPE_LS_WORK_ITEM_KEY);
   }
+  // Drop any cached scoped docs the in-memory L1 may still be
+  // holding for this org so subsequent reads return null instead
+  // of a tombstoned cache hit. The api-side cascade was already
+  // requested by `removeOrganisation`.
+  clearScope(id);
   return toRemove.length;
 }

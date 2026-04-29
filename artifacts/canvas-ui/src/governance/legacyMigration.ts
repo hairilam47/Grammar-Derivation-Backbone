@@ -32,9 +32,17 @@
 
 import { getScopedKey } from "./storageKeyUtils";
 import { listOrganisations } from "./orgStore";
-import { getEaBlueprintForOrg } from "./workItemStore";
+import { getEaBlueprintForOrg, listWorkItemsForOrg } from "./workItemStore";
+import { apiLegacyUpload, type LegacyUploadPayload } from "./serverApi";
 
 export const LEGACY_MIGRATION_SENTINEL_KEY = "app:legacyMigration.v1";
+
+// Phase 3 — one-shot "upload every locally-resident tenant
+// document to the api-server" migration. Spent independently from
+// the Phase-2 flat-key copy migration above so a user who already
+// completed the Phase-2 migration on a previous build still gets
+// their data uploaded to the server on first run of this build.
+export const SERVER_UPLOAD_SENTINEL_KEY = "app:serverUpload.v1";
 
 // Pre-Phase-2 flat keys, classified by scope. The classification
 // MUST match the scope each store reads in its refactored
@@ -194,4 +202,140 @@ export function migrateLegacyFlatKeysIfNeeded(): LegacyMigrationResult {
 export function __resetLegacyMigrationSentinelForTest(): void {
   if (typeof window === "undefined" || !window.localStorage) return;
   window.localStorage.removeItem(LEGACY_MIGRATION_SENTINEL_KEY);
+}
+
+// ---- Phase 3: server upload ------------------------------------------------
+
+const ORG_DOC_KEY = "app.organisations.v1";
+const WORK_ITEM_DOC_KEY = "app.work-items.v1";
+const SCOPED_KEY_RE = /^(org-[a-z0-9]+)(?::(wi-[a-z0-9]+))?:(.+)$/;
+
+interface ServerUploadResult {
+  readonly ran: boolean;
+  readonly orgs: number;
+  readonly workItems: number;
+  readonly orgScoped: number;
+  readonly workItemScoped: number;
+}
+
+const NOOP_UPLOAD: ServerUploadResult = Object.freeze({
+  ran: false,
+  orgs: 0,
+  workItems: 0,
+  orgScoped: 0,
+  workItemScoped: 0,
+});
+
+/**
+ * Walk every locally-resident tenant document and POST it to the
+ * api-server in one batched request. Idempotent — guarded by a
+ * dedicated sentinel (`app:serverUpload.v1`) so subsequent boots
+ * are a single localStorage check. The post is best-effort: a
+ * failure leaves the sentinel UNSET so the next boot retries.
+ *
+ * The payload combines two sources:
+ *   1. The flat org / work-item registries (`app.organisations.v1`
+ *      / `app.work-items.v1`) — these are the authoritative source
+ *      for org and work-item rows.
+ *   2. Every `<orgId>:*` and `<orgId>:<wiId>:*` scoped key for
+ *      orgs and work items present in the registries above.
+ *
+ * Anything outside of those two sources is left alone — the
+ * upload is intentionally narrow and never enumerates random
+ * localStorage entries.
+ */
+export async function uploadLegacyTenantsToServerIfNeeded(): Promise<ServerUploadResult> {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return NOOP_UPLOAD;
+  }
+  const sentinel = window.localStorage.getItem(SERVER_UPLOAD_SENTINEL_KEY);
+  if (sentinel === "done") return NOOP_UPLOAD;
+
+  const orgs = listOrganisations();
+  const workItems: NonNullable<ReturnType<typeof listWorkItemsForOrg>>[number][] = [];
+  for (const o of orgs) {
+    for (const wi of listWorkItemsForOrg(o.id)) workItems.push(wi);
+  }
+
+  // Collect known org and work-item ids so we can classify scoped
+  // keys without re-running the SCOPED_KEY_RE against every key.
+  const orgIds = new Set(orgs.map((o) => o.id));
+  const wiByOrg = new Set(workItems.map((wi) => `${wi.orgId}:${wi.id}`));
+
+  const orgScoped: Array<{
+    orgId: string;
+    baseKey: string;
+    value: string;
+  }> = [];
+  const workItemScoped: Array<{
+    orgId: string;
+    workItemId: string;
+    baseKey: string;
+    value: string;
+  }> = [];
+
+  for (let i = 0; i < window.localStorage.length; i += 1) {
+    const k = window.localStorage.key(i);
+    if (!k) continue;
+    if (k === ORG_DOC_KEY || k === WORK_ITEM_DOC_KEY) continue;
+    const m = SCOPED_KEY_RE.exec(k);
+    if (!m) continue;
+    const [, orgId, wiId, baseKey] = m;
+    if (!orgIds.has(orgId)) continue;
+    const v = window.localStorage.getItem(k);
+    if (v === null) continue;
+    if (wiId) {
+      if (!wiByOrg.has(`${orgId}:${wiId}`)) continue;
+      workItemScoped.push({ orgId, workItemId: wiId, baseKey, value: v });
+    } else {
+      orgScoped.push({ orgId, baseKey, value: v });
+    }
+  }
+
+  const payload: LegacyUploadPayload = {
+    orgs: orgs.map((o) => ({
+      id: o.id,
+      name: o.name,
+      slug: o.slug,
+      sector: o.sector,
+      natureOfBusiness: o.natureOfBusiness,
+      logo: o.logo,
+      createdAt: o.createdAt,
+    })),
+    workItems: workItems.map((wi) => ({
+      id: wi.id,
+      orgId: wi.orgId,
+      type: wi.type,
+      title: wi.title,
+      description: wi.description,
+      createdAt: wi.createdAt,
+      archived: wi.archived,
+    })),
+    orgScoped,
+    workItemScoped,
+  };
+
+  try {
+    const accepted = await apiLegacyUpload(payload);
+    window.localStorage.setItem(SERVER_UPLOAD_SENTINEL_KEY, "done");
+    return {
+      ran: true,
+      orgs: accepted.orgs,
+      workItems: accepted.workItems,
+      orgScoped: accepted.orgScoped,
+      workItemScoped: accepted.workItemScoped,
+    };
+  } catch (err) {
+    // Leave sentinel unset so a later boot retries. Surface the
+    // failure in the console for diagnosis.
+    // eslint-disable-next-line no-console
+    console.warn("[legacyMigration] server upload failed:", err);
+    return NOOP_UPLOAD;
+  }
+}
+
+/** Test hook — clears the server-upload sentinel so the next call re-runs. */
+export function __resetServerUploadSentinelForTest(): void {
+  if (typeof window === "undefined" || !window.localStorage) return;
+  window.localStorage.removeItem(SERVER_UPLOAD_SENTINEL_KEY);
 }

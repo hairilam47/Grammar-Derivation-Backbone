@@ -50,6 +50,12 @@ import {
   resolveActiveKey,
   currentScope,
 } from "@/governance/storageKeyUtils";
+import {
+  readScoped,
+  writeScoped,
+  onScopeOrHydrationChange,
+  __resetScopedStorageForTest,
+} from "@/governance/scopedStorageClient";
 
 export const ACW_SCHEMA_VERSION = "acw-1.0" as const;
 // Phase 2 (SaaS Onboarding) — Org+WorkItem scope. Each Work Item
@@ -458,12 +464,9 @@ function notify(): void {
 }
 
 function readFromStorage(): AcwWorkspace {
-  if (typeof window === "undefined") return emptyWorkspace();
-  const key = getStorageKey();
-  if (key === null) return emptyWorkspace();
+  const raw = readScoped(getStorageKey());
+  if (raw === null) return emptyWorkspace();
   try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return emptyWorkspace();
     const parsed = JSON.parse(raw);
     if (!isValidWorkspace(parsed)) return emptyWorkspace();
     return parsed;
@@ -474,17 +477,16 @@ function readFromStorage(): AcwWorkspace {
 
 function writeToStorage(workspace: AcwWorkspace): void {
   assertAllowedFields(workspace);
-  if (typeof window === "undefined") return;
   const key = getStorageKey();
   if (key === null) return;
-  window.localStorage.setItem(key, JSON.stringify(workspace));
+  writeScoped(key, JSON.stringify(workspace));
 }
 
 // Phase 2 (SaaS Onboarding) — invalidate the in-memory workspace
 // cache when the active scope changes so Work-Item switches and
 // Org switches surface a different graph.
 if (typeof window !== "undefined") {
-  currentScope.subscribe(() => {
+  onScopeOrHydrationChange(() => {
     cache = null;
     notify();
   });
@@ -1222,6 +1224,10 @@ export const __acwStoreInternals = Object.freeze({
   // user's persisted workspace after running snapshot-and-restore
   // mutation probes against the live singleton.
   reloadFromStorageForTest(): void {
+    // Phase 3 — also drop the scoped-storage L1 cache so a test
+    // that wrote directly into `window.localStorage` (bypassing
+    // `writeScoped`) is not masked by a stale cached entry.
+    __resetScopedStorageForTest();
     cache = null;
     notify();
   },
