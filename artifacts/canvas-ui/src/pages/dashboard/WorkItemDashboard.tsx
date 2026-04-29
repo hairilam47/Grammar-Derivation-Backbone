@@ -5,10 +5,16 @@
 //
 // Phase 2 (SaaS Onboarding). Every static label is asserted against
 // `assertAllOnboardingLanguage` at module load.
+//
+// Task #146 adds per-row Rename / Archive (and Unarchive) actions
+// plus a "Show archived" toggle that reveals archived Work Items.
+// Archiving hides a row from the dashboard without dropping its
+// scoped data.
 
 import { useEffect, useMemo, useSyncExternalStore, useState } from "react";
 import { useLocation } from "wouter";
-import { Briefcase, Plus } from "lucide-react";
+import { Briefcase, MoreVertical, Plus } from "lucide-react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -26,12 +32,15 @@ import {
   getStoreVersion as getOrgStoreVersion,
 } from "@/governance/orgStore";
 import {
+  archiveWorkItem,
   listWorkItemsForOrg,
   subscribe as subscribeWorkItems,
   getStoreVersion as getWorkItemStoreVersion,
+  unarchiveWorkItem,
   type WorkItem,
 } from "@/governance/workItemStore";
 import { NewWorkItemDialog } from "./NewWorkItemDialog";
+import { RenameWorkItemDialog } from "./RenameWorkItemDialog";
 
 const TYPE_LABELS = {
   "ea-blueprint": "EA Blueprint",
@@ -69,6 +78,13 @@ const STATIC_LABELS = {
   createButton: "Create Work Item",
   openButton: "Open",
   switchOrgButton: "Switch Organisation",
+  rowActionsLabel: "Work Item actions",
+  renameWorkItem: "Rename Work Item",
+  archiveWorkItem: "Archive Work Item",
+  unarchiveWorkItem: "Unarchive Work Item",
+  showArchivedLabel: "Show archived",
+  archivedSectionHeading: "Archived",
+  archivedBadge: "Archived",
   ...TYPE_LABELS,
   ...TYPE_SECTION_LABELS,
 } as const;
@@ -79,6 +95,8 @@ export default function WorkItemDashboard() {
   const { orgId, setOrgId, setWorkItemId } = useCurrentScope();
   const [, navigate] = useLocation();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<WorkItem | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   const orgVersion = useSyncExternalStore(
     subscribeOrgs,
@@ -96,16 +114,23 @@ export default function WorkItemDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [orgId, orgVersion],
   );
-  const items: readonly WorkItem[] = useMemo(
+  const allItems: readonly WorkItem[] = useMemo(
     () => (orgId ? listWorkItemsForOrg(orgId) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [orgId, wiVersion],
   );
 
-  // Group by type so each section can be rendered under its own
-  // heading. `listWorkItemsForOrg` already returns items sorted
-  // (EA Blueprint first, then by createdAt ascending), so each
-  // group preserves a stable order.
+  const activeItems = useMemo(
+    () => allItems.filter((wi) => !wi.archived),
+    [allItems],
+  );
+  const archivedItems = useMemo(
+    () => allItems.filter((wi) => wi.archived),
+    [allItems],
+  );
+
+  // Group active items by type so each section can be rendered
+  // under its own heading.
   const itemsByType = useMemo(() => {
     const groups: Record<keyof typeof TYPE_SECTION_LABELS, WorkItem[]> = {
       "ea-blueprint": [],
@@ -113,9 +138,9 @@ export default function WorkItemDashboard() {
       enhancement: [],
       "change-request": [],
     };
-    for (const wi of items) groups[wi.type].push(wi);
+    for (const wi of activeItems) groups[wi.type].push(wi);
     return groups;
-  }, [items]);
+  }, [activeItems]);
 
   // Defensive — the router gate should never let us land here
   // without an active org, but if it does we redirect home.
@@ -146,6 +171,25 @@ export default function WorkItemDashboard() {
     navigate("/");
   }
 
+  function handleArchive(id: string) {
+    try {
+      archiveWorkItem(id);
+    } catch (err) {
+      // Archive of an EA Blueprint throws — the menu item is
+      // already disabled for that type, so this is a defensive
+      // no-op on the rare race where the row's type changed.
+      // Any other error is unexpected and must surface.
+      const message = err instanceof Error ? err.message : String(err);
+      if (!message.includes("EA Blueprint")) {
+        throw err;
+      }
+    }
+  }
+
+  function handleUnarchive(id: string) {
+    unarchiveWorkItem(id);
+  }
+
   return (
     <div
       className="min-h-[100dvh] bg-background text-foreground flex flex-col"
@@ -174,7 +218,7 @@ export default function WorkItemDashboard() {
           </Button>
         </div>
 
-        <div className="mb-6">
+        <div className="mb-6 flex flex-wrap items-center gap-3">
           <Button
             type="button"
             onClick={() => setDialogOpen(true)}
@@ -184,9 +228,24 @@ export default function WorkItemDashboard() {
             <Plus className="w-4 h-4" />
             {STATIC_LABELS.createButton}
           </Button>
+          {archivedItems.length > 0 && (
+            <label
+              className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none"
+              data-testid="label-show-archived"
+            >
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5"
+                checked={showArchived}
+                onChange={(e) => setShowArchived(e.target.checked)}
+                data-testid="checkbox-show-archived"
+              />
+              {`${STATIC_LABELS.showArchivedLabel} (${archivedItems.length})`}
+            </label>
+          )}
         </div>
 
-        {items.length === 0 ? (
+        {activeItems.length === 0 ? (
           <Card data-testid="work-item-empty">
             <CardHeader className="space-y-2">
               <span className="inline-flex items-center justify-center w-11 h-11 rounded-lg bg-secondary/60 border border-border/60">
@@ -216,31 +275,13 @@ export default function WorkItemDashboard() {
                   <ul className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {group.map((wi) => (
                       <li key={wi.id}>
-                        <Card
-                          className="lift flex flex-col"
-                          data-testid={`work-item-card-${wi.id}`}
-                        >
-                          <CardHeader className="space-y-2">
-                            <span className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-secondary/60 border border-border/60">
-                              <Briefcase className="w-4 h-4" aria-hidden="true" />
-                            </span>
-                            <CardTitle className="text-base">{wi.title}</CardTitle>
-                            <CardDescription className="text-xs">
-                              {TYPE_LABELS[wi.type]}
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent className="mt-auto">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              className="w-full"
-                              onClick={() => handleOpen(wi.id)}
-                              data-testid={`button-open-work-item-${wi.id}`}
-                            >
-                              {STATIC_LABELS.openButton}
-                            </Button>
-                          </CardContent>
-                        </Card>
+                        <WorkItemCard
+                          wi={wi}
+                          onOpen={handleOpen}
+                          onRename={(item) => setRenameTarget(item)}
+                          onArchive={handleArchive}
+                          archived={false}
+                        />
                       </li>
                     ))}
                   </ul>
@@ -248,6 +289,30 @@ export default function WorkItemDashboard() {
               );
             })}
           </div>
+        )}
+
+        {showArchived && archivedItems.length > 0 && (
+          <section
+            className="mt-10 space-y-4"
+            data-testid="work-item-section-archived"
+          >
+            <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+              {STATIC_LABELS.archivedSectionHeading}
+            </h2>
+            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {archivedItems.map((wi) => (
+                <li key={wi.id}>
+                  <WorkItemCard
+                    wi={wi}
+                    onOpen={handleOpen}
+                    onRename={(item) => setRenameTarget(item)}
+                    onUnarchive={handleUnarchive}
+                    archived
+                  />
+                </li>
+              ))}
+            </ul>
+          </section>
         )}
       </main>
 
@@ -257,6 +322,128 @@ export default function WorkItemDashboard() {
         onClose={() => setDialogOpen(false)}
         onCreated={handleCreated}
       />
+      <RenameWorkItemDialog
+        open={renameTarget !== null}
+        workItemId={renameTarget?.id ?? ""}
+        currentTitle={renameTarget?.title ?? ""}
+        onClose={() => setRenameTarget(null)}
+        onRenamed={() => setRenameTarget(null)}
+      />
     </div>
+  );
+}
+
+interface WorkItemCardProps {
+  readonly wi: WorkItem;
+  readonly archived: boolean;
+  readonly onOpen: (id: string) => void;
+  readonly onRename: (wi: WorkItem) => void;
+  readonly onArchive?: (id: string) => void;
+  readonly onUnarchive?: (id: string) => void;
+}
+
+const ROW_LABELS = {
+  rowActionsLabel: "Work Item actions",
+  renameWorkItem: "Rename Work Item",
+  archiveWorkItem: "Archive Work Item",
+  unarchiveWorkItem: "Unarchive Work Item",
+  archivedBadge: "Archived",
+  openButton: "Open",
+} as const;
+
+function WorkItemCard({
+  wi,
+  archived,
+  onOpen,
+  onRename,
+  onArchive,
+  onUnarchive,
+}: WorkItemCardProps) {
+  // EA Blueprint cannot be archived (the store throws). Hide the
+  // archive entry for that row to match.
+  const archivable = wi.type !== "ea-blueprint";
+  return (
+    <Card
+      className={`lift flex flex-col ${archived ? "opacity-70" : ""}`}
+      data-testid={`work-item-card-${wi.id}`}
+    >
+      <CardHeader className="space-y-2">
+        <div className="flex items-start justify-between gap-2">
+          <span className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-secondary/60 border border-border/60">
+            <Briefcase className="w-4 h-4" aria-hidden="true" />
+          </span>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <button
+                type="button"
+                className="h-7 w-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:bg-secondary/60 hover:text-foreground transition-colors"
+                title={ROW_LABELS.rowActionsLabel}
+                aria-label={ROW_LABELS.rowActionsLabel}
+                data-testid={`button-work-item-actions-${wi.id}`}
+              >
+                <MoreVertical className="w-4 h-4" aria-hidden="true" />
+              </button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                align="end"
+                sideOffset={4}
+                className="z-50 min-w-[12rem] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+                data-testid={`menu-work-item-actions-${wi.id}`}
+              >
+                <DropdownMenu.Item
+                  onSelect={() => onRename(wi)}
+                  className="flex items-center px-2 py-1.5 text-xs rounded-sm cursor-pointer outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
+                  data-testid={`menuitem-rename-work-item-${wi.id}`}
+                >
+                  {ROW_LABELS.renameWorkItem}
+                </DropdownMenu.Item>
+                {archived && onUnarchive ? (
+                  <DropdownMenu.Item
+                    onSelect={() => onUnarchive(wi.id)}
+                    className="flex items-center px-2 py-1.5 text-xs rounded-sm cursor-pointer outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
+                    data-testid={`menuitem-unarchive-work-item-${wi.id}`}
+                  >
+                    {ROW_LABELS.unarchiveWorkItem}
+                  </DropdownMenu.Item>
+                ) : null}
+                {!archived && archivable && onArchive ? (
+                  <DropdownMenu.Item
+                    onSelect={() => onArchive(wi.id)}
+                    className="flex items-center px-2 py-1.5 text-xs rounded-sm cursor-pointer outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
+                    data-testid={`menuitem-archive-work-item-${wi.id}`}
+                  >
+                    {ROW_LABELS.archiveWorkItem}
+                  </DropdownMenu.Item>
+                ) : null}
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
+        </div>
+        <CardTitle className="text-base">{wi.title}</CardTitle>
+        <CardDescription className="text-xs flex items-center gap-2">
+          <span>{TYPE_LABELS[wi.type]}</span>
+          {archived && (
+            <span
+              className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider bg-secondary/60 border border-border/60"
+              data-testid={`badge-archived-${wi.id}`}
+            >
+              {ROW_LABELS.archivedBadge}
+            </span>
+          )}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="mt-auto">
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          onClick={() => onOpen(wi.id)}
+          data-testid={`button-open-work-item-${wi.id}`}
+        >
+          {ROW_LABELS.openButton}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }

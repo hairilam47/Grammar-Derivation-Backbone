@@ -13,11 +13,15 @@
 import {
   WORK_ITEM_SCHEMA_VERSION,
   WORK_ITEM_TYPES,
+  archiveWorkItem,
   createWorkItem,
-  listWorkItemsForOrg,
   getEaBlueprintForOrg,
+  getWorkItem,
+  listWorkItemsForOrg,
   removeAllWorkItemsForOrg,
   removeWorkItem,
+  renameWorkItem,
+  unarchiveWorkItem,
 } from "./workItemStore";
 
 const EXPECTED_SCHEMA_VERSION = "wi-1.0";
@@ -122,6 +126,7 @@ function assertDocAllowListShape(): void {
     "title",
     "description",
     "createdAt",
+    "archived",
   ]);
   for (const [wid, wi] of Object.entries(items)) {
     for (const k of Object.keys(wi)) {
@@ -254,10 +259,94 @@ function probeRejections(): void {
   );
 }
 
+function probeRenameAndArchive(): void {
+  const orgA = "org-probeaaaaaa";
+  const bp = createWorkItem({
+    orgId: orgA,
+    type: "ea-blueprint",
+    title: "Blueprint",
+  });
+  const proj = createWorkItem({
+    orgId: orgA,
+    type: "project",
+    title: "Initial",
+  });
+
+  // Rename — happy path.
+  const renamed = renameWorkItem(proj.id, "Renamed");
+  if (renamed.title !== "Renamed") {
+    throw new Error("workItemStore invariant: renameWorkItem did not update title.");
+  }
+  if (renamed.id !== proj.id || renamed.createdAt !== proj.createdAt) {
+    throw new Error("workItemStore invariant: renameWorkItem mutated stable fields.");
+  }
+  // Idempotency: renaming to the same trimmed title is a no-op
+  // (returns the same value, persists nothing new).
+  const renamedAgain = renameWorkItem(proj.id, "  Renamed  ");
+  if (renamedAgain.title !== "Renamed") {
+    throw new Error(
+      "workItemStore invariant: renameWorkItem idempotency probe failed.",
+    );
+  }
+  // Rename rejection: empty title.
+  expectThrow("rename to empty title", () => renameWorkItem(proj.id, "   "));
+  // Rename rejection: unknown id.
+  expectThrow("rename unknown id", () => renameWorkItem("wi-doesnotexist", "x"));
+
+  // Archive — happy path.
+  const archived = archiveWorkItem(proj.id);
+  if (archived.archived !== true) {
+    throw new Error("workItemStore invariant: archiveWorkItem did not flip flag.");
+  }
+  // Idempotency: archiving an already-archived row returns the
+  // same value with no further state change.
+  const archivedAgain = archiveWorkItem(proj.id);
+  if (archivedAgain.archived !== true || archivedAgain.id !== proj.id) {
+    throw new Error(
+      "workItemStore invariant: archiveWorkItem idempotency probe failed.",
+    );
+  }
+  // Archived row is still discoverable via getWorkItem (the
+  // dashboard filters it out, but the data is intact).
+  const looked = getWorkItem(proj.id);
+  if (!looked || looked.archived !== true) {
+    throw new Error(
+      "workItemStore invariant: archived Work Item disappeared from getWorkItem.",
+    );
+  }
+  // Unarchive — happy path + idempotency.
+  const unarchived = unarchiveWorkItem(proj.id);
+  if (unarchived.archived !== false) {
+    throw new Error("workItemStore invariant: unarchiveWorkItem did not flip flag.");
+  }
+  const unarchivedAgain = unarchiveWorkItem(proj.id);
+  if (unarchivedAgain.archived !== false) {
+    throw new Error(
+      "workItemStore invariant: unarchiveWorkItem idempotency probe failed.",
+    );
+  }
+  // EA Blueprint may not be archived.
+  expectThrow("archive EA Blueprint", () => archiveWorkItem(bp.id));
+
+  // removeWorkItem idempotency: removing a row twice is a silent
+  // no-op (no throw, no state change beyond the first call).
+  removeWorkItem(proj.id);
+  removeWorkItem(proj.id);
+  if (getWorkItem(proj.id) !== null) {
+    throw new Error(
+      "workItemStore invariant: removeWorkItem did not remove the row.",
+    );
+  }
+
+  removeWorkItem(bp.id);
+  removeAllWorkItemsForOrg(orgA);
+}
+
 function run(): void {
   withIsolatedStorage(() => {
     probeRoundTrip();
     probeRejections();
+    probeRenameAndArchive();
   });
 }
 

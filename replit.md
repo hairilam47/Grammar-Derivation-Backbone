@@ -61,6 +61,13 @@ The project is structured as a pnpm workspace monorepo, separating deployable ap
 - **Decoupled:** Operates independently of ADC bounds.
 - **Derivation Purity:** Strictly read-only to prevent state modification.
 
+### Multi-tenant Scoping (SaaS Onboarding)
+- **Onboarding flow:** OrgSelector → WorkItemDashboard → WorkspaceHub. Every tool route is gated on an active `(orgId, workItemId)` scope; localStorage keys for tenant-scoped stores are prefixed `<orgId>:<base>` or `<orgId>:<workItemId>:<base>`.
+- **Organisation registry:** `orgStore` (schema `org-1.0`). Supports `createOrganisation`, `renameOrganisation` (preserves slug across renames), and `deleteOrganisation` (sweeps every `<orgId>:*` key and clears the active-scope pointer when it targets the deleted org). Idempotent on repeat calls.
+- **Work-Item registry:** `workItemStore` (schema `wi-1.0`). Supports `createWorkItem`, `renameWorkItem`, `archiveWorkItem` / `unarchiveWorkItem`. Archived rows are hidden from the dashboard but retain their scoped data; the EA Blueprint cannot be archived. The `archived` field is optional on the wire (pre-archive documents validate without a schema-version bump) and read-side normalised to `false`.
+- **UI surfaces:** Topbar org chip carries a Rename / Delete dropdown; the WorkItemDashboard offers per-row Rename + Archive (Unarchive when archived) menus and a "Show archived" toggle. Delete-Organisation requires typing the exact org name to enable the destructive submit.
+- **Build-time invariants:** `orgStoreInvariants.test-shape.ts` and `workItemStoreInvariants.test-shape.ts` cover rename / archive / delete idempotency, scoped-key sweep, unrelated-org isolation, and the EA-Blueprint-cannot-be-archived rule.
+
 ### Dev-only seeding
 - **`/seed-all`** (dev builds only, gated on `import.meta.env.DEV`): a deterministic fixture seeder that populates ADC, CTAD, ACW, OUs, view-state, Track 3 prefs, and governance signals, all routed through validator-gated public store APIs. Determinism contract: re-running the seeder produces a byte-identical localStorage snapshot, via hard-coded ids and a synchronous `withFrozenClock()` wrapper that freezes `Date`, `Date.now`, `Math.random`, and `crypto.randomUUID`. A module-load probe (`src/dev/seedAllInvariants.test-shape.ts`) snapshots-and-restores the seeded keys, runs `seedAll()` twice, and asserts byte-identical persisted state. Append `?auto=1` to auto-run on mount.
 

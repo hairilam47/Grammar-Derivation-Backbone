@@ -351,9 +351,15 @@ export function listOrganisations(): readonly Organisation[] {
   );
 }
 
-// Included for completeness per the task brief — no UI surface
-// invokes it. Removes both the org and every Work Item belonging
-// to that org so a removed org leaves no orphan Work Items.
+// Removes both the org and every Work Item belonging to that org
+// so a removed org leaves no orphan Work Items. Idempotent: a
+// second call with the same id (or with a malformed / unknown id)
+// is a no-op.
+//
+// NOTE: this is the legacy entry point that only touches the
+// registries. UI-facing deletion goes through `deleteOrganisation`,
+// which additionally enumerates and clears every scoped
+// `<orgId>:*` localStorage key for the org being removed.
 export function removeOrganisation(id: string): void {
   if (!isValidOrgId(id)) return;
   const doc = readDoc();
@@ -365,4 +371,86 @@ export function removeOrganisation(id: string): void {
     organisations: next,
   });
   removeAllWorkItemsForOrg(id);
+}
+
+// Rename an Organisation. Updates `name` only; the `slug` is
+// deliberately preserved across renames so any external reference
+// or future URL keyed on the slug stays stable. Idempotent: a
+// rename to the same trimmed name is a no-op (no write, no version
+// bump). Throws on a malformed id, an unknown id, or an empty /
+// whitespace-only name.
+export function renameOrganisation(id: string, newName: string): Organisation {
+  if (!isValidOrgId(id)) {
+    throw new Error(
+      `orgStore: invalid org id "${id}". Expected pattern ${ORG_ID_RE.source}.`,
+    );
+  }
+  if (typeof newName !== "string" || newName.trim().length === 0) {
+    throw new Error("orgStore: organisation name must be a non-empty string.");
+  }
+  const trimmed = newName.trim();
+  const doc = readDoc();
+  const existing = doc.organisations[id];
+  if (!existing) {
+    throw new Error(`orgStore: no organisation with id "${id}".`);
+  }
+  if (existing.name === trimmed) return existing;
+  const next: Organisation = Object.freeze({
+    ...existing,
+    name: trimmed,
+  });
+  writeDoc({
+    schemaVersion: ORG_SCHEMA_VERSION,
+    organisations: { ...doc.organisations, [id]: next },
+  });
+  return next;
+}
+
+const SCOPE_LS_ORG_KEY = "app:currentOrgId";
+const SCOPE_LS_WORK_ITEM_KEY = "app:currentWorkItemId";
+
+/**
+ * Delete an Organisation and every byte of tenant-scoped
+ * localStorage that belongs to it.
+ *
+ * Removes:
+ *   1. The org row itself (via `removeOrganisation`).
+ *   2. Every Work Item under that org (transitive via
+ *      `removeOrganisation`).
+ *   3. Every localStorage key prefixed with `<orgId>:` — covers
+ *      both `<orgId>:<baseKey>` (org-scoped stores) and
+ *      `<orgId>:<workItemId>:<baseKey>` (work-item-scoped stores).
+ *   4. The persisted active scope (`app:currentOrgId` /
+ *      `app:currentWorkItemId`) WHEN it points at the org being
+ *      deleted — leaves an unrelated active selection untouched.
+ *
+ * Idempotent: a second call with the same id is a no-op. A
+ * malformed id is rejected up-front (no localStorage scan
+ * performed). Returns the number of `<orgId>:*` keys removed so
+ * callers / probes can observe the cleanup.
+ */
+export function deleteOrganisation(id: string): number {
+  if (!isValidOrgId(id)) {
+    throw new Error(
+      `orgStore: invalid org id "${id}". Expected pattern ${ORG_ID_RE.source}.`,
+    );
+  }
+  removeOrganisation(id);
+  if (typeof window === "undefined" || !window.localStorage) return 0;
+  const prefix = `${id}:`;
+  const toRemove: string[] = [];
+  for (let i = 0; i < window.localStorage.length; i += 1) {
+    const k = window.localStorage.key(i);
+    if (k !== null && k.startsWith(prefix)) toRemove.push(k);
+  }
+  for (const k of toRemove) window.localStorage.removeItem(k);
+  // Clear the persisted active-scope pointer when it targets the
+  // org we just deleted. The provider's reconciliation pass would
+  // catch this on the next mount, but clearing eagerly avoids a
+  // moment where the topbar / gates render against a tombstoned id.
+  if (window.localStorage.getItem(SCOPE_LS_ORG_KEY) === id) {
+    window.localStorage.removeItem(SCOPE_LS_ORG_KEY);
+    window.localStorage.removeItem(SCOPE_LS_WORK_ITEM_KEY);
+  }
+  return toRemove.length;
 }

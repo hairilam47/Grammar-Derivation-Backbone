@@ -53,6 +53,11 @@ export interface WorkItem {
   readonly title: string;
   readonly description: string;
   readonly createdAt: string;
+  // Optional. `false` for every Work Item created before the
+  // archive feature shipped — read-side normalisation treats a
+  // missing `archived` field as `false` so old persisted documents
+  // continue to validate without a schema-version bump.
+  readonly archived: boolean;
 }
 
 interface WorkItemDoc {
@@ -73,6 +78,7 @@ const ALLOWED_WORK_ITEM_KEYS = new Set([
   "title",
   "description",
   "createdAt",
+  "archived",
 ]);
 
 function isValidWorkItemId(id: unknown): id is string {
@@ -95,6 +101,10 @@ function isValidWorkItem(value: unknown): value is WorkItem {
   if (typeof v.title !== "string" || v.title.length === 0) return false;
   if (typeof v.description !== "string") return false;
   if (typeof v.createdAt !== "string" || v.createdAt.length === 0) return false;
+  // `archived` is optional on the wire (pre-archive Work Items
+  // were persisted without the field). When present it must be a
+  // boolean — anything else means the document was tampered with.
+  if (v.archived !== undefined && typeof v.archived !== "boolean") return false;
   return true;
 }
 
@@ -120,7 +130,23 @@ function readDoc(): WorkItemDoc {
     for (const [key, val] of Object.entries(parsed.workItems)) {
       if (key !== (val as WorkItem | undefined)?.id) continue;
       if (!isValidWorkItem(val)) continue;
-      cleaned[key] = val;
+      // Normalise pre-archive documents (no `archived` field) to
+      // an explicit `archived: false` so every in-memory WorkItem
+      // carries the field. The persisted document is left as-is —
+      // we only normalise the read shape so callers can rely on
+      // `wi.archived` being a boolean without optional-chaining.
+      const v = val as unknown as Record<string, unknown>;
+      const archived =
+        typeof v.archived === "boolean" ? (v.archived as boolean) : false;
+      cleaned[key] = Object.freeze({
+        id: v.id as string,
+        orgId: v.orgId as string,
+        type: v.type as WorkItemType,
+        title: v.title as string,
+        description: v.description as string,
+        createdAt: v.createdAt as string,
+        archived,
+      });
     }
     return {
       schemaVersion: WORK_ITEM_SCHEMA_VERSION,
@@ -243,7 +269,85 @@ export function createWorkItem(input: CreateWorkItemInput): WorkItem {
     title: input.title.trim(),
     description,
     createdAt: new Date().toISOString(),
+    archived: false,
   });
+  writeDoc({
+    schemaVersion: WORK_ITEM_SCHEMA_VERSION,
+    workItems: { ...doc.workItems, [id]: next },
+  });
+  return next;
+}
+
+/**
+ * Rename a Work Item. Updates `title` only — `type`, `orgId`,
+ * `createdAt`, and `archived` are preserved. Idempotent: a rename
+ * to the same trimmed title is a no-op (no write, no version
+ * bump). Throws on a malformed id, an unknown id, or an empty /
+ * whitespace-only title.
+ */
+export function renameWorkItem(id: string, newTitle: string): WorkItem {
+  if (!isValidWorkItemId(id)) {
+    throw new Error(
+      `workItemStore: invalid Work Item id "${id}". Expected pattern ${WORK_ITEM_ID_RE.source}.`,
+    );
+  }
+  if (typeof newTitle !== "string" || newTitle.trim().length === 0) {
+    throw new Error("workItemStore: Work Item title must be a non-empty string.");
+  }
+  const trimmed = newTitle.trim();
+  const doc = readDoc();
+  const existing = doc.workItems[id];
+  if (!existing) {
+    throw new Error(`workItemStore: no Work Item with id "${id}".`);
+  }
+  if (existing.title === trimmed) return existing;
+  const next: WorkItem = Object.freeze({ ...existing, title: trimmed });
+  writeDoc({
+    schemaVersion: WORK_ITEM_SCHEMA_VERSION,
+    workItems: { ...doc.workItems, [id]: next },
+  });
+  return next;
+}
+
+/**
+ * Archive a Work Item. Sets `archived = true` so the dashboard can
+ * hide it without dropping the row's scoped data — every
+ * `<orgId>:<workItemId>:*` localStorage entry survives the archive
+ * so the user can later un-archive without losing context.
+ *
+ * Idempotent: archiving an already-archived row is a no-op.
+ * Throws on a malformed id, an unknown id, or when the row is the
+ * organisation's EA Blueprint (every org must keep its blueprint
+ * visible — the blueprint anchors the org).
+ */
+export function archiveWorkItem(id: string): WorkItem {
+  return setArchivedFlag(id, true);
+}
+
+/** Inverse of `archiveWorkItem`. Idempotent on an already-active row. */
+export function unarchiveWorkItem(id: string): WorkItem {
+  return setArchivedFlag(id, false);
+}
+
+function setArchivedFlag(id: string, archived: boolean): WorkItem {
+  if (!isValidWorkItemId(id)) {
+    throw new Error(
+      `workItemStore: invalid Work Item id "${id}". Expected pattern ${WORK_ITEM_ID_RE.source}.`,
+    );
+  }
+  const doc = readDoc();
+  const existing = doc.workItems[id];
+  if (!existing) {
+    throw new Error(`workItemStore: no Work Item with id "${id}".`);
+  }
+  if (archived && existing.type === "ea-blueprint") {
+    throw new Error(
+      `workItemStore: cannot archive the EA Blueprint Work Item for organisation "${existing.orgId}". ` +
+        `The EA Blueprint anchors the organisation and must remain visible.`,
+    );
+  }
+  if (existing.archived === archived) return existing;
+  const next: WorkItem = Object.freeze({ ...existing, archived });
   writeDoc({
     schemaVersion: WORK_ITEM_SCHEMA_VERSION,
     workItems: { ...doc.workItems, [id]: next },

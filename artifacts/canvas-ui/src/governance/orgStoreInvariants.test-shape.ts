@@ -16,8 +16,11 @@ import {
   ORG_SECTORS,
   NATURE_OF_BUSINESS_OPTIONS,
   createOrganisation,
+  deleteOrganisation,
+  getOrganisation,
   listOrganisations,
   removeOrganisation,
+  renameOrganisation,
 } from "./orgStore";
 import {
   getEaBlueprintForOrg,
@@ -222,10 +225,108 @@ function probeRejections(): void {
   );
 }
 
+function probeRenameAndDelete(): void {
+  const r = createOrganisation({
+    name: "Gamma",
+    sector: "private-sector",
+    natureOfBusiness: "other",
+  });
+  const orgId = r.organisation.id;
+  const slugBefore = r.organisation.slug;
+
+  // Rename — happy path: name changes, slug + id preserved.
+  const renamed = renameOrganisation(orgId, "Gamma Renamed");
+  if (renamed.name !== "Gamma Renamed") {
+    throw new Error("orgStore invariant: renameOrganisation did not update name.");
+  }
+  if (renamed.slug !== slugBefore) {
+    throw new Error(
+      "orgStore invariant: renameOrganisation must preserve slug across renames.",
+    );
+  }
+  if (renamed.id !== orgId || renamed.createdAt !== r.organisation.createdAt) {
+    throw new Error(
+      "orgStore invariant: renameOrganisation mutated stable fields.",
+    );
+  }
+  // Idempotency.
+  const renamedAgain = renameOrganisation(orgId, "  Gamma Renamed  ");
+  if (renamedAgain.name !== "Gamma Renamed") {
+    throw new Error(
+      "orgStore invariant: renameOrganisation idempotency probe failed.",
+    );
+  }
+  expectThrow("rename to empty", () => renameOrganisation(orgId, "   "));
+  expectThrow("rename unknown id", () =>
+    renameOrganisation("org-doesnotexist", "x"),
+  );
+
+  // Pre-seed scoped localStorage entries to verify deleteOrganisation
+  // sweeps both the org-scoped (`<orgId>:<base>`) and Work-Item-
+  // scoped (`<orgId>:<workItemId>:<base>`) shapes.
+  if (typeof window !== "undefined" && window.localStorage) {
+    window.localStorage.setItem(`${orgId}:probe-key`, "1");
+    window.localStorage.setItem(
+      `${orgId}:wi-aaaaaaaaaaaa:probe-key`,
+      "2",
+    );
+    // An unrelated org's key must NOT be touched.
+    window.localStorage.setItem("org-otherrrrrr1:probe-key", "3");
+  }
+
+  const removed = deleteOrganisation(orgId);
+  if (removed < 2) {
+    throw new Error(
+      `orgStore invariant: deleteOrganisation must clear scoped keys (got ${removed}).`,
+    );
+  }
+  if (typeof window !== "undefined" && window.localStorage) {
+    if (window.localStorage.getItem(`${orgId}:probe-key`) !== null) {
+      throw new Error(
+        "orgStore invariant: deleteOrganisation left an org-scoped key behind.",
+      );
+    }
+    if (
+      window.localStorage.getItem(`${orgId}:wi-aaaaaaaaaaaa:probe-key`) !== null
+    ) {
+      throw new Error(
+        "orgStore invariant: deleteOrganisation left a Work-Item-scoped key behind.",
+      );
+    }
+    if (
+      window.localStorage.getItem("org-otherrrrrr1:probe-key") !== "3"
+    ) {
+      throw new Error(
+        "orgStore invariant: deleteOrganisation cleared an unrelated org's keys.",
+      );
+    }
+    window.localStorage.removeItem("org-otherrrrrr1:probe-key");
+  }
+  if (getOrganisation(orgId) !== null) {
+    throw new Error("orgStore invariant: deleteOrganisation did not remove the row.");
+  }
+  if (listWorkItemsForOrg(orgId).length !== 0) {
+    throw new Error(
+      "orgStore invariant: deleteOrganisation left orphan Work Items.",
+    );
+  }
+  // Idempotency: a second delete is a no-op (returns 0, no throw).
+  const removedAgain = deleteOrganisation(orgId);
+  if (removedAgain !== 0) {
+    throw new Error(
+      "orgStore invariant: deleteOrganisation idempotency probe failed.",
+    );
+  }
+  expectThrow("delete malformed id", () =>
+    deleteOrganisation("not-an-org-id"),
+  );
+}
+
 function run(): void {
   withIsolatedStorage(() => {
     probeRoundTrip();
     probeRejections();
+    probeRenameAndDelete();
   });
 }
 
