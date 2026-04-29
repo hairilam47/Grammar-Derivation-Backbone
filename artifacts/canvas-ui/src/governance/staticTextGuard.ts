@@ -584,3 +584,58 @@ export function assertAcwTrack3Language(text: string): void {
 export function assertAllAcwTrack3Language(texts: string[]): void {
   for (const t of texts) assertAcwTrack3Language(t);
 }
+
+// Stage A (ADC Wizard Retrofit) — Urgency-vocabulary tier.
+//
+// The ADC Wizard's Requirements Capture surface uses an Urgency-
+// centric vocabulary instead of the conventional Severity / Priority
+// framing common in issue trackers. The internal urgency enum
+// (`'low' | 'medium' | 'high' | 'critical'`) is never user-visible;
+// the UI displays the Urgency labels Routine / Standard / Elevated /
+// Acute. Every static label rendered by the Modules screen, the
+// Requirements Capture screen, and the Freeze screen is asserted
+// against this tier at module load.
+//
+// URGENCY_FORBIDDEN is a SIBLING tier of REFLECTIVE / EXPOSURE_NARRATIVE
+// / RESPONSIBILITY_LENS — it extends SIGNALS with the additional bans
+// that protect the Urgency-centric framing. SIGNALS already bans
+// "priority"; this tier additionally bans "severity", "criticality",
+// "asap", and "blocker" — phrasings that would creep the surface
+// back toward the rejected Severity / Priority vocabulary.
+//
+// Layering: PORTFOLIO ⊂ SIGNALS ⊂ URGENCY
+//
+// Carve-out notes for substring matching (Urgency surface):
+//   - "urgent" is INTENTIONALLY NOT banned in this tier. Banning the
+//     bare word "urgent" would also reject the noun "Urgency" itself
+//     (which contains "urgen" + "cy"), making the Urgency tier
+//     unable to validate the very label it exists to protect. Higher
+//     tiers (SCENARIO_READING, REFLECTIVE, DECISION_REENTRY) ban
+//     "urgent" via their own rules; the Urgency tier is a
+//     deliberately shorter sibling that only bans the alternative-
+//     framing terms.
+//   - "critical" is INTENTIONALLY NOT banned in this tier for the
+//     same reason — the internal enum value `'critical'` is never
+//     rendered (the UI shows "Acute"), but a future label like
+//     "Critical-path requirement" would otherwise be rejected.
+//     Higher tiers continue to ban "critical" wherever it would
+//     appear in user-facing copy outside the Urgency surface.
+//   - "blocker" / "asap" have no common embedding in neutral English
+//     and are safe to ban literally.
+//   - "severity" and "criticality" similarly have no common
+//     embedding in neutral English; safe.
+export const URGENCY_FORBIDDEN = dedup([
+  ...SIGNALS_FORBIDDEN,
+  "severity",
+  "criticality",
+  "asap",
+  "blocker",
+]);
+
+export function assertUrgencyLanguage(text: string): void {
+  checkAgainst(text, URGENCY_FORBIDDEN);
+}
+
+export function assertAllUrgencyLanguage(texts: readonly string[]): void {
+  for (const t of texts) assertUrgencyLanguage(t);
+}

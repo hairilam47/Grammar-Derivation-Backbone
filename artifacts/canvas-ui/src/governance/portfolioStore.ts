@@ -70,11 +70,19 @@ export interface PortfolioEntry {
   // from the responsibility lens row set respectively.
   approvalFunctionsAffected: string[];
   approvalDominantFunctions: string[];
+  // Stage A (ADC Wizard Retrofit) — optional id linking this portfolio
+  // entry to its Requirements Contract. `null` for pre-Stage-A
+  // entries and for sessions that froze the decision without freezing
+  // requirements. Read-only thereafter.
+  requirementsContractId?: string | null;
 }
 
 const RISK_RANK: Record<RiskLevel, number> = { GREEN: 1, AMBER: 2, RED: 3 };
 
-export function entryFromADS(ads: ADS): PortfolioEntry {
+export function entryFromADS(
+  ads: ADS,
+  requirementsContractId?: string | null,
+): PortfolioEntry {
   const risks = ads.result.risks;
   let highest: RiskLevel | "NONE" = "NONE";
   for (const r of risks) {
@@ -156,6 +164,7 @@ export function entryFromADS(ads: ADS): PortfolioEntry {
     ecpConstraintCategories,
     approvalFunctionsAffected,
     approvalDominantFunctions,
+    requirementsContractId: requirementsContractId ?? null,
   };
 }
 
@@ -227,6 +236,19 @@ function assertAllowedFields(entry: unknown): void {
       "Portfolio entry field \"approvalDominantFunctions\" must be an array of strings.",
     );
   }
+  // Stage A (ADC Wizard Retrofit) — `requirementsContractId` is
+  // optional. Accept undefined or null (no contract attached) or a
+  // non-empty string id. Reject any other type.
+  if (
+    e.requirementsContractId !== undefined &&
+    e.requirementsContractId !== null &&
+    (typeof e.requirementsContractId !== "string" ||
+      e.requirementsContractId.length === 0)
+  ) {
+    throw new Error(
+      "Portfolio entry field \"requirementsContractId\" must be undefined, null, or a non-empty id string.",
+    );
+  }
 }
 
 function isValidEntry(raw: unknown): raw is PortfolioEntry {
@@ -287,6 +309,19 @@ function isValidEntry(raw: unknown): raw is PortfolioEntry {
       return false;
     }
   }
+  // Stage A optional contract link — undefined / null / non-empty
+  // string. Anything else is rejected at READ time.
+  if (
+    e.requirementsContractId !== undefined &&
+    e.requirementsContractId !== null
+  ) {
+    if (
+      typeof e.requirementsContractId !== "string" ||
+      e.requirementsContractId.length === 0
+    ) {
+      return false;
+    }
+  }
   return true;
 }
 
@@ -300,6 +335,9 @@ function withDefaults(entry: PortfolioEntry): PortfolioEntry {
     ecpConstraintCategories: entry.ecpConstraintCategories ?? [],
     approvalFunctionsAffected: entry.approvalFunctionsAffected ?? [],
     approvalDominantFunctions: entry.approvalDominantFunctions ?? [],
+    // Stage A — coerce undefined to null so callers can rely on the
+    // field always being defined (null = no contract attached).
+    requirementsContractId: entry.requirementsContractId ?? null,
   };
 }
 

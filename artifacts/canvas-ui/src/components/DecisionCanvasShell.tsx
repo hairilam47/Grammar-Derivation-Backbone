@@ -1,35 +1,43 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Wizard from "@/pages/Wizard";
+import { assertAllUrgencyLanguage } from "@/governance/staticTextGuard";
 
+// Stage A (ADC Wizard Retrofit) — the wizard's 5 phases. The labels
+// are validated against the Urgency vocabulary tier at module load
+// so any future rename that drifts toward Severity / Priority /
+// "blocker" framing fails the bundle.
 const PHASE_LABELS = [
   "Context",
-  "Scope",
-  "Architecture",
+  "Modules",
+  "Requirements",
   "Trade-offs",
   "Freeze",
 ] as const;
+assertAllUrgencyLanguage(PHASE_LABELS);
 
 export default function DecisionCanvasShell() {
   const [, setLocation] = useLocation();
   const [step, setStep] = useState<number>(1);
   const [sessionKey, setSessionKey] = useState<number>(0);
 
-  // After freeze (step 5) the wizard's freeze useEffect persists the
-  // portfolio entry. Once that has happened the shell redirects the
-  // user to the portfolio (read-only) and bumps `sessionKey` so a
-  // future visit to /decision-canvas mounts a fresh empty wizard
-  // rather than resuming the frozen one.
-  useEffect(() => {
-    if (step === 5) {
-      setLocation("/portfolio");
-      setSessionKey((k) => k + 1);
-      setStep(1);
-    }
-  }, [step, setLocation]);
+  // Stage A — step 5 is now the visible Freeze screen. The wizard
+  // signals "decision frozen and persisted" via the
+  // `onAfterFreezeDecision` callback, at which point the shell
+  // redirects to the portfolio and resets session state so a future
+  // visit mounts a fresh empty wizard rather than resuming the
+  // frozen one.
+  const handleAfterFreezeDecision = () => {
+    setLocation("/portfolio");
+    setSessionKey((k) => k + 1);
+    setStep(1);
+  };
 
+  // The Freeze screen (step 5) is the active terminal screen, so the
+  // exit button hides on step 5 — leaving the screen requires either
+  // the explicit "View Portfolio" CTA or completing freeze.
   const decisionInProgress = step >= 1 && step < 5;
 
   const handleExit = () => {
@@ -112,7 +120,11 @@ export default function DecisionCanvasShell() {
       </div>
 
       <main className="flex-1 container max-w-5xl mx-auto px-4 py-8">
-        <Wizard key={sessionKey} onStepChange={setStep} />
+        <Wizard
+          key={sessionKey}
+          onStepChange={setStep}
+          onAfterFreezeDecision={handleAfterFreezeDecision}
+        />
       </main>
     </div>
   );

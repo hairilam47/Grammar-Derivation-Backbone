@@ -100,6 +100,16 @@ import "@/acw/track3/acwTrack3ViewPrefsInvariants.test-shape";
 // `lodRange: [3, 3]` contract every minted node must carry.
 import "@/acw/l3/acwL3IsolationInvariants.test-shape";
 import "@/acw/l3/acwL3GeneratorInvariants.test-shape";
+// Stage A (ADC Wizard Retrofit) — module-load side effects for the
+// three governance stores that back the requirements-capture
+// foundation: schema-version locks (mod-1.0 / req-1.0 / rc-1.0),
+// allow-list shape probes, draft-rule / approval-rule / freeze-
+// rule enforcement, and idempotent-freeze guarantees. Each invariant
+// uses an isolated localStorage snapshot so it does not perturb
+// user data when it runs at bundle startup.
+import "@/governance/moduleCatalogInvariants.test-shape";
+import "@/governance/requirementsStoreInvariants.test-shape";
+import "@/governance/requirementsContractStoreInvariants.test-shape";
 
 // Dev-only deterministic seed page (Task #119). Both the lazy
 // import expression and the route registration are gated on

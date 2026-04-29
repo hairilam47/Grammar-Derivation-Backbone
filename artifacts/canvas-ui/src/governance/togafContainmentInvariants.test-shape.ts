@@ -108,6 +108,13 @@ export const PHASE_5_BASELINE_PORTFOLIO_FIELDS: ReadonlySet<string> = new Set([
   "ecpConstraintCategories",
   "approvalFunctionsAffected",
   "approvalDominantFunctions",
+  // Stage A (ADC Wizard Retrofit) — optional contract link added to
+  // the portfolio entry shape. Listed here explicitly so the
+  // forward-looking forbidden-pattern check has a stable allow-list
+  // to exempt; the field name itself carries no lifecycle / severity
+  // / score / trigger / event / metric / chart / ranking pattern, but
+  // it is documented here as a knowingly-additive Stage A field.
+  "requirementsContractId",
 ]);
 
 export function assertNoComputedADCFields(

@@ -32,7 +32,10 @@ The project is structured as a pnpm workspace monorepo, separating deployable ap
 ## Key Features & Design Patterns
 
 ### Architecture Decision Canvas (ADC)
-- **Wizard Flow:** Guides users through context, capability selection, trade-off analysis, and freezing decisions to generate ADS/ECP.
+- **5-Step Wizard Flow:** Context → Modules → Requirements Capture → Trade-Offs → Freeze. The Modules step CRUDs the Module Catalogue (`moduleCatalogStore`, schema `mod-1.0`); the Requirements Capture step CRUDs Requirements (`requirementsStore`, schema `req-1.0`) with type / Urgency tags, optional hardware details, module links, and approval gating; capability selections for the trade-off step are auto-derived from each module's `relatedCapabilityIds`.
+- **Dual Freeze (Step 5):** "Freeze Requirements" calls `requirementsContractStore.freezeContract` (schema `rc-1.0`) — atomic with the requirements-store approved → frozen flip and idempotent on the same approved set. "Freeze Decision" builds the ADS/ECP and persists a portfolio entry via `addOrUpdateEntry(entryFromADS(ads, contractId?))`, optionally linking the requirements contract.
+- **Urgency Vocabulary:** UI labels Routine / Standard / Elevated / Acute (internal enum stays `low` / `medium` / `high` / `critical`); a dedicated `URGENCY_FORBIDDEN` tier in `staticTextGuard.ts` bans Severity / Priority / Blocker / ASAP framing.
+- **Build-Time Invariants:** All three governance stores ship `*.test-shape` modules wired into `App.tsx` as side-effect imports (allow-list shape, schema-version lock, validator-rejection probes, idempotent-freeze, isolated-storage snapshots).
 - **Output:** Exports PDF and DOCX; records decisions to a portfolio.
 - **Immutability:** Frozen decisions are read-only to ensure governance and traceability.
 
