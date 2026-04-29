@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from "react";
-import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
+import { Switch, Route, Router as WouterRouter, useLocation, Redirect } from "wouter";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppShell } from "@/components/AppSidebar";
@@ -179,16 +179,30 @@ function RootGate() {
   return <WorkspaceHub />;
 }
 
+// Phase 2 (SaaS Onboarding) — org gate. The Work-Item Dashboard
+// requires an active Organisation but does NOT require an active
+// Work Item (the Dashboard is precisely the surface where the user
+// picks a Work Item). A deep link into `/dashboard` without an
+// active org redirects to `/`, where `RootGate` renders the
+// OrgSelector.
+function OrgGate({ children }: { children: React.ReactNode }) {
+  const { orgId } = useCurrentScope();
+  if (!orgId) return <Redirect to="/" />;
+  return <>{children}</>;
+}
+
 // Phase 2 (SaaS Onboarding) — tool gate. Every tool route must
 // have a current Organisation AND a current Work Item resolved
 // before its inner component reads from any tenant-scoped store.
-// When the scope is insufficient we render the appropriate
-// onboarding step instead of the tool, so a deep-link into a tool
+// When the scope is insufficient we issue an actual route redirect
+// to the right onboarding step (`/` for no org, `/dashboard` for
+// org-but-no-work-item), so the URL bar always reflects the
+// surface the user is looking at and a deep-link into a tool
 // without an active scope cannot crash a store reader.
 function ToolGate({ children }: { children: React.ReactNode }) {
   const { orgId, workItemId } = useCurrentScope();
-  if (!orgId) return <OrgSelector />;
-  if (!workItemId) return <WorkItemDashboard />;
+  if (!orgId) return <Redirect to="/" />;
+  if (!workItemId) return <Redirect to="/dashboard" />;
   return <>{children}</>;
 }
 
@@ -197,9 +211,9 @@ function Router() {
     <Switch>
       <Route path="/" component={RootGate} />
       <Route path="/dashboard">
-        <ToolGate>
+        <OrgGate>
           <WorkItemDashboard />
-        </ToolGate>
+        </OrgGate>
       </Route>
       <Route path="/decision-canvas">
         <ToolGate>

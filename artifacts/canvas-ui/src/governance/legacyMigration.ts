@@ -8,12 +8,15 @@
 // `<orgId>:<baseKey>` (Org-scoped).
 //
 // This module runs ONCE, the first time the user resolves both an
-// Organisation and a Work Item. It copies any pre-Phase-2 flat
-// document into the active tenant's scoped namespace and then
-// deletes the flat document so a later "switch tenant" does not
-// re-import the same blob into a different organisation. A sentinel
-// key (`app:legacyMigration.v1`) records the completion so the
-// migration is idempotent across page loads.
+// Organisation and a Work Item. It COPIES any pre-Phase-2 flat
+// document into the active tenant's scoped namespace and LEAVES
+// the original flat document in place for one release as a safety
+// net — if the user ever needs to roll back to a pre-Phase-2 build
+// or wants to re-export the legacy blob for diagnosis, the flat
+// document is still there. A sentinel key
+// (`app:legacyMigration.v1`) records the completion so a second
+// page load (or a switch into a different tenant) does NOT re-copy
+// the legacy blob into a second organisation.
 //
 // The migration is intentionally narrow: it touches only the
 // pre-Phase-2 flat keys we shipped, never any other localStorage
@@ -93,6 +96,8 @@ export function migrateLegacyFlatKeysIfNeeded(
   const migrated: string[] = [];
   const skipped: string[] = [];
 
+  // Copy-only: never remove the flat key. The sentinel below
+  // prevents a second migration into a different tenant.
   for (const baseKey of ORG_SCOPED_LEGACY_KEYS) {
     const flat = window.localStorage.getItem(baseKey);
     if (flat === null) continue;
@@ -100,13 +105,12 @@ export function migrateLegacyFlatKeysIfNeeded(
     const existing = window.localStorage.getItem(targetKey);
     if (existing !== null) {
       // Target tenant already has a document under this key —
-      // refuse to overwrite. Leave the flat key in place; a future
-      // migration into a different tenant will see it.
+      // refuse to overwrite. The flat key is left in place either
+      // way (copy-only).
       skipped.push(baseKey);
       continue;
     }
     window.localStorage.setItem(targetKey, flat);
-    window.localStorage.removeItem(baseKey);
     migrated.push(baseKey);
   }
 
@@ -120,7 +124,6 @@ export function migrateLegacyFlatKeysIfNeeded(
       continue;
     }
     window.localStorage.setItem(targetKey, flat);
-    window.localStorage.removeItem(baseKey);
     migrated.push(baseKey);
   }
 

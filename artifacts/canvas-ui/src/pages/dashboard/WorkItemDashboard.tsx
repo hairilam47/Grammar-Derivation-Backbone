@@ -40,6 +40,27 @@ const TYPE_LABELS = {
   "change-request": "Change Request",
 } as const;
 
+// Plural labels used as section headings. The dashboard renders
+// one section per Work-Item type so the user sees the EA Blueprint
+// stand apart from operational Projects, Enhancements, and
+// Change Requests.
+const TYPE_SECTION_LABELS = {
+  "ea-blueprint": "EA Blueprints",
+  project: "Projects",
+  enhancement: "Enhancements",
+  "change-request": "Change Requests",
+} as const;
+
+// Section render order. EA Blueprint is always first because every
+// organisation carries exactly one and it anchors the operational
+// Work Items (Projects / Enhancements / Change Requests) below.
+const TYPE_RENDER_ORDER: readonly (keyof typeof TYPE_SECTION_LABELS)[] = [
+  "ea-blueprint",
+  "project",
+  "enhancement",
+  "change-request",
+];
+
 const STATIC_LABELS = {
   heading: "Work Items",
   description: "Open an existing Work Item or create a new one.",
@@ -49,6 +70,7 @@ const STATIC_LABELS = {
   openButton: "Open",
   switchOrgButton: "Switch Organisation",
   ...TYPE_LABELS,
+  ...TYPE_SECTION_LABELS,
 } as const;
 
 assertAllOnboardingLanguage(Object.values(STATIC_LABELS));
@@ -79,6 +101,21 @@ export default function WorkItemDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [orgId, wiVersion],
   );
+
+  // Group by type so each section can be rendered under its own
+  // heading. `listWorkItemsForOrg` already returns items sorted
+  // (EA Blueprint first, then by createdAt ascending), so each
+  // group preserves a stable order.
+  const itemsByType = useMemo(() => {
+    const groups: Record<keyof typeof TYPE_SECTION_LABELS, WorkItem[]> = {
+      "ea-blueprint": [],
+      project: [],
+      enhancement: [],
+      "change-request": [],
+    };
+    for (const wi of items) groups[wi.type].push(wi);
+    return groups;
+  }, [items]);
 
   // Defensive — the router gate should never let us land here
   // without an active org, but if it does we redirect home.
@@ -155,40 +192,57 @@ export default function WorkItemDashboard() {
             </CardHeader>
           </Card>
         ) : (
-          <ul
-            className="grid grid-cols-1 sm:grid-cols-2 gap-4"
+          <div
+            className="space-y-10"
             data-testid="work-item-list"
           >
-            {items.map((wi) => (
-              <li key={wi.id}>
-                <Card
-                  className="lift flex flex-col"
-                  data-testid={`work-item-card-${wi.id}`}
+            {TYPE_RENDER_ORDER.map((type) => {
+              const group = itemsByType[type];
+              if (group.length === 0) return null;
+              return (
+                <section
+                  key={type}
+                  className="space-y-4"
+                  data-testid={`work-item-section-${type}`}
                 >
-                  <CardHeader className="space-y-2">
-                    <span className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-secondary/60 border border-border/60">
-                      <Briefcase className="w-4 h-4" aria-hidden="true" />
-                    </span>
-                    <CardTitle className="text-base">{wi.title}</CardTitle>
-                    <CardDescription className="text-xs">
-                      {TYPE_LABELS[wi.type]}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="mt-auto">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => handleOpen(wi.id)}
-                      data-testid={`button-open-work-item-${wi.id}`}
-                    >
-                      {STATIC_LABELS.openButton}
-                    </Button>
-                  </CardContent>
-                </Card>
-              </li>
-            ))}
-          </ul>
+                  <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+                    {TYPE_SECTION_LABELS[type]}
+                  </h2>
+                  <ul className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {group.map((wi) => (
+                      <li key={wi.id}>
+                        <Card
+                          className="lift flex flex-col"
+                          data-testid={`work-item-card-${wi.id}`}
+                        >
+                          <CardHeader className="space-y-2">
+                            <span className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-secondary/60 border border-border/60">
+                              <Briefcase className="w-4 h-4" aria-hidden="true" />
+                            </span>
+                            <CardTitle className="text-base">{wi.title}</CardTitle>
+                            <CardDescription className="text-xs">
+                              {TYPE_LABELS[wi.type]}
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="mt-auto">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="w-full"
+                              onClick={() => handleOpen(wi.id)}
+                              data-testid={`button-open-work-item-${wi.id}`}
+                            >
+                              {STATIC_LABELS.openButton}
+                            </Button>
+                          </CardContent>
+                        </Card>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              );
+            })}
+          </div>
         )}
       </main>
 

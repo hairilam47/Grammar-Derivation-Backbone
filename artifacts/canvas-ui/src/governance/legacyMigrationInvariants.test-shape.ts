@@ -11,11 +11,11 @@
 //      subsequent call short-circuits.
 //   3. Routing — an org-only legacy key lands at
 //      `<orgId>:<baseKey>` and an org+wi legacy key lands at
-//      `<orgId>:<wiId>:<baseKey>`. The flat keys are removed.
+//      `<orgId>:<wiId>:<baseKey>`. The flat keys are LEFT IN
+//      PLACE (copy-only migration; sentinel prevents re-import).
 //   4. No clobber — a flat key whose target tenant slot already
-//      has a document is left in place and reported as skipped
-//      (so a later migration into a different tenant can pick it
-//      up).
+//      has a document is reported as skipped, the existing target
+//      is preserved, and the flat key is left in place.
 //   5. Malformed-id rejection — invalid orgId / workItemId throws
 //      synchronously and writes nothing.
 
@@ -162,14 +162,16 @@ function runProbe(): void {
         "legacyMigrationInvariants: first call did not run (sentinel state corrupted).",
       );
     }
-    if (window.localStorage.getItem(orgOnlyBase) !== null) {
+    // Copy-only contract: the flat keys must be LEFT IN PLACE so
+    // a one-release safety-net rollback can still see them.
+    if (window.localStorage.getItem(orgOnlyBase) !== "ORG_ONLY_BLOB") {
       throw new Error(
-        `legacyMigrationInvariants: org-only flat key "${orgOnlyBase}" was not removed.`,
+        `legacyMigrationInvariants: org-only flat key "${orgOnlyBase}" was modified — migration must be copy-only.`,
       );
     }
-    if (window.localStorage.getItem(orgWiBase) !== null) {
+    if (window.localStorage.getItem(orgWiBase) !== "ORG_WI_BLOB") {
       throw new Error(
-        `legacyMigrationInvariants: org+wi flat key "${orgWiBase}" was not removed.`,
+        `legacyMigrationInvariants: org+wi flat key "${orgWiBase}" was modified — migration must be copy-only.`,
       );
     }
     const orgOnlyTarget = getScopedKey(orgOnlyBase, PROBE_ORG);

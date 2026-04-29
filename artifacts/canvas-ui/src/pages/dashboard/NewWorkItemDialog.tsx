@@ -4,11 +4,16 @@
 // Phase 2 (SaaS Onboarding). Type defaults to "project". The
 // "ea-blueprint" type is intentionally absent from the dropdown
 // because every Organisation already carries an auto-seeded
-// EA Blueprint and the registry refuses a second one. Every static
-// label is asserted against `assertAllOnboardingLanguage` at module
-// load.
+// EA Blueprint and the registry refuses a second one.
+//
+// Conditional type availability: the registry rejects an
+// Enhancement / Change-Request creation when the active
+// organisation has no EA Blueprint. The dialog mirrors that rule
+// in the UI — when no EA Blueprint exists for the active org, the
+// type dropdown collapses to "Project" only. Every static label is
+// asserted against `assertAllOnboardingLanguage` at module load.
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useMemo, useState, useSyncExternalStore } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,16 +21,24 @@ import { Label } from "@/components/ui/label";
 import { assertAllOnboardingLanguage } from "@/governance/staticTextGuard";
 import {
   createWorkItem,
+  getEaBlueprintForOrg,
+  getStoreVersion as getWorkItemStoreVersion,
+  subscribe as subscribeWorkItems,
   WORK_ITEM_TYPES,
   type WorkItemType,
 } from "@/governance/workItemStore";
 
 // Types selectable from this dialog. EA Blueprint is excluded
-// (one-per-org rule, auto-seeded at org creation).
-const SELECTABLE_TYPES: readonly Exclude<WorkItemType, "ea-blueprint">[] = [
+// (one-per-org rule, auto-seeded at org creation). The full
+// triplet is shown only when the active org already has an EA
+// Blueprint; otherwise only "project" is offered.
+const ALL_SELECTABLE_TYPES: readonly Exclude<WorkItemType, "ea-blueprint">[] = [
   "project",
   "enhancement",
   "change-request",
+];
+const PROJECT_ONLY_SELECTABLE_TYPES: readonly Exclude<WorkItemType, "ea-blueprint">[] = [
+  "project",
 ];
 const _ALL_TYPES_GUARD: readonly WorkItemType[] = WORK_ITEM_TYPES;
 void _ALL_TYPES_GUARD;
@@ -76,6 +89,23 @@ export function NewWorkItemDialog({
   const descId = useId();
   const typeId = useId();
 
+  // Track the work-item store so the type dropdown reacts to the
+  // EA Blueprint being created (which unlocks Enhancement /
+  // Change Request).
+  const wiVersion = useSyncExternalStore(
+    subscribeWorkItems,
+    getWorkItemStoreVersion,
+    getWorkItemStoreVersion,
+  );
+  const hasEaBlueprint = useMemo(
+    () => getEaBlueprintForOrg(orgId) !== null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [orgId, wiVersion],
+  );
+  const selectableTypes = hasEaBlueprint
+    ? ALL_SELECTABLE_TYPES
+    : PROJECT_ONLY_SELECTABLE_TYPES;
+
   useEffect(() => {
     if (!open) return;
     setTitle("");
@@ -84,6 +114,14 @@ export function NewWorkItemDialog({
     setBusy(false);
     setError(null);
   }, [open]);
+
+  // If the EA Blueprint disappears after the dialog mounts (e.g.
+  // a switch into a freshly-created org from a different surface),
+  // collapse the selected type back to "project" so the form
+  // cannot submit a value that the registry will reject.
+  useEffect(() => {
+    if (!hasEaBlueprint && type !== "project") setType("project");
+  }, [hasEaBlueprint, type]);
 
   if (!open) return null;
 
@@ -160,7 +198,7 @@ export function NewWorkItemDialog({
             }
             className="h-9 w-full px-2 rounded-md border border-input bg-background text-sm"
           >
-            {SELECTABLE_TYPES.map((t) => (
+            {selectableTypes.map((t) => (
               <option key={t} value={t}>
                 {TYPE_LABELS[t]}
               </option>
