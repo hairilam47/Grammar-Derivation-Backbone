@@ -4031,3 +4031,179 @@ generates a fresh id). It can be left in place or rolled back.
 Hard-coded ids on ACW nodes are passed through `createNode`'s
 pre-existing optional `id` field; no public-API surface change
 was needed for the rest of the seed.
+
+## 24. Cross-Layer Design Model (.agents/skills/) — Task #130 Update
+
+This section documents the design-time tooling that ships under
+`.agents/skills/`, separate from the runtime ADC / CTAD / ACW
+stack documented above. The most recent change (Task #130)
+added a User Story Design skill and promoted the Enterprise
+Architecture orchestrator from a four-layer to a five-layer
+model.
+
+### Scope and runtime separation
+
+The design-model family is **author-time tooling only**. It
+reads and writes a single shared YAML file
+(`designs/system-model.yaml`) and emits PlantUML diagrams plus
+markdown reports into `designs/`. None of these scripts are
+imported by the runtime app, none of them write to
+`localStorage`, and none of them are bundled into any browser
+artifact. Editing the design model has no effect on architecture
+documents created in the canvas.
+
+### The eight-skill family
+
+| Skill | Owns in `system-model.yaml` | Emits |
+|---|---|---|
+| `design-model` | Schema, ID grammar, validator | n/a |
+| `erd-design` | `entities[]` | `designs/diagrams/erd.puml` |
+| `bpmn-design` | `processes[]` | `designs/diagrams/process-<id>.puml` |
+| `system-design` | `services[]`, `functions[]`, `flows[]` | `system-c4.puml`, `seq-<flow>.puml` |
+| `code-structure-design` | `modules[]` | `designs/diagrams/code-structure.puml` |
+| `use-case-design` | `usecases[]` | `designs/diagrams/usecase-<system>.puml` |
+| `user-story-design` (new) | `stories[]` | `designs/stories.md`, `designs/features/<epic>.feature` |
+| `enterprise-architecture` | `technology.nodes[]`, `environments[]`, `runtimes[]` | `designs/diagrams/ea-overview.puml`, `designs/ea-traceability.md` |
+
+The first six skills each own one slice of the model; the
+seventh (`user-story-design`) is the agile-backlog layer added
+in Task #130; the eighth (`enterprise-architecture`) is the
+capstone orchestrator that reads from every layer and never
+edits any layer-owned section.
+
+### What Task #130 added
+
+#### New `user-story-design` skill
+
+A self-contained sibling under `.agents/skills/user-story-design/`
+with three files:
+
+- `SKILL.md` — front-matter triggers covering "user story",
+  "agile backlog", "as a / I want / so that", "acceptance
+  criteria", "Gherkin", "given when then", "INVEST", "story
+  points", "epic", "story map", and "feature file".
+- `scripts/generate.mjs` — validator-first generator that
+  always emits `designs/stories.md` (an empty scaffold is
+  written when `stories[]` is absent so the file documents the
+  layer's existence) and, with `--gherkin`, emits one
+  `designs/features/<epic-slug>.feature` per epic for direct
+  consumption by Cucumber-family BDD tooling.
+- `references/user-story-best-practices.md` — long-form notes
+  on the Connextra template, INVEST, SPIDR / Hamburger
+  splitting, Gherkin BDD style, epic/feature/story granularity,
+  Fibonacci vs t-shirt points, and dependency-cycle smells.
+
+The generator validates required-shape fields as **errors**
+(the partial backlog is still written so authors can see the
+rendered shape, but the script exits 1): every story must have
+a `role`, a `goal`, and a `benefit`. Everything else
+(missing `priority`, missing `acceptanceCriteria`, malformed
+points, dependsOn cycles, unrealised use cases) is a warning.
+
+A guard prevents two epic labels from slugifying to the same
+`.feature` filename across the full epic set, even on a partial
+regenerate, so a colliding epic can never silently clobber a
+previously-emitted feature file.
+
+#### Foundation widening (`design-model`)
+
+`validate.mjs` gained the `story:` kind and four new
+cross-references:
+
+| Field | Resolves to |
+|---|---|
+| `story.role` | `actor:` |
+| `story.realizes[]` | `usecase:` |
+| `story.implementedBy[]` | `function:` |
+| `story.dependsOn[]` | `story:` |
+
+ID uniqueness is enforced across the global namespace, so a
+story ID cannot collide with a function or entity ID.
+
+#### EA orchestrator promoted to five layers
+
+The orchestrator's overview diagram and traceability report
+were extended from four to five layers, in TOGAF /
+ArchiMate-flavoured order:
+
+```
+Requirements → Business → Data → Application → Technology
+```
+
+Concrete changes in `enterprise-architecture/scripts/generate.mjs`:
+
+- The overview opens with a **Requirements rectangle** on top.
+  Stories are nested by `epic:` label (with an "Unassigned"
+  bucket for stories that have no epic), and use cases are
+  nested by `system:` label (with an "(ungrouped)" bucket).
+  Two epic labels that slugify to the same alias are
+  disambiguated with an ordinal suffix to avoid PlantUML
+  duplicate-alias errors.
+- **Story → use case** arrows are drawn from the `realizes[]`
+  field.
+- **Use case → task** arrows are drawn **transitively** — only
+  when at least one story that realises the use case shares an
+  `implementedBy` function with the task. Tasks are now
+  rendered as nested rectangles inside their owning process
+  container so the arrow terminates at the specific task being
+  implemented (rather than collapsing to the process as a
+  whole).
+- The traceability report opens each process with a
+  **Requirements subsection** that lists the stories whose
+  `implementedBy[]` intersects any task's `implementedBy[]`
+  for that process, plus the use cases those stories realise.
+  The subsection only renders when the model actually uses the
+  requirements layer, so legacy four-layer models stay
+  visually identical.
+- `--render-all` was extended to invoke the user-story and
+  use-case sibling generators alongside the existing four
+  (BPMN, ERD, system, code-structure) so a single command
+  refreshes every layer's diagram.
+
+#### Two new informational gap categories
+
+The cross-layer gap report grew two categories that are
+intentionally **excluded from `--strict`'s exit-1 total**:
+
+- `storiesWithoutUsecase` — a story that realises no use case
+  (sometimes intentional, e.g. pure-plumbing stories).
+- `usecasesWithoutStory` — a use case not realised by any
+  story (fine for early-stage use cases, suspicious once
+  delivery has started).
+
+These join the existing `nodesWithoutModule` informational
+category. The strict total still flips the exit code on
+genuine breaks (process tasks without an implementing
+function, modules without a deployment node, etc.), so CI
+gates built on `--strict` are not destabilised by stories or
+use cases that have not yet been wired all the way through.
+
+### Re-running the smoke tests
+
+The Task #130 smoke fixture and verification commands live
+inside the design-model family. To re-run them:
+
+```bash
+node .agents/skills/design-model/scripts/validate.mjs designs/system-model.yaml
+node .agents/skills/user-story-design/scripts/generate.mjs designs/system-model.yaml --gherkin
+node .agents/skills/enterprise-architecture/scripts/generate.mjs designs/system-model.yaml
+node .agents/skills/enterprise-architecture/scripts/generate.mjs designs/system-model.yaml --strict
+node .agents/skills/enterprise-architecture/scripts/generate.mjs designs/system-model.yaml --render-all
+```
+
+The validator exits 0 on a clean model. The user-story
+generator exits 0 on warnings, exits 1 when foundation
+validation fails or when any story is missing a required-shape
+field (`role`, `goal`, or `benefit`), and exits 2 on internal
+failures. The EA orchestrator exits 0 unless `--strict` is
+passed alongside at least one non-informational gap.
+
+### Out of scope for this section
+
+The runtime ADC / CTAD / ACW state model, the canvas, the
+seed data (section 23), the auth model, and every other
+runtime concern documented in sections 1–23 above are
+unchanged by Task #130. The design-model family lives entirely
+under `.agents/skills/` and `designs/` and does not import
+from, or feed into, any of the runtime artifacts in
+`artifacts/`.

@@ -90,3 +90,27 @@ The project is structured as a pnpm workspace monorepo, separating deployable ap
 - **docx:** Client-side DOCX generation.
 - **ELK (elkjs):** Graph layout algorithm.
 - **React Three Fiber / three.js:** 3D rendering.
+
+# Design-Time Tooling (.agents/skills/)
+
+Separate from the runtime ADC / CTAD / ACW stack above, the project hosts an eight-skill **cross-layer design-model family** under `.agents/skills/`. These are author-time tools that read and write a single shared file, `designs/system-model.yaml`, and emit PlantUML diagrams plus markdown reports into `designs/`. They never touch the runtime app, never write to `localStorage`, and never ship in any browser bundle.
+
+The family:
+
+- `design-model` — foundation skill. Owns the YAML schema, the cross-layer ID grammar (`actor:`, `entity:`, `process:`, `service:`, `function:`, `module:`, `flow:`, `node:`, `usecase:`, `story:`), and the validator that checks ID uniqueness, grammar conformance, and cross-reference resolution.
+- `erd-design` — `entities[]` (data layer).
+- `bpmn-design` — `processes[]` (business / process layer).
+- `system-design` — `services[]`, `functions[]`, `flows[]` (application layer, runtime view).
+- `code-structure-design` — `modules[]` (application layer, code-organisation view).
+- `use-case-design` — `usecases[]` (UML-style goal layer).
+- `user-story-design` — `stories[]` (agile-backlog layer; new in Task #130).
+- `enterprise-architecture` — capstone orchestrator. Owns `technology.nodes[] / environments[] / runtimes[]` and emits the layered overview diagram (`designs/diagrams/ea-overview.puml`) plus the end-to-end traceability report (`designs/ea-traceability.md`).
+
+## Task #130 update — User Story Design Skill + EA Requirements layer
+
+The most recent additions to the family:
+
+- **New `user-story-design` skill.** Validator-first generator that emits `designs/stories.md` (always) and per-epic `designs/features/<epic>.feature` files (with `--gherkin`). Stories use the Connextra template (`role` / `goal` / `benefit` are required), MoSCoW priority, and optional Fibonacci or t-shirt points. Acceptance criteria are written as Gherkin `given / when / then` triples that round-trip directly into Cucumber-family BDD tooling.
+- **EA orchestrator promoted to five layers.** Requirements → Business → Data → Application → Technology, replacing the prior four-layer stack. The overview diagram now opens with a Requirements rectangle on top (stories nested by epic, use cases nested by system) and draws transitive `usecase → task` arrows that terminate at the specific BPMN task being implemented. The traceability report opens each process with a Requirements subsection listing the stories and use cases that trace down into it.
+- **Foundation widening.** `validate.mjs` gained the `story:` kind and four new cross-references: `story.role → actor`, `story.realizes[] → usecase`, `story.implementedBy[] → function`, `story.dependsOn[] → story`.
+- **Two new informational gap categories.** `storiesWithoutUsecase` and `usecasesWithoutStory` are reported in the EA gap summary but are explicitly excluded from `--strict`'s exit-1 total — a story can intentionally trace to no use case (pure-plumbing work), and an early-stage use case can sit story-less without breaking the build.
