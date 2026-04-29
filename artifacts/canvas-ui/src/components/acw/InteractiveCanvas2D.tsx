@@ -51,6 +51,7 @@ import {
   ACW_CANVAS_CAMERA_MAX_ZOOM,
   ACW_CANVAS_CAMERA_MIN_ZOOM,
   clampAcwCameraZoom,
+  flushAcwCanvasCameraWrites,
   getAcwCanvasCamera,
   setAcwCanvasCamera,
   subscribeAcwCanvasCameraReload,
@@ -291,6 +292,15 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
     return subscribeAcwCanvasCameraReload(() => {
       setViewRaw(viewFromCamera(getAcwCanvasCamera(lensId)));
     });
+  }, [lensId]);
+  // Flush any pending debounced server write when this canvas
+  // unmounts (e.g. user navigates to a different lens) or when the
+  // lens identity changes mid-session, so the last-known view is
+  // durable on the api-server before the React tree tears down.
+  useEffect(() => {
+    return () => {
+      flushAcwCanvasCameraWrites();
+    };
   }, [lensId]);
   // Single mutation point. Funnels every camera write through the
   // store so a future addition (debounce, telemetry, undo) only

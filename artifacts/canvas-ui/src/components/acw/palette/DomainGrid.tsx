@@ -53,6 +53,7 @@ import {
   ACW_CANVAS_CAMERA_MAX_ZOOM,
   ACW_CANVAS_CAMERA_MIN_ZOOM,
   clampAcwCameraZoom,
+  flushAcwCanvasCameraWrites,
   getAcwCanvasCamera,
   setAcwCanvasCamera,
   subscribeAcwCanvasCameraReload,
@@ -233,6 +234,14 @@ export function DomainGrid({ lensId }: DomainGridProps) {
     return subscribeAcwCanvasCameraReload(() => {
       setViewRaw(dgViewFromCamera(getAcwCanvasCamera(lensId)));
     });
+  }, [lensId]);
+  // Flush any pending debounced server write when the canvas
+  // unmounts or the lens identity changes, so the last-known view
+  // is durable on the api-server before tear-down.
+  useEffect(() => {
+    return () => {
+      flushAcwCanvasCameraWrites();
+    };
   }, [lensId]);
   const commitView = useCallback(
     (next: DomainGridView | ((prev: DomainGridView) => DomainGridView)) => {

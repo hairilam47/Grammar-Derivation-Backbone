@@ -73,6 +73,75 @@ const EMPTY_DOC: CameraDoc = Object.freeze({
 let cache: CameraDoc | null = null;
 const reloadListeners = new Set<() => void>();
 
+// ---- debounced server-write scheduler ------------------------------------
+//
+// Pan + zoom interactions can fire many state updates per second (one
+// per mousemove / wheel / RAF tick). Naively calling writeScoped on
+// every one would spam the api-server with PUTs. Instead, we keep the
+// L1 cache + L2 localStorage update synchronous (so a same-tab read
+// after a write still sees the new value, and a hard-refresh during
+// active panning at worst loses the very last ~200ms of motion), and
+// we coalesce server PUTs through a per-scoped-key debouncer with a
+// 200ms tail. The pending payload is flushed:
+//   - automatically when the debounce timer fires
+//   - immediately when the active scope changes (so the user's last
+//     view on the previous work item / org is durable before its
+//     scoped key becomes invalid)
+//   - immediately on `beforeunload` / `pagehide` (so closing the tab
+//     during active panning still persists the final view)
+//   - on demand via `flushAcwCanvasCameraWrites()` (exposed for
+//     callers that need a fence point — e.g. an explicit save action
+//     or a unit test).
+//
+// The L1 cache + L2 localStorage updates are NOT debounced because
+// they're cheap (a Map.set + a localStorage.setItem) and we want
+// reads from `getAcwCanvasCamera` to return the freshest value
+// without waiting for the timer to fire.
+
+const WRITE_DEBOUNCE_MS = 200;
+const pendingServerWrites = new Map<string, string>();
+let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flushPendingWrites(): void {
+  if (pendingTimer !== null) {
+    clearTimeout(pendingTimer);
+    pendingTimer = null;
+  }
+  if (pendingServerWrites.size === 0) return;
+  const snapshot = Array.from(pendingServerWrites.entries());
+  pendingServerWrites.clear();
+  for (const [key, value] of snapshot) {
+    writeScoped(key, value);
+  }
+}
+
+function scheduleServerWrite(scopedKey: string, value: string): void {
+  pendingServerWrites.set(scopedKey, value);
+  if (pendingTimer !== null) return;
+  pendingTimer = setTimeout(() => {
+    pendingTimer = null;
+    flushPendingWrites();
+  }, WRITE_DEBOUNCE_MS);
+}
+
+/**
+ * Force any debounced server writes to be flushed immediately.
+ * Exposed so callers (component unmount, explicit save, unit tests)
+ * can establish a fence point. Idempotent — no-op when no writes
+ * are pending.
+ */
+export function flushAcwCanvasCameraWrites(): void {
+  flushPendingWrites();
+}
+
+if (typeof window !== "undefined") {
+  // Persist the latest pending camera state if the tab is being
+  // closed or hidden mid-interaction. `pagehide` is the modern
+  // counterpart that also fires for bfcache navigations on iOS.
+  window.addEventListener("beforeunload", flushPendingWrites);
+  window.addEventListener("pagehide", flushPendingWrites);
+}
+
 function getStorageKey(): string | null {
   // Camera is per work item — without an active work-item scope
   // there's nothing to persist (the lens shows an empty canvas in
@@ -136,6 +205,11 @@ function readDoc(): CameraDoc {
 // after the server response for a fresh-device boot lands.
 if (typeof window !== "undefined") {
   onScopeOrHydrationChange(() => {
+    // Flush any pending writes BEFORE the scope changes so the
+    // last-known view on the OUTGOING scope reaches the server
+    // before its scoped key is recomputed against the new scope
+    // (which would orphan the pending payload).
+    flushPendingWrites();
     cache = null;
     for (const fn of reloadListeners) {
       try {
@@ -160,9 +234,14 @@ export function getAcwCanvasCamera(lensId: string): AcwCanvasCameraState {
 
 /**
  * Write a camera state for the supplied lensId in the active work-
- * item scope. Updates the in-memory cache and queues an async write
- * through the scoped storage client. A no-op when no work-item
- * scope is active.
+ * item scope. Updates the in-memory L1 cache synchronously (so a
+ * follow-up `getAcwCanvasCamera` returns the new value immediately)
+ * and schedules a debounced server write through the scoped storage
+ * client. A no-op when no work-item scope is active.
+ *
+ * See the "debounced server-write scheduler" block above for the
+ * flush triggers (timer tail, scope change, beforeunload/pagehide,
+ * explicit `flushAcwCanvasCameraWrites`).
  */
 export function setAcwCanvasCamera(
   lensId: string,
@@ -182,7 +261,7 @@ export function setAcwCanvasCamera(
     [lensId]: safe,
   });
   cache = Object.freeze({ v: 1 as const, cameras });
-  writeScoped(key, JSON.stringify({ v: 1, cameras }));
+  scheduleServerWrite(key, JSON.stringify({ v: 1, cameras }));
 }
 
 /**
@@ -204,4 +283,9 @@ export function subscribeAcwCanvasCameraReload(fn: () => void): () => void {
 
 export function __resetAcwCanvasCameraStoreForTest(): void {
   cache = null;
+  pendingServerWrites.clear();
+  if (pendingTimer !== null) {
+    clearTimeout(pendingTimer);
+    pendingTimer = null;
+  }
 }
