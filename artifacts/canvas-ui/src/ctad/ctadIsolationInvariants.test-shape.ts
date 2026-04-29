@@ -133,6 +133,13 @@ const ALLOWED_IMPORT_PREFIXES: readonly string[] = [
   "@/acw/acwStore",
   "@/acw/acwGrammar",
   "@/acw/acwValidator",
+  // Sealed-domain-quadrant seeder — idempotent helper that creates
+  // (or shape-checks) the four well-known `domain-{tag}` Zone nodes
+  // at the workspace root. CtadDesignShell calls it on mount so the
+  // Promote panel has a target for every quadrant tile, mirroring
+  // the StudioCanvas mount behaviour. Pure structural seeding via
+  // validator-gated `createNode`; carries no decision-pipeline state.
+  "@/acw/palette/domainContainerSeed",
   // Read-only governance stores — CTAD reads these to populate
   // the requirement-binding multiselect and the module-binding
   // single select inside the logical-node Properties panel. The
@@ -141,6 +148,23 @@ const ALLOWED_IMPORT_PREFIXES: readonly string[] = [
   // `createModule`, etc.) are forbidden.
   "@/governance/requirementsStore",
   "@/governance/moduleCatalogStore",
+  // Tenant-scope React context — exposes the active
+  // `(orgId, workItemId)` pair via `useCurrentScope()` and
+  // peripheral helpers. The CTAD design shell uses it to surface
+  // the active Work Item label in its top bar, mirroring the
+  // EAStudio shell. The context module owns no decision-pipeline
+  // state and depends only on plain TS scope helpers and the
+  // organisation/work-item registry.
+  "@/governance/CurrentOrgWorkItemContext",
+  // Read-only registry stores — CTAD looks up the title of the
+  // currently-selected organisation and work item to render the
+  // top-bar context chip. The named-import discipline below
+  // restricts CTAD to the read symbols only; mutation helpers
+  // (`createWorkItem`, `renameWorkItem`, `archiveWorkItem`,
+  // `createOrganisation`, `renameOrganisation`, etc.) are
+  // forbidden.
+  "@/governance/workItemStore",
+  "@/governance/orgStore",
 ];
 
 // Read-only named-import allowlist for the portfolio store. CTAD
@@ -170,6 +194,31 @@ const MODULE_CATALOG_STORE_READ_ONLY_NAMED_IMPORTS: readonly string[] = [
   "getModule",
   "Module",
   "getModulesForCapability",
+];
+// Phase-3 work-item store: CTAD reads `getWorkItem` (and adjacent
+// list helpers) to render the active Work Item title in the
+// design-shell top bar. All write helpers are forbidden.
+const WORK_ITEM_STORE_READ_ONLY_NAMED_IMPORTS: readonly string[] = [
+  "getWorkItem",
+  "listWorkItems",
+  "listWorkItemsForOrg",
+  "getEaBlueprintForOrg",
+  "WorkItem",
+  "WorkItemType",
+  "WORK_ITEM_TYPES",
+];
+// Phase-3 organisation store: CTAD reads `getOrganisation` for
+// the same top-bar context chip. Write helpers are forbidden.
+const ORG_STORE_READ_ONLY_NAMED_IMPORTS: readonly string[] = [
+  "getOrganisation",
+  "listOrganisations",
+  "Organisation",
+  "OrgSector",
+  "ORG_SECTORS",
+  "SECTOR_LABELS",
+  "NATURE_OF_BUSINESS_OPTIONS",
+  "NATURE_OF_BUSINESS_LABELS",
+  "NatureOfBusiness",
 ];
 
 // Generic enforcement helper. Forbids namespace, default, side-
@@ -305,6 +354,20 @@ export function assertNoForbiddenCtadImports(
       contents,
       path,
     );
+    assertReadOnlyStoreNamedImports(
+      "workItem",
+      /["'][^"']*governance\/workItemStore["']/,
+      WORK_ITEM_STORE_READ_ONLY_NAMED_IMPORTS,
+      contents,
+      path,
+    );
+    assertReadOnlyStoreNamedImports(
+      "org",
+      /["'][^"']*governance\/orgStore["']/,
+      ORG_STORE_READ_ONLY_NAMED_IMPORTS,
+      contents,
+      path,
+    );
   }
 }
 
@@ -389,6 +452,20 @@ function selfTestPhase3StoresReadOnlyScan(): void {
       writeHelper: "createModule",
       approved:
         `import { listModules, getModule, type Module } from "@/governance/moduleCatalogStore";`,
+    },
+    {
+      storeLabel: "workItem",
+      storePath: "@/governance/workItemStore",
+      writeHelper: "createWorkItem",
+      approved:
+        `import { getWorkItem, type WorkItem } from "@/governance/workItemStore";`,
+    },
+    {
+      storeLabel: "org",
+      storePath: "@/governance/orgStore",
+      writeHelper: "createOrganisation",
+      approved:
+        `import { getOrganisation, type Organisation } from "@/governance/orgStore";`,
     },
   ];
   for (const { storeLabel, storePath, writeHelper, approved } of cases) {

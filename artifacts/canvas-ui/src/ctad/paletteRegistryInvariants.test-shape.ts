@@ -40,6 +40,7 @@ import {
 import { permittedParentsFor } from "../acw/acwGrammar";
 import {
   CTAD_PALETTE,
+  CTAD_EDGE_PALETTE,
   CTAD_DIAGRAM_TYPE_LABEL,
 } from "./paletteRegistry";
 
@@ -127,5 +128,71 @@ for (const item of CTAD_PALETTE) {
 assertAllCtadLanguage([
   ...CTAD_PALETTE.map((p) => p.label),
   ...CTAD_PALETTE.map((p) => p.subLabel),
+  ...CTAD_EDGE_PALETTE.map((p) => p.label),
+  ...CTAD_EDGE_PALETTE.map((p) => p.subLabel),
   ...Object.values(CTAD_DIAGRAM_TYPE_LABEL),
 ]);
+
+// (7) Edge palette — same disciplines: paletteKind uniqueness,
+// ctad- namespace, known diagramType, known edgeKind, exact
+// per-diagram count of 1 (so every diagram gets exactly one
+// connection-flavoured edge tile in the design surface).
+{
+  const seen = new Set<string>();
+  const collide = new Set<string>(CTAD_PALETTE.map((p) => p.paletteKind));
+  for (const item of CTAD_EDGE_PALETTE) {
+    if (seen.has(item.paletteKind)) {
+      throw new Error(
+        `${PREFIX}: duplicate edge paletteKind "${item.paletteKind}".`,
+      );
+    }
+    if (collide.has(item.paletteKind)) {
+      throw new Error(
+        `${PREFIX}: edge paletteKind "${item.paletteKind}" collides with a node paletteKind. The two palettes share a namespace and must not overlap.`,
+      );
+    }
+    seen.add(item.paletteKind);
+    if (!item.paletteKind.startsWith("ctad-")) {
+      throw new Error(
+        `${PREFIX}: edge paletteKind "${item.paletteKind}" must start with "ctad-".`,
+      );
+    }
+    if (!isAcwDiagramType(item.diagramType)) {
+      throw new Error(
+        `${PREFIX}: edge item "${item.paletteKind}" references unknown diagramType "${item.diagramType}".`,
+      );
+    }
+    if (
+      typeof item.diagramSubtype !== "string" ||
+      item.diagramSubtype.length === 0
+    ) {
+      throw new Error(
+        `${PREFIX}: edge item "${item.paletteKind}" declares an empty diagramSubtype.`,
+      );
+    }
+  }
+  // Per-diagram edge count: exactly 1 each.
+  const expectedEdgeCounts: Readonly<Record<string, number>> = {
+    bpmn: 1,
+    erd: 1,
+    ddl: 1,
+    sequence: 1,
+    class: 1,
+  };
+  const edgeActual = new Map<string, number>();
+  for (const item of CTAD_EDGE_PALETTE) {
+    edgeActual.set(
+      item.diagramType,
+      (edgeActual.get(item.diagramType) ?? 0) + 1,
+    );
+  }
+  for (const t of ACW_DIAGRAM_TYPES) {
+    const have = edgeActual.get(t) ?? 0;
+    const want = expectedEdgeCounts[t];
+    if (want !== undefined && have !== want) {
+      throw new Error(
+        `${PREFIX}: diagram type "${t}" has ${have} edge palette tile(s); the Phase-3 contract pins this at ${want}. Update the expected-edge-count table here when the contract changes intentionally.`,
+      );
+    }
+  }
+}

@@ -77,6 +77,7 @@ import {
 import {
   permittedParentsFor,
   type AcwElementType,
+  type AcwExplicitEdgeKind,
 } from "../acw/acwGrammar";
 
 // CTAD palette items create logical nodes at the workspace root.
@@ -392,6 +393,100 @@ export function ctadPaletteItemByKind(
   kind: string,
 ): CtadPaletteItem | undefined {
   return CTAD_PALETTE.find((p) => p.paletteKind === kind);
+}
+
+// ---------------------------------------------------------------------------
+// CTAD Phase 3 — Edge palette.
+// ---------------------------------------------------------------------------
+//
+// Each diagram contributes one connection-flavoured edge tile. The
+// `edgeKind` is always `CONNECTS` because the underlying grammar
+// (acwGrammar.isPermittedEdge) restricts the other three kinds to
+// niche pairs (DATA_FLOW: System↔System or Component↔Component;
+// INTERFACES_WITH: System↔System; CONTAINS: redundant with the
+// parentId chain). CONNECTS, by contrast, allows every same-type
+// peer pair (Zone↔Zone, ComputeNode↔ComputeNode, System↔System,
+// Component↔Component) and so covers the practical drawing case
+// for every diagram surface. The diagram-specific UX intent
+// (e.g. "Sequence flow" vs "Foreign key") is preserved in
+// `diagramSubtype`, which the renderer can later branch on
+// (e.g. solid vs dashed line) without changing grammar.
+//
+// `subLabel` is presented in the tile tooltip; both `label` and
+// `subLabel` are vocabulary-clean (asserted at module load).
+export interface CtadEdgePaletteItem {
+  readonly paletteKind: string;
+  readonly diagramType: AcwDiagramType;
+  readonly diagramSubtype: string;
+  readonly edgeKind: AcwExplicitEdgeKind;
+  readonly label: string;
+  readonly subLabel: string;
+  readonly Icon: LucideIcon;
+}
+
+// dataTransfer key used by the edge-tile drag affordance. Distinct
+// from the node-tile key so the canvas drop handler never confuses
+// the two.
+export const CTAD_EDGE_PALETTE_DATA_KEY = "application/x-ctad-edge-palette-kind";
+
+export const CTAD_EDGE_PALETTE: readonly CtadEdgePaletteItem[] = Object.freeze([
+  Object.freeze<CtadEdgePaletteItem>({
+    paletteKind: "ctad-bpmn-sequence-flow",
+    diagramType: "bpmn",
+    diagramSubtype: "sequence-flow",
+    edgeKind: "CONNECTS",
+    label: "Sequence flow",
+    subLabel: "Step transition",
+    Icon: ArrowRight,
+  }),
+  Object.freeze<CtadEdgePaletteItem>({
+    paletteKind: "ctad-erd-relationship-line",
+    diagramType: "erd",
+    diagramSubtype: "relationship-line",
+    edgeKind: "CONNECTS",
+    label: "Relationship line",
+    subLabel: "Entity association",
+    Icon: GitMerge,
+  }),
+  Object.freeze<CtadEdgePaletteItem>({
+    paletteKind: "ctad-ddl-foreign-key-link",
+    diagramType: "ddl",
+    diagramSubtype: "foreign-key-link",
+    edgeKind: "CONNECTS",
+    label: "Foreign key link",
+    subLabel: "Cross-table reference",
+    Icon: LinkIcon,
+  }),
+  Object.freeze<CtadEdgePaletteItem>({
+    paletteKind: "ctad-sequence-message-line",
+    diagramType: "sequence",
+    diagramSubtype: "message-line",
+    edgeKind: "CONNECTS",
+    label: "Message",
+    subLabel: "Lifeline-to-lifeline call",
+    Icon: ArrowRight,
+  }),
+  Object.freeze<CtadEdgePaletteItem>({
+    paletteKind: "ctad-class-association",
+    diagramType: "class",
+    diagramSubtype: "association",
+    edgeKind: "CONNECTS",
+    label: "Association",
+    subLabel: "Class relationship",
+    Icon: LinkIcon,
+  }),
+] as const);
+
+export function ctadEdgePaletteItemsByDiagramType(
+  diagramType: AcwDiagramType,
+): readonly CtadEdgePaletteItem[] {
+  return CTAD_EDGE_PALETTE.filter((p) => p.diagramType === diagramType);
+}
+
+export function ctadEdgePaletteItemByKind(
+  kind: string,
+): CtadEdgePaletteItem | undefined {
+  return CTAD_EDGE_PALETTE.find((p) => p.paletteKind === kind);
 }
 
 // User-facing labels for the diagram selector. Short, descriptive,
