@@ -1,0 +1,225 @@
+## Task: Phase 3 – CTAD Rework: Multi‑Diagram Logical Design Platform
+
+You are working on `Grammar-Derivation-Backbone`. Phase 1A (Requirements Stores) and Phase 1B (SRS Export) are already merged. This task transforms CTAD from the original technology‑parameter explorer into an extensible **multi‑diagram logical design platform** that sits between ADC (requirements) and ACW/EAStudio (architecture visualisation). Every logical design element is stored in the existing ACW workspace (`acw‑1.0` schema, extended additively) and can later be **manually promoted** onto the high‑level EAStudio canvas.
+
+---
+
+### 1. Purpose of the Reworked CTAD
+
+CTAD now creates the **logical design** that traces back to user requirements (ADC) and forward to physical/visual architecture (ACW). It provides canvas‑based authoring for:
+
+- BPMN process diagrams
+- Entity‑Relationship Diagrams (ERD)
+- Data Definition Language (DDL) diagrams
+- UML Sequence Diagrams
+- UML Class Diagrams
+
+The diagram types are **extensible** – new modes can be added by extending a palette registry without changing the core editor.
+
+---
+
+### 2. Shared Storage Model
+
+All logical design nodes are stored in the **existing `acw.workspace.v1` store** (`acw‑1.0` schema). New optional fields on `AcwNode`:
+
+```ts
+diagramType?: 'bpmn' | 'erd' | 'ddl' | 'sequence' | 'class';
+diagramSubtype?: string;          // e.g. 'task', 'gateway', 'entity', 'table', 'lifeline'
+boundRequirementIds?: string[];   // references ADC UserRequirement ids
+moduleId?: string;                // references ADC Module id
+logicalPosition?: { x: number; y: number }; // position within the logical diagram canvas
+logicalParentId?: string;         // for grouping within a logical diagram (e.g., pool)
+logicalStyle?: Record<string, unknown>; // type‑specific rendering hints
+All fields are optional – absence means the node was created outside the CTAD canvas (e.g., directly in EAStudio) and is ignored by CTAD filters.
+
+The acwValidator.ts and acwStore.ts must be widened to accept these fields. Schema version stays acw‑1.0 – additive only.
+
+3. CTAD Canvas & Diagram Modes
+3.1 Diagram Editor Shell
+File: src/pages/ctad/CtadDesignShell.tsx (new route /ctad/design/:workItemId? – for now uses a placeholder work‑item id until Phase 2 lands).
+
+The shell renders a top bar with:
+
+A diagram‑type selector (BPMN, ERD, DDL, Sequence, Class).
+
+A “Logical Nodes” side panel that lists all CTAD‑created elements for the current work item, allowing the architect to see and select nodes across diagrams.
+
+A “Promote to EAStudio” section that filters nodes without a high‑level canvas placement and lets the architect drag them into the EAStudio workspace (manual promotion – see §5).
+
+The main canvas area switches between diagram‑specific palettes and rendering rules based on the selected mode.
+
+3.2 Diagram Mode Palettes
+Each mode has a dedicated palette section, defined in ctad/paletteRegistry.ts (new file, follow the ACW palette pattern). Palettes are extendable – an ALL_CTAD_PALETTES registry maps a diagramType to an array of palette items.
+
+Palette items for each mode:
+
+BPMN
+
+Pool (Zone, icon Container)
+
+Lane (Zone, icon Columns)
+
+Task (System, icon Square)
+
+Gateway Exclusive (System, icon Diamond)
+
+Gateway Parallel (System, icon DiamondPlus)
+
+Gateway Inclusive (System, icon Diamond)
+
+Start Event (System, icon Circle)
+
+Intermediate Event (System, icon CircleDot)
+
+End Event (System, icon CircleSlash)
+
+Sequence Flow (edge, CONNECTS)
+
+Message Flow (edge, CONNECTS)
+
+Data Object (Component, icon FileText)
+
+Text Annotation (Component, icon StickyNote)
+
+Group (Zone, icon Frame)
+
+ERD
+
+Entity (System, icon Table)
+
+Attribute (Component, icon List)
+
+Primary Key Attribute (Component, icon Key)
+
+Relationship – 1:1 (edge)
+
+Relationship – 1:N (edge)
+
+Relationship – N:M (edge)
+
+DDL
+
+Table (System, icon Table)
+
+Column (Component, icon Columns)
+
+Primary Key (Component, icon Key)
+
+Foreign Key (edge)
+
+Index (Component, icon Search)
+
+Unique Constraint (Component, icon ShieldCheck)
+
+Sequence
+
+Lifeline (System, icon RectangleVertical)
+
+Activation Bar (Component, icon RectangleVertical)
+
+Synchronous Message (edge, CONNECTS)
+
+Asynchronous Message (edge, CONNECTS)
+
+Self Message (edge, CONNECTS)
+
+Fragment (alt/opt/loop) (Zone, icon Frame)
+
+Note (Component, icon StickyNote)
+
+Class
+
+Class (System, icon Box)
+
+Abstract Class (System, icon Box)
+
+Interface (System, icon Circle)
+
+Association (edge)
+
+Aggregation (edge)
+
+Composition (edge)
+
+Generalization (edge)
+
+Realization (edge)
+
+All palette icons use lucide‑react only. Labels are asserted via assertAllCtadLanguage (CTAD has its own standalone vocabulary tier). No emoji.
+
+3.3 Canvas Rendering
+The main canvas reuses InteractiveCanvas2D from ACW, which already supports drag‑and‑drop, selection, connections (CONNECTS edges), and properties.
+
+For each diagram mode, the canvas receives a filtered node set (nodes where diagramType === currentMode). Edges are also filtered to those whose endpoints are both in the filtered set.
+
+Connection rules (edge kinds) are taken from the ACW grammar; the CONNECTS kind is used for all logical connections, differentiated by diagramSubtype (e.g., sequence‑synchronous‑message).
+
+The canvas renders each node according to its type and diagramSubtype (simple shape mapping – boxes, diamonds, circles – no complex BPMN‑shape rendering needed initially; the icon and label are sufficient).
+
+The properties panel (right‑side) shows the node’s label, description, and a “Linked Requirements” section (multi‑select from listRequirements()). It also shows the node’s moduleId if set.
+
+4. Traceability to ADC Requirements & Modules
+When creating or editing a CTAD node, the properties panel includes a “Linked Requirements” field (a dropdown or multi‑select populated from requirementsStore.listRequirements() for the placeholder work item). Selecting requirements populates boundRequirementIds.
+
+The node can also be linked to an ADC Module via a “Module” selector (populated from moduleCatalogStore.listModules()). This sets moduleId.
+
+Later, the ADC requirements view (already in Phase 1A) can show a “Referenced in Design” section by querying all ACW nodes with a matching boundRequirementIds entry. This cross‑reference is read‑only and not needed for Phase 3 to be complete, but the data model supports it.
+
+5. Manual Promotion to EAStudio (High‑Level Canvas)
+Architects can promote CTAD logical nodes to the EAStudio high‑level canvas manually:
+
+In the CTAD shell, the “Logical Nodes” side panel (or a dedicated “Promote” view) lists all logical nodes that have diagramType set but no parentId pointing to a high‑level domain container (i.e., they haven’t yet been placed on the high‑level canvas).
+
+The architect drags a node from this panel onto a designated drop zone (a small preview of the EAStudio domain quadrants). The drop handler sets:
+
+parentId → the appropriate EAStudio domain container ID (domain-business, domain‑application, etc., determined by the node’s moduleId or user selection).
+
+x, y → a default position or the drop coordinates.
+
+The node now appears in EAStudio’s appropriate domain quadrant as a regular ACW node, retaining its boundRequirementIds, moduleId, and diagramType metadata for drill‑down.
+
+The promotion is manual and optional – logical nodes that are never promoted remain visible only within CTAD and are accessible via drill‑down from EAStudio (future enhancement).
+
+6. Integration with the Work‑Item Context
+Since Phase 2 (Organisations & Work Items) is not yet implemented, use the same placeholder work‑item ID pattern as Phase 1A:
+
+Hard‑code a default workItemId in a temporary config (exported from ctad/designWorkItemPlaceholder.ts).
+
+All CTAD stores read and write using the existing unscoped keys (or use getScopedKey with placeholder org/work‑item). When Phase 2 lands, only the placeholder constant needs to change.
+
+7. Build‑Time Invariants
+Add ctad/paletteRegistryInvariants.test-shape.ts – asserts all palette kinds are unique, every domain is a valid diagramType, no emoji, all labels pass assertAllCtadLanguage.
+
+Update acwGrammarInvariants.test-shape.ts and acwGrammarV2Invariants.test-shape.ts to accept the new optional fields (diagramType, diagramSubtype, boundRequirementIds, moduleId, logicalPosition, logicalParentId, logicalStyle).
+
+acwIsolationInvariants.test-shape.ts – ensure CTAD design files (under src/pages/ctad/, src/components/ctad/) are permitted to import from governance/requirementsStore and governance/moduleCatalogStore (read‑only). Update allowlist accordingly.
+
+8. Extensibility
+The diagram type registry in ctad/paletteRegistry.ts is an open map. To add a new diagram type (e.g., Use Case, Data Flow), a developer only needs to:
+
+Add a new key to the registry.
+
+Define its palette items.
+
+Add a matching filter in the CTAD shell (or make the shell iterate over registry keys automatically).
+
+9. Acceptance Criteria
+The CTAD design shell loads at /ctad/design (or a placeholder route) and shows a canvas.
+
+The diagram‑type selector switches palettes and filters nodes.
+
+Dragging a BPMN task onto the canvas creates a node with diagramType: 'bpmn' and diagramSubtype: 'task'.
+
+Connection edges can be drawn between nodes within the same diagram.
+
+The properties panel allows linking a node to ADC requirements and an ADC Module.
+
+The “Promote to EAStudio” panel lists unpromoted logical nodes and allows dragging them into EAStudio (or a mock drop zone).
+
+All new static labels pass CTAD_FORBIDDEN via assertAllCtadLanguage.
+
+All existing and new invariants pass.
+
+The grammar engine, CNCF catalog, and ACW schema are untouched.
+
+CTAD’s original technology‑parameter exploration (the CtadShell and legacy routes) is left untouched — the reworked canvas is additive.

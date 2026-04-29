@@ -8,6 +8,9 @@ out-tsc
 .expo
 .expo-shared
 
+# api-server local persistence (development JSON store)
+artifacts/api-server/.data/
+
 # dependencies
 node_modules
 
