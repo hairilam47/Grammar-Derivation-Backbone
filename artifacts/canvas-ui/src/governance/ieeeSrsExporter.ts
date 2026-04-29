@@ -173,6 +173,20 @@ function resolveTitleFieldValue(
   }
 }
 
+// Tiny placeholder interpolator. Replaces every `{name}` token in
+// `template` with the matching value from `vars`. Unknown tokens
+// are left as-is (rendered literally) rather than throwing, so a
+// template author who introduces an unsupported token sees the bad
+// token in the output instead of crashing the export.
+function interpolate(
+  template: string,
+  vars: Readonly<Record<string, string>>,
+): string {
+  return template.replace(/\{(\w+)\}/g, (match, name: string) =>
+    Object.prototype.hasOwnProperty.call(vars, name) ? vars[name] : match,
+  );
+}
+
 function buildTitlePage(
   ctx: SrsContext,
   cfg: SrsTemplateConfig,
@@ -181,11 +195,19 @@ function buildTitlePage(
   const tp = cfg.titlePage;
   const statusValue = isDraft ? tp.statusLabels.draft : tp.statusLabels.frozen;
   const contractLine = ctx.contract
-    ? `Contract ${ctx.contract.contractId} frozen at ${ctx.contract.frozenAt} by ${ctx.contract.frozenBy}`
-    : "No requirements contract on file (live draft data set).";
+    ? interpolate(tp.contractLine.withContract, {
+        contractId: ctx.contract.contractId,
+        frozenAt: ctx.contract.frozenAt,
+        frozenBy: ctx.contract.frozenBy,
+      })
+    : tp.contractLine.withoutContract;
   const revisionLine = ctx.contract
-    ? `Revision: contract-bound (${ctx.contract.summary.total} requirement(s) frozen)`
-    : `Revision: live (${ctx.requirements.length} requirement(s) currently captured)`;
+    ? interpolate(tp.revisionLine.withContract, {
+        total: String(ctx.contract.summary.total),
+      })
+    : interpolate(tp.revisionLine.withoutContract, {
+        captured: String(ctx.requirements.length),
+      });
   // Approving authority is the freezer of the most recent contract;
   // when no contract exists the pending label from the title-page
   // config is rendered.

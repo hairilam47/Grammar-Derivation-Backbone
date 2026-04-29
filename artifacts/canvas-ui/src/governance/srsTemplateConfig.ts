@@ -99,6 +99,25 @@ export interface SrsTitlePageConfig {
     readonly heading: string;
     readonly columns: readonly [string, string, string, string];
   };
+  // Italic provenance lines below the title-page field list.
+  // Each template carries `{name}` placeholders that the renderer
+  // interpolates against the live document context. Available
+  // placeholders are documented next to each template below; the
+  // renderer treats unknown placeholders as literal text so a
+  // template author cannot accidentally crash the export by adding
+  // an unsupported token.
+  readonly contractLine: {
+    // Placeholders: {contractId} {frozenAt} {frozenBy}
+    readonly withContract: string;
+    // No placeholders.
+    readonly withoutContract: string;
+  };
+  readonly revisionLine: {
+    // Placeholders: {total}
+    readonly withContract: string;
+    // Placeholders: {captured}
+    readonly withoutContract: string;
+  };
 }
 
 export interface SrsTemplateConfig {
@@ -143,6 +162,17 @@ export const DEFAULT_SRS_TEMPLATE: SrsTemplateConfig = Object.freeze({
         "Frozen By",
         "Requirements",
       ]) as readonly [string, string, string, string],
+    }),
+    contractLine: Object.freeze({
+      withContract:
+        "Contract {contractId} frozen at {frozenAt} by {frozenBy}",
+      withoutContract:
+        "No requirements contract on file (live draft data set).",
+    }),
+    revisionLine: Object.freeze({
+      withContract: "Revision: contract-bound ({total} requirement(s) frozen)",
+      withoutContract:
+        "Revision: live ({captured} requirement(s) currently captured)",
     }),
   }),
   sections: Object.freeze([
@@ -243,6 +273,10 @@ function collectStaticTitles(cfg: SrsTemplateConfig): string[] {
     tp.pendingFreezeLabel,
     tp.revisionHistory.heading,
     ...tp.revisionHistory.columns,
+    tp.contractLine.withContract,
+    tp.contractLine.withoutContract,
+    tp.revisionLine.withContract,
+    tp.revisionLine.withoutContract,
   );
   return out;
 }
