@@ -250,13 +250,31 @@ export default function CtadDesignShell() {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [connectMode, setConnectMode] = useState<ConnectModeState | null>(null);
+  // Tracks which logical node (if any) is currently being dragged
+  // from the "Logical Nodes" panel toward a Promote quadrant. Set
+  // on dragStart, cleared on dragEnd / drop. Used by PromotePanel
+  // to show per-quadrant refusal feedback DURING the drag (so the
+  // user sees up-front which quadrants the grammar will accept,
+  // rather than only learning at drop time). Storing only the id
+  // (not the AcwNode) keeps the value stable across workspace
+  // re-renders.
+  const [draggedLogicalNodeId, setDraggedLogicalNodeId] = useState<
+    string | null
+  >(null);
 
   // Read-only requirement / module catalogs for the binding
   // dropdowns. Both stores are scope-aware (per work item) and
   // expose only stable read APIs to the CTAD allowlist; we read
   // them per render (O(N) cheap) since CTAD itself never mutates
   // either store.
-  const requirements: readonly Requirement[] = listRequirements();
+  // Pass the active Work Item id explicitly so the requirements
+  // dropdown is strictly scoped to the current Work Item — even
+  // though the store is already scope-aware, the explicit argument
+  // matches the documented "active Work Item only" intent and is
+  // robust to any future change in the store's default behaviour.
+  const requirements: readonly Requirement[] = listRequirements(
+    scope.workItemId ?? undefined,
+  );
   const modules: readonly Module[] = listModules();
 
   // Logical nodes for the currently selected diagram, restricted
@@ -673,6 +691,12 @@ export default function CtadDesignShell() {
     (parentId: string) =>
       (e: DragEvent<HTMLDivElement>) => {
         e.preventDefault();
+        // Always clear the drag-state hint, regardless of whether
+        // the drop succeeds or refuses — `onDragEnd` would also
+        // fire on a successful drop, but clearing here defends
+        // against browser quirks where dragend doesn't fire after
+        // a re-render triggered by the drop's state mutations.
+        setDraggedLogicalNodeId(null);
         const nodeId = e.dataTransfer.getData(CTAD_LOGICAL_NODE_DRAG_KEY);
         if (!nodeId) return;
         const node = nodeById.get(nodeId);
@@ -892,6 +916,10 @@ export default function CtadDesignShell() {
                                   n.id,
                                 );
                                 e.dataTransfer.effectAllowed = "move";
+                                setDraggedLogicalNodeId(n.id);
+                              }}
+                              onDragEnd={() => {
+                                setDraggedLogicalNodeId(null);
                               }}
                               onClick={selectThisRow}
                               onKeyDown={(e) => {
@@ -1079,6 +1107,11 @@ export default function CtadDesignShell() {
               activeNode={
                 selectedNode !== null && selectedNode.parentId === null
                   ? selectedNode
+                  : null
+              }
+              draggedNode={
+                draggedLogicalNodeId !== null
+                  ? (nodeById.get(draggedLogicalNodeId) ?? null)
                   : null
               }
               view={view}
@@ -1382,11 +1415,20 @@ function EdgeDetails({
 
 function PromotePanel({
   activeNode,
+  draggedNode,
   view,
   onPromote,
   onDrop,
 }: {
   readonly activeNode: AcwNode | null;
+  // The logical node currently being dragged from the "Logical
+  // Nodes" panel (null when no drag is in flight). When set, each
+  // quadrant runs the same pre-screen the drop handler will run,
+  // and visually marks itself as "refuses" if the grammar will
+  // reject (e.g. a System-typed node hovering over Business). This
+  // gives up-front feedback during the drag rather than only after
+  // the drop fires.
+  readonly draggedNode: AcwNode | null;
   readonly view: ValidatorWorkspaceView;
   readonly onPromote: (node: AcwNode, parentId: string) => void;
   readonly onDrop: (parentId: string) => (e: DragEvent<HTMLDivElement>) => void;
@@ -1408,33 +1450,67 @@ function PromotePanel({
                 view,
               );
         const clickEnabled = activeNode !== null && probe.ok;
+        // Drag-time feasibility: identical pre-screen but keyed on
+        // the dragged node, not the selected node. When a drag is
+        // in flight and this quadrant would refuse, we tag the
+        // outer drop card with `data-drag-refuses="true"` and a
+        // distinguishing border so the user sees it BEFORE drop.
+        const dragProbe =
+          draggedNode === null || !quadrantExists
+            ? ({ ok: true, reason: "" } as const)
+            : canCreateNode(
+                draggedNode.type as AcwElementType,
+                t.id,
+                view,
+              );
+        const dragInFlight = draggedNode !== null;
+        const dragRefuses = dragInFlight && !dragProbe.ok;
+        const dragAccepts = dragInFlight && dragProbe.ok && quadrantExists;
         // Visual hint:
-        //   - quadrant missing            → "(quadrant not seeded)"-equivalent: grey, click disabled
+        //   - quadrant missing            → grey, click disabled
         //   - no active node              → neutral "Drop a logical node here" (drop still works)
         //   - active node + grammar ok    → "Drop a logical node here" (click also works)
         //   - active node + grammar fail  → "(grammar refuses)" (click disabled, drop pre-screen will refuse)
         const showRefusedHint =
           quadrantExists && activeNode !== null && !probe.ok;
         const dropAvailable = quadrantExists; // drop always available when seeded
+        // Compose the outer card classes. When a drag is in flight,
+        // accepting quadrants get a positive ring and refusing
+        // quadrants get a muted/strikethrough-style appearance.
+        // When no drag is in flight, fall back to the prior look.
+        const cardClass = !dropAvailable
+          ? "border-border/30 bg-muted/30"
+          : dragRefuses
+            ? "border-destructive/40 bg-muted/40 opacity-60"
+            : dragAccepts
+              ? "border-foreground/60 bg-background ring-1 ring-foreground/30"
+              : "border-border/50 bg-background hover:bg-muted/50";
         return (
           <div
             key={t.id}
             onDragOver={(e) => {
+              // Only allow drop when the quadrant exists AND the
+              // grammar pre-screen accepts the dragged node. This
+              // makes the cursor reflect refusal (`dropEffect =
+              // "none"`) rather than promising a drop the handler
+              // would then refuse.
               if (
                 dropAvailable &&
                 e.dataTransfer.types.includes(CTAD_LOGICAL_NODE_DRAG_KEY)
               ) {
+                if (dragInFlight && !dragProbe.ok) {
+                  e.dataTransfer.dropEffect = "none";
+                  return;
+                }
                 e.preventDefault();
                 e.dataTransfer.dropEffect = "move";
               }
             }}
             onDrop={onDrop(t.id)}
             data-testid={`ctad-design-promote-drop-${t.id}`}
-            className={`rounded border ${
-              dropAvailable
-                ? "border-border/50 bg-background hover:bg-muted/50"
-                : "border-border/30 bg-muted/30"
-            }`}
+            data-drag-refuses={dragRefuses ? "true" : "false"}
+            data-drag-accepts={dragAccepts ? "true" : "false"}
+            className={`rounded border ${cardClass}`}
           >
             <button
               type="button"
