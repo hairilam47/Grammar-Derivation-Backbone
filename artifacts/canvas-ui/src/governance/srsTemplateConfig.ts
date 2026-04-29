@@ -59,8 +59,38 @@ export interface SrsTemplateMetadata {
   readonly lastUpdated: string;
 }
 
+// Title-page block. All labels rendered on the SRS title page —
+// document title, field captions, status text, and revision-history
+// table — are declared here so a template author can reorder, rename,
+// or translate them without touching the exporter. The exporter is
+// not allowed to hard-code any title-page label that is not derived
+// from this block. Every string in this block is asserted against
+// `assertAllGovernanceLanguage` at module load.
+export interface SrsTitlePageConfig {
+  readonly documentTitle: string;
+  readonly fieldLabels: {
+    readonly project: string;
+    readonly standard: string;
+    readonly templateVersion: string;
+    readonly templateLastUpdated: string;
+    readonly documentDate: string;
+    readonly approvingAuthority: string;
+    readonly status: string;
+  };
+  readonly statusLabels: {
+    readonly draft: string;
+    readonly frozen: string;
+  };
+  readonly pendingFreezeLabel: string;
+  readonly revisionHistory: {
+    readonly heading: string;
+    readonly columns: readonly [string, string, string, string];
+  };
+}
+
 export interface SrsTemplateConfig {
   readonly metadata: SrsTemplateMetadata;
+  readonly titlePage: SrsTitlePageConfig;
   readonly sections: readonly SrsSection[];
 }
 
@@ -69,6 +99,32 @@ export const DEFAULT_SRS_TEMPLATE: SrsTemplateConfig = Object.freeze({
     standard: "IEEE 830-1998",
     version: "1.0.0",
     lastUpdated: "2026-04-29",
+  }),
+  titlePage: Object.freeze({
+    documentTitle: "Software Requirements Specification",
+    fieldLabels: Object.freeze({
+      project: "Project",
+      standard: "Standard",
+      templateVersion: "Template Version",
+      templateLastUpdated: "Template Last Updated",
+      documentDate: "Document Date",
+      approvingAuthority: "Approving Authority",
+      status: "Status",
+    }),
+    statusLabels: Object.freeze({
+      draft: "DRAFT",
+      frozen: "FROZEN",
+    }),
+    pendingFreezeLabel: "Pending freeze",
+    revisionHistory: Object.freeze({
+      heading: "Revision History",
+      columns: Object.freeze([
+        "Version",
+        "Date",
+        "Frozen By",
+        "Requirements",
+      ]) as readonly [string, string, string, string],
+    }),
   }),
   sections: Object.freeze([
     {
@@ -145,6 +201,12 @@ export const DEFAULT_SRS_TEMPLATE: SrsTemplateConfig = Object.freeze({
 });
 
 // --- Module-load vocabulary guard --------------------------------------------
+//
+// Every fixed string a template author can place in the config —
+// section titles, subsection titles, and every title-page label —
+// is asserted at module load. A future template author who introduces
+// a forbidden term anywhere in the config fails the bundle load
+// rather than producing a polluted document.
 function collectStaticTitles(cfg: SrsTemplateConfig): string[] {
   const out: string[] = [cfg.metadata.standard];
   for (const section of cfg.sections) {
@@ -153,6 +215,22 @@ function collectStaticTitles(cfg: SrsTemplateConfig): string[] {
       out.push(sub.title);
     }
   }
+  const tp = cfg.titlePage;
+  out.push(
+    tp.documentTitle,
+    tp.fieldLabels.project,
+    tp.fieldLabels.standard,
+    tp.fieldLabels.templateVersion,
+    tp.fieldLabels.templateLastUpdated,
+    tp.fieldLabels.documentDate,
+    tp.fieldLabels.approvingAuthority,
+    tp.fieldLabels.status,
+    tp.statusLabels.draft,
+    tp.statusLabels.frozen,
+    tp.pendingFreezeLabel,
+    tp.revisionHistory.heading,
+    ...tp.revisionHistory.columns,
+  );
   return out;
 }
 

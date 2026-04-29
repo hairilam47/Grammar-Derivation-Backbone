@@ -75,7 +75,7 @@ export async function exportSRS(
   const cfg = options?.template ?? DEFAULT_SRS_TEMPLATE;
   const ctx = buildContext(options?.workItemId);
   const isDraft = isDraftDataset(ctx);
-  const filename = buildFilename(ctx, format, isDraft);
+  const filename = buildFilename(ctx, cfg, format, isDraft);
   const titlePage = buildTitlePage(ctx, cfg, isDraft);
   if (format === "pdf") {
     renderPdf(cfg, ctx, titlePage, isDraft, filename);
@@ -89,27 +89,33 @@ export async function exportSRS(
 // ---------------------------------------------------------------------------
 
 function buildContext(workItemIdOpt?: string): SrsContext {
-  const workItem = getPlaceholderWorkItem();
-  const workItemId = workItemIdOpt ?? workItem.workItemId;
+  const placeholder = getPlaceholderWorkItem();
+  const workItemId = workItemIdOpt ?? placeholder.workItemId;
+  // Title resolution: when the caller did not override the work-item
+  // id (or overrode it with the placeholder id), we use the
+  // placeholder title verbatim. When they passed a different id, the
+  // placeholder title would be misleading, so we synthesise a title
+  // from the override id. This keeps `projectName` and the data
+  // queries (requirements, contracts) consistent with each other.
+  const workItemTitle =
+    workItemId === placeholder.workItemId
+      ? placeholder.title
+      : `Work Item ${workItemId}`;
   const modules = listModules();
   const requirements = listRequirements(workItemId);
   const contracts = listContracts(workItemId);
   const contract =
     contracts.length === 0 ? null : contracts[contracts.length - 1];
-  let acwWorkspace = null;
-  try {
-    acwWorkspace = getWorkspace();
-  } catch {
-    acwWorkspace = null;
-  }
-  let ctadArchitectures: ReturnType<typeof listArchitectures> = [];
-  try {
-    ctadArchitectures = listArchitectures();
-  } catch {
-    ctadArchitectures = [];
-  }
+  // The ACW and CTAD store accessors are trusted local APIs in the
+  // canvas-ui artifact and are expected to return well-typed values
+  // (the ACW store returns `getWorkspace()` from a frozen in-memory
+  // snapshot, the CTAD store returns an array). We let any read
+  // failure bubble up so it's caught by the SrsExportButton's error
+  // surface rather than silently rendering an empty document.
+  const acwWorkspace = getWorkspace();
+  const ctadArchitectures = listArchitectures();
   return {
-    workItem: { workItemId, title: workItem.title },
+    workItem: { workItemId, title: workItemTitle },
     modules,
     requirements,
     contract,
@@ -127,12 +133,11 @@ interface RevisionEntry {
 }
 
 interface TitlePageData {
-  readonly documentTitle: string;
   readonly projectName: string;
-  readonly standard: string;
-  readonly version: string;
-  readonly lastUpdated: string;
-  readonly status: "DRAFT" | "FROZEN";
+  readonly standardValue: string;
+  readonly templateVersionValue: string;
+  readonly templateLastUpdatedValue: string;
+  readonly statusValue: string;
   readonly documentDate: string;
   readonly approvingAuthority: string;
   readonly contractLine: string;
@@ -140,14 +145,13 @@ interface TitlePageData {
   readonly revisionHistory: readonly RevisionEntry[];
 }
 
-const PENDING_FREEZE = "Pending freeze";
-
 function buildTitlePage(
   ctx: SrsContext,
   cfg: SrsTemplateConfig,
   isDraft: boolean,
 ): TitlePageData {
-  const status: "DRAFT" | "FROZEN" = isDraft ? "DRAFT" : "FROZEN";
+  const tp = cfg.titlePage;
+  const statusValue = isDraft ? tp.statusLabels.draft : tp.statusLabels.frozen;
   const contractLine = ctx.contract
     ? `Contract ${ctx.contract.contractId} frozen at ${ctx.contract.frozenAt} by ${ctx.contract.frozenBy}`
     : "No requirements contract on file (live draft data set).";
@@ -155,10 +159,11 @@ function buildTitlePage(
     ? `Revision: contract-bound (${ctx.contract.summary.total} requirement(s) frozen)`
     : `Revision: live (${ctx.requirements.length} requirement(s) currently captured)`;
   // Approving authority is the freezer of the most recent contract;
-  // when no contract exists it is explicitly marked as pending.
+  // when no contract exists the pending label from the title-page
+  // config is rendered.
   const approvingAuthority = ctx.contract
     ? ctx.contract.frozenBy
-    : PENDING_FREEZE;
+    : tp.pendingFreezeLabel;
   // Document date is the timestamp of the most recent freeze when one
   // exists; otherwise the current ISO date so the rendered document
   // always carries a date field.
@@ -169,7 +174,8 @@ function buildTitlePage(
   // order. Versions are derived as v1, v2, ... by index in the
   // ascending list returned by listContracts; this gives a stable,
   // reproducible numbering tied to freeze order rather than to wall
-  // clock. Empty history renders as a single placeholder row.
+  // clock. Empty history renders as a single placeholder row at
+  // render time (this stage just carries the data).
   const revisionHistory: RevisionEntry[] = ctx.allContracts.map((c, i) => ({
     version: `v${i + 1}`,
     date: c.frozenAt,
@@ -177,12 +183,11 @@ function buildTitlePage(
     requirementCount: c.summary.total,
   }));
   return {
-    documentTitle: "Software Requirements Specification",
     projectName: ctx.workItem.title,
-    standard: cfg.metadata.standard,
-    version: cfg.metadata.version,
-    lastUpdated: cfg.metadata.lastUpdated,
-    status,
+    standardValue: cfg.metadata.standard,
+    templateVersionValue: cfg.metadata.version,
+    templateLastUpdatedValue: cfg.metadata.lastUpdated,
+    statusValue,
     documentDate,
     approvingAuthority,
     contractLine,
@@ -207,12 +212,15 @@ function sanitiseFilenameSegment(s: string): string {
 
 function buildFilename(
   ctx: SrsContext,
+  cfg: SrsTemplateConfig,
   format: SrsExportFormat,
   isDraft: boolean,
 ): string {
   const project = sanitiseFilenameSegment(ctx.workItem.title);
-  const status = isDraft ? "DRAFT" : "FROZEN";
-  return `SRS_${project}_${status}.${format}`;
+  const status = isDraft
+    ? cfg.titlePage.statusLabels.draft
+    : cfg.titlePage.statusLabels.frozen;
+  return `SRS_${project}_${sanitiseFilenameSegment(status)}.${format}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -239,7 +247,7 @@ function renderPdf(
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     doc.setTextColor(120);
-    const headerLine = `${title.standard}  ·  v${title.version}  ·  ${title.lastUpdated}  ·  ${title.status}`;
+    const headerLine = `${title.standardValue}  ·  v${title.templateVersionValue}  ·  ${title.templateLastUpdatedValue}  ·  ${title.statusValue}`;
     doc.text(headerLine, margin, 30);
     doc.setDrawColor(200);
     doc.line(margin, 40, pageWidth - margin, 40);
@@ -357,21 +365,24 @@ function renderPdf(
   }
 
   // --- Title page ---
+  // All labels below are read from cfg.titlePage so a template
+  // author can rename or reorder them without touching this file.
+  const tp = cfg.titlePage;
   addHeader();
-  writeWrapped(title.documentTitle, 22, "bold");
+  writeWrapped(tp.documentTitle, 22, "bold");
   y += 6;
-  writeWrapped(`Project: ${title.projectName}`, 12, "normal");
+  writeWrapped(`${tp.fieldLabels.project}: ${title.projectName}`, 12, "normal");
   y += 4;
-  writeWrapped(`Standard: ${title.standard}`, 11, "normal");
-  writeWrapped(`Template Version: ${title.version}`, 11, "normal");
-  writeWrapped(`Template Last Updated: ${title.lastUpdated}`, 11, "normal");
-  writeWrapped(`Document Date: ${title.documentDate}`, 11, "normal");
-  writeWrapped(`Approving Authority: ${title.approvingAuthority}`, 11, "normal");
-  writeWrapped(`Status: ${title.status}`, 11, "bold");
+  writeWrapped(`${tp.fieldLabels.standard}: ${title.standardValue}`, 11, "normal");
+  writeWrapped(`${tp.fieldLabels.templateVersion}: ${title.templateVersionValue}`, 11, "normal");
+  writeWrapped(`${tp.fieldLabels.templateLastUpdated}: ${title.templateLastUpdatedValue}`, 11, "normal");
+  writeWrapped(`${tp.fieldLabels.documentDate}: ${title.documentDate}`, 11, "normal");
+  writeWrapped(`${tp.fieldLabels.approvingAuthority}: ${title.approvingAuthority}`, 11, "normal");
+  writeWrapped(`${tp.fieldLabels.status}: ${title.statusValue}`, 11, "bold");
   writeWrapped(title.contractLine, 10, "italic");
   writeWrapped(title.revisionLine, 10, "italic");
   y += 10;
-  writeWrapped("Revision History", 12, "bold");
+  writeWrapped(tp.revisionHistory.heading, 12, "bold");
   y += 4;
   {
     const histRows: string[][] =
@@ -383,7 +394,7 @@ function renderPdf(
             r.frozenBy,
             String(r.requirementCount),
           ]);
-    drawTable(["Version", "Date", "Frozen By", "Requirements"], histRows);
+    drawTable(tp.revisionHistory.columns, histRows);
   }
   y += 14;
 
@@ -436,8 +447,9 @@ function renderPdf(
 
 function buildRevisionHistoryTable(
   history: readonly RevisionEntry[],
+  columns: readonly [string, string, string, string],
 ): Table {
-  const headerCells = ["Version", "Date", "Frozen By", "Requirements"].map(
+  const headerCells = columns.map(
     (h) =>
       new TableCell({
         children: [
@@ -496,39 +508,45 @@ async function renderDocx(
   isDraft: boolean,
   filename: string,
 ): Promise<void> {
-  const headerLine = `${title.standard}  ·  v${title.version}  ·  ${title.lastUpdated}  ·  ${title.status}`;
+  const tp = cfg.titlePage;
+  const headerLine = `${title.standardValue}  ·  v${title.templateVersionValue}  ·  ${title.templateLastUpdatedValue}  ·  ${title.statusValue}`;
+  // Document running-header banner: derived from the same data flag
+  // that drives the DRAFT watermark, with the visible label coming
+  // from the title-page status labels in the template config.
   const draftHeaderText = isDraft
-    ? "DRAFT — Not Frozen"
+    ? `${tp.statusLabels.draft} — Not Frozen`
     : "Frozen Requirements Contract";
 
   const children: (Paragraph | Table)[] = [];
-  // Title page
+  // Title page — every label below is read from cfg.titlePage so a
+  // template author can rename or reorder them without touching this
+  // file.
   children.push(
     new Paragraph({
       heading: HeadingLevel.TITLE,
-      children: [new TextRun({ text: title.documentTitle, bold: true, size: 44 })],
+      children: [new TextRun({ text: tp.documentTitle, bold: true, size: 44 })],
     }),
     new Paragraph({
-      children: [new TextRun({ text: `Project: ${title.projectName}`, size: 24 })],
+      children: [new TextRun({ text: `${tp.fieldLabels.project}: ${title.projectName}`, size: 24 })],
       spacing: { after: 120 },
     }),
     new Paragraph({
-      children: [new TextRun({ text: `Standard: ${title.standard}`, size: 22 })],
+      children: [new TextRun({ text: `${tp.fieldLabels.standard}: ${title.standardValue}`, size: 22 })],
     }),
     new Paragraph({
-      children: [new TextRun({ text: `Template Version: ${title.version}`, size: 22 })],
+      children: [new TextRun({ text: `${tp.fieldLabels.templateVersion}: ${title.templateVersionValue}`, size: 22 })],
     }),
     new Paragraph({
-      children: [new TextRun({ text: `Template Last Updated: ${title.lastUpdated}`, size: 22 })],
+      children: [new TextRun({ text: `${tp.fieldLabels.templateLastUpdated}: ${title.templateLastUpdatedValue}`, size: 22 })],
     }),
     new Paragraph({
-      children: [new TextRun({ text: `Document Date: ${title.documentDate}`, size: 22 })],
+      children: [new TextRun({ text: `${tp.fieldLabels.documentDate}: ${title.documentDate}`, size: 22 })],
     }),
     new Paragraph({
-      children: [new TextRun({ text: `Approving Authority: ${title.approvingAuthority}`, size: 22 })],
+      children: [new TextRun({ text: `${tp.fieldLabels.approvingAuthority}: ${title.approvingAuthority}`, size: 22 })],
     }),
     new Paragraph({
-      children: [new TextRun({ text: `Status: ${title.status}`, bold: true, size: 22 })],
+      children: [new TextRun({ text: `${tp.fieldLabels.status}: ${title.statusValue}`, bold: true, size: 22 })],
       spacing: { after: 120 },
     }),
     new Paragraph({
@@ -539,10 +557,10 @@ async function renderDocx(
       spacing: { after: 240 },
     }),
     new Paragraph({
-      children: [new TextRun({ text: "Revision History", bold: true, size: 24 })],
+      children: [new TextRun({ text: tp.revisionHistory.heading, bold: true, size: 24 })],
       spacing: { before: 120, after: 80 },
     }),
-    buildRevisionHistoryTable(title.revisionHistory),
+    buildRevisionHistoryTable(title.revisionHistory, tp.revisionHistory.columns),
     new Paragraph({
       children: [new TextRun({ text: "", size: 20 })],
       spacing: { after: 240 },
@@ -587,7 +605,7 @@ async function renderDocx(
 
   const doc = new Document({
     creator: "Architecture Decision Canvas",
-    title: title.documentTitle,
+    title: tp.documentTitle,
     sections: [
       {
         properties: {
