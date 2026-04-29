@@ -1,0 +1,210 @@
+## Task: Phase 2 – SaaS Onboarding: Organisations & Work Items
+
+You are working on `Grammar-Derivation-Backbone`. This task introduces multi‑tenant organisation isolation and a top‑level Work‑Item hierarchy that scopes all downstream work (ADC, CTAD, ACW). It replaces the current three‑card landing page with an onboarding flow that ensures every architect works within an **Organisation** and a **Work Item** before accessing any tool.
+
+**Core principle:** Every piece of data is now scoped under `orgId` and `workItemId`. All existing stores must use dynamic keys derived from these two identifiers. The existing tools (ADC, CTAD, ACW) are unchanged in function; they simply receive a scoped storage context.
+
+---
+
+### 1. New Stores
+
+#### 1.1 Organisation Store
+- **File:** `governance/orgStore.ts`
+- **Storage key:** `adc.organizations.v1` (unscoped — this is the only store shared across orgs)
+- **Schema version:** `org‑1.0`
+- **Shape:**
+  ```ts
+  interface Organization {
+    orgId: string;             // slug, e.g., "gov‑immigration‑malaysia"
+    name: string;
+    sector: 'government' | 'private‑sector';
+    natureOfBusiness: string;  // from a fixed taxonomy eventually, free‑text for now
+    logo?: string;             // base64 or URL, optional
+    createdAt: string;
+    updatedAt: string;
+  }
+Functions: createOrganization, updateOrganization, removeOrganization, listOrganizations, getOrganization.
+
+Validation: orgId must match ^[a-z0-9]+(?:-[a-z0-9]+)*$; name required; sector must be one of the two values.
+
+Default: On first app launch, if no organisations exist, optionally seed a demo organisation.
+
+1.2 Work‑Item Store
+File: governance/workItemStore.ts
+
+Storage key: adc.work‑items.v1 (unscoped — we'll later scope reads by orgId via a filter, or we can store an index; for now, store all work items in one key with an orgId field and filter in queries)
+
+Schema version: wi‑1.0
+
+Shape:
+
+ts
+interface WorkItem {
+  workItemId: string;        // slug, e.g., "replace‑immigration‑system‑2027"
+  orgId: string;
+  type: 'project' | 'enhancement' | 'change‑request' | 'ea‑blueprint';
+  name: string;
+  description: string;
+  derivedFromWorkItemId?: string; // for enhancements/CRs
+  purpose?: string;           // added for SRS later
+  audience?: string[];
+  assumptions?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+Functions: createWorkItem, updateWorkItem, removeWorkItem, listWorkItems(orgId), getWorkItem.
+
+Constraint enforcement:
+
+On creation, if type is enhancement or change‑request, there must exist at least one work item in the same org with type === 'ea‑blueprint' (or simply any existing work item that represents the EA blueprint — we can check for a special flag on the org or a dedicated work item with id ea‑blueprint). For now, enforce: if type is not ea‑blueprint and not project, verify that the org has at least one ea‑blueprint work item.
+
+An organisation automatically gets an ea‑blueprint work item created when the org is first set up (see step 2).
+
+Default: When a new organisation is created, automatically create a work item with workItemId = 'ea‑blueprint', type = 'ea‑blueprint', and name = 'Enterprise Architecture Blueprint'. This is the master diagram for the org.
+
+2. Dynamic Storage Key Scoping
+Create a utility module governance/storageKeyUtils.ts that exports:
+
+ts
+function getScopedKey(baseKey: string, orgId: string, workItemId: string): string;
+Example: getScopedKey('adc.portfolio.v1', 'gov-immigration', 'replace‑system') → "gov-immigration:replace‑system:adc.portfolio.v1".
+
+All existing stores (portfolio, signals, requirements, module catalog, CTAD state, ACW workspace, ACW view state, ACW track3 prefs, architecture attachments, organisational units) must be updated to use this function. They must read the current orgId and workItemId from a shared context (see step 3).
+
+Stores that are organisation‑level (like the OU store, module catalog) may be scoped only by orgId and not by workItemId — decide per store:
+
+moduleCatalogStore → scoped by orgId only (Modules belong to an org, not a work item)
+
+requirementsStore → scoped by orgId + workItemId
+
+requirementsContractStore → scoped by orgId + workItemId
+
+portfolioStore → scoped by orgId + workItemId
+
+signalsStore → scoped by orgId + workItemId
+
+ctadStore → scoped by orgId + workItemId
+
+acwStore → scoped by orgId + workItemId
+
+acwViewState → scoped by orgId + workItemId
+
+track3ViewPrefs → scoped by orgId + workItemId
+
+architectureAttachmentStore → scoped by orgId + workItemId
+
+ouStore → scoped by orgId only
+
+3. Current Context Provider
+Create a React context CurrentOrgWorkItemContext that holds:
+
+ts
+{
+  orgId: string;
+  workItemId: string;
+  setOrgId: (id: string) => void;
+  setWorkItemId: (id: string) => void;
+}
+The context is provided at the top of the app by a new AppShell component that wraps the router.
+
+On app load, read app:currentOrgId and app:currentWorkItemId from localStorage to restore the last session. If no current org is set, display the Organisation Selector page (step 4). If an org is set but no work item, display the Work‑Item Dashboard (step 5).
+
+All stores that need scoped keys will use a custom hook useScopedKey(baseKey) that reads the context and returns the full scoped key, or a direct import from storageKeyUtils with the current ids obtained from a global getter (to avoid hook rules in non‑React modules). Since many stores are plain TS modules, we can store the current org and work item on a simple mutable object exported from storageKeyUtils.ts and update it from the React context when it changes.
+
+4. Organisation Selector / Onboarding Page
+Route: /onboarding (or / when no org is set).
+
+UI:
+
+Header: “Welcome. Select an organisation or create a new one.”
+
+Glass‑morphism cards for each existing organisation, showing name, sector, nature of business, and a placeholder logo.
+
+A prominent “New Organisation” button.
+
+Clicking an org card sets it as current and navigates to the Work‑Item Dashboard.
+
+New Organisation form: (modal or separate page)
+
+Organisation Name (text input)
+
+Sector (dropdown: Government / Private Sector)
+
+Nature of Business (dropdown: a short initial list like “Financial Services”, “Healthcare”, “Government Administration”, “Telecommunications”, “Manufacturing”, “Retail”, “Other”)
+
+On submit, call createOrganization, which automatically creates the ea‑blueprint work item, sets the current org in context and localStorage, and navigates to the Work‑Item Dashboard.
+
+5. Work‑Item Dashboard
+Route: /dashboard (or / after org is selected).
+
+UI:
+
+Shows the current organisation name at the top, with an option to switch (navigates back to onboarding).
+
+Lists all work items for the current org, grouped by type: EA Blueprint (always one), Projects, Enhancements, Change Requests.
+
+Each card shows: name, type badge, description preview, last updated.
+
+“New Work Item” button → modal:
+
+Name, Description
+
+Type: Project (always available), Enhancement (available if org has an EA blueprint), Change Request (same condition).
+
+For Enhancement/CR, optionally link to the existing EA blueprint work item (auto‑selected if only one).
+
+Clicking a work item card sets it as current and navigates to the Work‑Item Workspace (step 6).
+
+6. Work‑Item Workspace (Replaces Three‑Card Landing)
+Route: /workspace
+
+UI:
+
+A dashboard‑style layout with three main cards/tabs:
+
+User Requirements (ADC) → opens the new ADC wizard at /decision‑canvas (already built in Phase 1A).
+
+Logical Design (CTAD) → opens CTAD at /ctad (currently unchanged; will later be reworked).
+
+Architecture (ACW) → opens EAStudio at /workspace/studio (or the classic ACW lenses).
+
+The current work item name and org name are shown in a header bar.
+
+The left sidebar (AppSidebar) already has links; we can keep them or adapt. For now, the workspace is a simple hub.
+
+7. Migration of Existing Data
+Users who already have data in flat (unscoped) keys need a one‑time migration.
+
+On first load after the onboarding flow is introduced, if a currentOrgId is set but old data is under unscoped keys, move the data to new scoped keys.
+
+If no currentOrgId is set, prompt the user to create an organisation, then migrate.
+
+Migration logic: for each known unscoped key (list hard‑coded), read the data, rewrite under the scoped key, then remove the old key (optional). Provide a migration utility migrateToScopedStorage(orgId, workItemId).
+
+8. Invariants & Vocabulary
+Add invariant modules for orgStore and workItemStore (schema version lock, field validation, ea‑blueprint automatic creation logic, enhancement/CR constraint).
+
+Update all existing store invariants to use scoped keys (or to accept a getKey function). This may require refactoring invariant modules to accept dynamic keys.
+
+All new UI labels (sector names, nature of business, button texts) must pass vocabulary guard. The sector labels “Government” and “Private Sector” are neutral; the nature of business list must be curated to avoid forbidden words. Keep them factual (e.g., “Financial Services” not “Best Financial Solutions”).
+
+The ACW isolation invariant must be updated if the work‑item dashboard or onboarding pages import from decision‑pipeline modules. They should only import the new org/work‑item stores and the context, not portfolio/ads/signals.
+
+9. Acceptance Criteria
+First‑time user sees the organisation selector; can create a new org.
+
+Creating an org automatically creates an EA Blueprint work item.
+
+User can create Projects, Enhancements (only if EA Blueprint exists), and Change Requests.
+
+Selecting a work item opens the workspace hub with links to ADC, CTAD, ACW.
+
+The ADC wizard (already reworked in Phase 1A) now receives scoped keys and saves data under the correct org/work‑item.
+
+Existing data (if any) is migrated to scoped keys on first launch after the update.
+
+All invariants pass with scoped keys.
+
+The vocabulary guard catches any forbidden words in new UI labels.
+
+text
