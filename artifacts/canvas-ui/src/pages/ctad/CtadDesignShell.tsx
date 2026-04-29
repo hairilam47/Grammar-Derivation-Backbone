@@ -44,8 +44,13 @@ import {
   Cpu,
   Database as DatabaseIcon,
   Layers as LayersIcon,
+  Locate,
+  Maximize,
+  RefreshCcw,
   Workflow as WorkflowIcon,
   X,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import { assertAllCtadLanguage } from "@/governance/staticTextGuard";
 import { Button } from "@/components/ui/button";
@@ -96,6 +101,15 @@ import { useCurrentScope } from "@/governance/CurrentOrgWorkItemContext";
 import { getWorkItem } from "@/governance/workItemStore";
 import { getOrganisation } from "@/governance/orgStore";
 import { ensureDomainContainers } from "@/acw/palette/domainContainerSeed";
+import {
+  CTAD_CAMERA_DEFAULT,
+  CTAD_CAMERA_MAX_ZOOM,
+  CTAD_CAMERA_MIN_ZOOM,
+  type CtadCameraState,
+  getCamera,
+  setCamera,
+  subscribeCameraReload,
+} from "@/ctad/ctadCameraStore";
 
 // All static labels rendered by this page. Asserted at module load
 // against the CTAD vocabulary tier so a forbidden token cannot be
@@ -158,6 +172,16 @@ const LABELS = {
   promoteAlreadyPromoted:
     "This logical node already lives inside an EAStudio domain quadrant. Use the EAStudio canvas to move or detach it.",
   promoteDropHere: "Drop a logical node here",
+  // Camera toolbar / minimap labels (Task #157).
+  cameraZoomIn: "Zoom in",
+  cameraZoomOut: "Zoom out",
+  cameraReset: "Reset view",
+  cameraFit: "Fit to content",
+  cameraRecentre: "Recentre on selection",
+  cameraZoomLevelLabel: "Zoom level",
+  cameraPanHint:
+    "Hold Space and drag to pan. Ctrl/Cmd + wheel or pinch to zoom. Press F to centre on the selected node.",
+  minimapLabel: "Minimap",
 } as const;
 
 assertAllCtadLanguage(Object.values(LABELS));
@@ -261,6 +285,147 @@ export default function CtadDesignShell() {
   const [draggedLogicalNodeId, setDraggedLogicalNodeId] = useState<
     string | null
   >(null);
+
+  // ---------------------------------------------------------------
+  // Camera state (Task #157). One CtadCameraState per diagram tab,
+  // persisted under the active work-item scope. Local component
+  // state is the source of truth during interaction; writes are
+  // debounced through `setCamera` so a 60Hz pan or zoom does not
+  // spam the api-server.
+  // ---------------------------------------------------------------
+  const [cameras, setCameras] = useState<
+    Partial<Record<AcwDiagramType, CtadCameraState>>
+  >(() => {
+    const out: Partial<Record<AcwDiagramType, CtadCameraState>> = {};
+    for (const dt of ACW_DIAGRAM_TYPES) out[dt] = getCamera(dt);
+    return out;
+  });
+  // Spacebar-pan: tracks whether the user is currently holding
+  // space (cursor changes to grab; pointerdown on the viewport
+  // initiates a pan instead of a card pick).
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
+
+  const camera = cameras[selectedDiagram] ?? CTAD_CAMERA_DEFAULT;
+
+  // Refs that always point at the live values, so DOM event
+  // listeners attached once (window keydown, viewport wheel) can
+  // read the current camera/diagram without being torn down and
+  // re-created on every state change.
+  const camerasRef = useRef(cameras);
+  useEffect(() => {
+    camerasRef.current = cameras;
+  }, [cameras]);
+  const selectedDiagramRef = useRef(selectedDiagram);
+  useEffect(() => {
+    selectedDiagramRef.current = selectedDiagram;
+  }, [selectedDiagram]);
+  const spaceHeldRef = useRef(spaceHeld);
+  useEffect(() => {
+    spaceHeldRef.current = spaceHeld;
+  }, [spaceHeld]);
+  const zoomRef = useRef(camera.zoom);
+  useEffect(() => {
+    zoomRef.current = camera.zoom;
+  }, [camera.zoom]);
+
+  // Reload from storage on scope/hydration changes (work-item
+  // switch or fresh-device boot).
+  useEffect(() => {
+    return subscribeCameraReload(() => {
+      const next: Partial<Record<AcwDiagramType, CtadCameraState>> = {};
+      for (const dt of ACW_DIAGRAM_TYPES) next[dt] = getCamera(dt);
+      setCameras(next);
+    });
+  }, []);
+
+  // Debounced write-through so wheel-zoom and drag-pan don't fire
+  // an api-server PUT 60 times per second. The L1/L2 cache is
+  // updated synchronously inside `setCamera`, so reads survive a
+  // refresh even before the timer flushes.
+  //
+  // The pending write is keyed by diagram tab. If a new write is
+  // scheduled for a *different* diagram than the one currently
+  // pending (e.g. user pans on BPMN, then switches to ERD and
+  // immediately pans there), we flush the previous diagram's write
+  // synchronously before re-arming the timer for the new one. This
+  // guarantees no per-tab persistence is silently dropped when
+  // users switch tabs faster than the debounce window.
+  const persistTimerRef = useRef<number | null>(null);
+  const pendingPersistRef = useRef<{
+    readonly diagram: AcwDiagramType;
+    readonly value: CtadCameraState;
+  } | null>(null);
+  const schedulePersist = useCallback(
+    (diagram: AcwDiagramType, next: CtadCameraState) => {
+      const pending = pendingPersistRef.current;
+      if (pending !== null && pending.diagram !== diagram) {
+        // Different diagram than the one currently pending — flush
+        // the old one immediately so it isn't lost.
+        if (persistTimerRef.current !== null) {
+          window.clearTimeout(persistTimerRef.current);
+          persistTimerRef.current = null;
+        }
+        setCamera(pending.diagram, pending.value);
+        pendingPersistRef.current = null;
+      } else if (persistTimerRef.current !== null) {
+        window.clearTimeout(persistTimerRef.current);
+      }
+      pendingPersistRef.current = { diagram, value: next };
+      persistTimerRef.current = window.setTimeout(() => {
+        persistTimerRef.current = null;
+        const p = pendingPersistRef.current;
+        pendingPersistRef.current = null;
+        if (p !== null) setCamera(p.diagram, p.value);
+      }, 250);
+    },
+    [],
+  );
+  // Flush any pending camera write on unmount so a tab close
+  // doesn't lose the last interaction.
+  useEffect(() => {
+    return () => {
+      if (persistTimerRef.current !== null) {
+        window.clearTimeout(persistTimerRef.current);
+        persistTimerRef.current = null;
+      }
+      const p = pendingPersistRef.current;
+      pendingPersistRef.current = null;
+      if (p !== null) setCamera(p.diagram, p.value);
+    };
+  }, []);
+
+  // Single helper to mutate the active diagram's camera. All
+  // toolbar buttons, wheel, pan, and recentre paths funnel here so
+  // the persist scheduling and bounds-clamp live in one place.
+  const updateCameraForActive = useCallback(
+    (mutator: (cur: CtadCameraState) => CtadCameraState) => {
+      const dt = selectedDiagramRef.current;
+      setCameras((prev) => {
+        const cur = prev[dt] ?? CTAD_CAMERA_DEFAULT;
+        const next = mutator(cur);
+        if (
+          next.zoom === cur.zoom &&
+          next.panX === cur.panX &&
+          next.panY === cur.panY
+        ) {
+          return prev;
+        }
+        const clampedZoom = Math.min(
+          CTAD_CAMERA_MAX_ZOOM,
+          Math.max(CTAD_CAMERA_MIN_ZOOM, next.zoom),
+        );
+        const clamped: CtadCameraState = {
+          zoom: clampedZoom,
+          panX: next.panX,
+          panY: next.panY,
+        };
+        schedulePersist(dt, clamped);
+        return { ...prev, [dt]: clamped };
+      });
+    },
+    [schedulePersist],
+  );
 
   // Read-only requirement / module catalogs for the binding
   // dropdowns. Both stores are scope-aware (per work item) and
@@ -400,6 +565,35 @@ export default function CtadDesignShell() {
   // the workspace root with the diagram metadata stamped.
   // ---------------------------------------------------------------
   const canvasRef = useRef<HTMLDivElement | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+
+  // Viewport size tracked via ResizeObserver — needed by the
+  // minimap's viewport-rectangle and by the "fit-to-content" /
+  // "recentre on selection" math, which all need to know how big
+  // the visible window is in client pixels.
+  const [viewportSize, setViewportSize] = useState<{
+    readonly w: number;
+    readonly h: number;
+  }>({ w: 0, h: 0 });
+  useEffect(() => {
+    const vp = viewportRef.current;
+    if (!vp) return;
+    const update = () => {
+      setViewportSize({ w: vp.clientWidth, h: vp.clientHeight });
+    };
+    update();
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(update);
+      ro.observe(vp);
+      return () => ro.disconnect();
+    }
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+  const viewportSizeRef = useRef(viewportSize);
+  useEffect(() => {
+    viewportSizeRef.current = viewportSize;
+  }, [viewportSize]);
 
   const onCanvasDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
     if (e.dataTransfer.types.includes(CTAD_PALETTE_DATA_KEY)) {
@@ -419,8 +613,19 @@ export default function CtadDesignShell() {
     }
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const x = Math.max(0, Math.round(e.clientX - rect.left - CANVAS_NODE_WIDTH / 2));
-    const y = Math.max(0, Math.round(e.clientY - rect.top - CANVAS_NODE_HEIGHT / 2));
+    // The inner canvas div carries a `translate(panX,panY) scale(zoom)`
+    // transform, so its bounding rect already reflects the camera —
+    // dividing the viewport-relative offset by the current zoom gives
+    // the logical canvas coordinate where the drop landed.
+    const z = zoomRef.current || 1;
+    const x = Math.max(
+      0,
+      Math.round((e.clientX - rect.left) / z - CANVAS_NODE_WIDTH / 2),
+    );
+    const y = Math.max(
+      0,
+      Math.round((e.clientY - rect.top) / z - CANVAS_NODE_HEIGHT / 2),
+    );
     const result = createNode({
       type: item.elementType,
       parentId: null,
@@ -543,6 +748,13 @@ export default function CtadDesignShell() {
       // Only respond to the primary button so right-click / middle-click
       // do not initiate a drag.
       if (e.button !== 0) return;
+      // Spacebar-pan takes precedence over node drag — let the
+      // viewport handler pick up the pointerdown by ignoring it
+      // here. The card is also marked `pointer-events: none` while
+      // space is held, so this branch is mostly defensive.
+      if (spaceHeldRef.current) {
+        return;
+      }
       // While in connect mode, suppress drag and treat the press as
       // the click that picks an endpoint.
       if (connectMode !== null) {
@@ -556,18 +768,32 @@ export default function CtadDesignShell() {
       const rect = canvasRef.current?.getBoundingClientRect();
       if (!rect) return;
       tearDownDragListeners();
+      // The canvas div is CSS-transformed by the camera, so its
+      // bounding rect reflects the active zoom. Dividing the
+      // viewport-relative pointer offset by the current zoom yields
+      // a logical-coordinate offset, which keeps the cursor pinned
+      // to the same point on the card during the drag regardless of
+      // zoom level.
+      const z0 = zoomRef.current || 1;
       dragRef.current = {
         nodeId: node.id,
-        offsetX: e.clientX - rect.left - node.x,
-        offsetY: e.clientY - rect.top - node.y,
+        offsetX: (e.clientX - rect.left) / z0 - node.x,
+        offsetY: (e.clientY - rect.top) / z0 - node.y,
       };
       const onMove = (ev: PointerEvent) => {
         const drag = dragRef.current;
         if (!drag) return;
         const r = canvasRef.current?.getBoundingClientRect();
         if (!r) return;
-        const x = Math.max(0, Math.round(ev.clientX - r.left - drag.offsetX));
-        const y = Math.max(0, Math.round(ev.clientY - r.top - drag.offsetY));
+        const z = zoomRef.current || 1;
+        const x = Math.max(
+          0,
+          Math.round((ev.clientX - r.left) / z - drag.offsetX),
+        );
+        const y = Math.max(
+          0,
+          Math.round((ev.clientY - r.top) / z - drag.offsetY),
+        );
         const result = updateNodePosition(drag.nodeId, x, y);
         if (!result.ok) {
           setError(result.reason);
@@ -682,6 +908,233 @@ export default function CtadDesignShell() {
       isSealed: (id) => nodeById.get(id)?.isDomainContainer === true,
     };
   }, [nodeById]);
+
+  // ---------------------------------------------------------------
+  // Camera controls (Task #157). Toolbar handlers, wheel handler,
+  // spacebar-pan, and the F-key recentre. All flow through
+  // `updateCameraForActive` so persistence and bounds stay in one
+  // place.
+  // ---------------------------------------------------------------
+  const zoomBy = useCallback(
+    (factor: number) => {
+      updateCameraForActive((cur) => {
+        // Anchor zoom to the centre of the visible viewport so a
+        // bare "zoom in" toolbar press keeps the user looking at
+        // roughly the same content.
+        const vp = viewportSizeRef.current;
+        const mx = vp.w / 2;
+        const my = vp.h / 2;
+        const lx = (mx - cur.panX) / cur.zoom;
+        const ly = (my - cur.panY) / cur.zoom;
+        const newZoom = Math.min(
+          CTAD_CAMERA_MAX_ZOOM,
+          Math.max(CTAD_CAMERA_MIN_ZOOM, cur.zoom * factor),
+        );
+        return {
+          zoom: newZoom,
+          panX: mx - lx * newZoom,
+          panY: my - ly * newZoom,
+        };
+      });
+    },
+    [updateCameraForActive],
+  );
+  const onZoomIn = useCallback(() => zoomBy(1.25), [zoomBy]);
+  const onZoomOut = useCallback(() => zoomBy(1 / 1.25), [zoomBy]);
+  const onResetCamera = useCallback(() => {
+    updateCameraForActive(() => ({ ...CTAD_CAMERA_DEFAULT }));
+  }, [updateCameraForActive]);
+
+  const onFitToContent = useCallback(() => {
+    const vp = viewportSizeRef.current;
+    if (vp.w <= 0 || vp.h <= 0) return;
+    const nodes = canvasNodes;
+    if (nodes.length === 0) {
+      onResetCamera();
+      return;
+    }
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const n of nodes) {
+      if (n.x < minX) minX = n.x;
+      if (n.y < minY) minY = n.y;
+      if (n.x + CANVAS_NODE_WIDTH > maxX) maxX = n.x + CANVAS_NODE_WIDTH;
+      if (n.y + CANVAS_NODE_HEIGHT > maxY) maxY = n.y + CANVAS_NODE_HEIGHT;
+    }
+    const margin = 48;
+    const bboxW = Math.max(1, maxX - minX);
+    const bboxH = Math.max(1, maxY - minY);
+    const zoomFit = Math.min(
+      CTAD_CAMERA_MAX_ZOOM,
+      Math.max(
+        CTAD_CAMERA_MIN_ZOOM,
+        Math.min(
+          (vp.w - margin * 2) / bboxW,
+          (vp.h - margin * 2) / bboxH,
+          1, // never zoom in past 100% on fit — keeps text readable
+        ),
+      ),
+    );
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    updateCameraForActive(() => ({
+      zoom: zoomFit,
+      panX: vp.w / 2 - cx * zoomFit,
+      panY: vp.h / 2 - cy * zoomFit,
+    }));
+  }, [canvasNodes, onResetCamera, updateCameraForActive]);
+
+  const onRecentreSelection = useCallback(() => {
+    if (!selectedNode || selectedNode.parentId !== null) return;
+    if (selectedNode.diagramType !== selectedDiagram) return;
+    const vp = viewportSizeRef.current;
+    if (vp.w <= 0 || vp.h <= 0) return;
+    updateCameraForActive((cur) => {
+      const cx = selectedNode.x + CANVAS_NODE_WIDTH / 2;
+      const cy = selectedNode.y + CANVAS_NODE_HEIGHT / 2;
+      return {
+        zoom: cur.zoom,
+        panX: vp.w / 2 - cx * cur.zoom,
+        panY: vp.h / 2 - cy * cur.zoom,
+      };
+    });
+  }, [selectedDiagram, selectedNode, updateCameraForActive]);
+
+  // Wheel handler — installed via addEventListener with
+  // `passive: false` so we can `preventDefault` on the trackpad-
+  // pinch wheel events (which carry `ctrlKey: true` even when no
+  // physical Ctrl is held).
+  useEffect(() => {
+    const vp = viewportRef.current;
+    if (!vp) return;
+    const handler = (e: WheelEvent) => {
+      // Only react to zoom-shaped wheel events. A bare wheel does
+      // nothing (the viewport is overflow:hidden so the browser's
+      // default scroll has no visible effect either).
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const rect = vp.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      updateCameraForActive((cur) => {
+        // Standard "zoom toward cursor": find the logical point
+        // under the cursor at the current zoom, compute the new
+        // zoom, then re-derive pan so that logical point stays
+        // pinned to the same client offset.
+        const lx = (mx - cur.panX) / cur.zoom;
+        const ly = (my - cur.panY) / cur.zoom;
+        // Exponential factor keeps zoom feel constant across deltaY
+        // magnitudes (trackpad pinch = small steps; mouse wheel =
+        // large steps).
+        const factor = Math.exp(-e.deltaY * 0.0025);
+        const newZoom = Math.min(
+          CTAD_CAMERA_MAX_ZOOM,
+          Math.max(CTAD_CAMERA_MIN_ZOOM, cur.zoom * factor),
+        );
+        return {
+          zoom: newZoom,
+          panX: mx - lx * newZoom,
+          panY: my - ly * newZoom,
+        };
+      });
+    };
+    vp.addEventListener("wheel", handler, { passive: false });
+    return () => vp.removeEventListener("wheel", handler);
+  }, [updateCameraForActive]);
+
+  // Spacebar tracking + F-key recentre. `onRecentreSelection` is
+  // captured via ref so the keydown listener never goes stale.
+  const onRecentreSelectionRef = useRef(onRecentreSelection);
+  useEffect(() => {
+    onRecentreSelectionRef.current = onRecentreSelection;
+  }, [onRecentreSelection]);
+  useEffect(() => {
+    const isEditableTarget = (t: EventTarget | null): boolean => {
+      if (!(t instanceof HTMLElement)) return false;
+      if (t.isContentEditable) return true;
+      const tag = t.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (isEditableTarget(e.target)) return;
+      if (e.code === "Space") {
+        if (!e.repeat) {
+          e.preventDefault();
+          setSpaceHeld(true);
+        }
+        return;
+      }
+      if (e.key === "f" || e.key === "F") {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        e.preventDefault();
+        onRecentreSelectionRef.current();
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        setSpaceHeld(false);
+      }
+    };
+    // Drop spaceHeld if the window loses focus mid-press; otherwise
+    // the user comes back and the canvas is stuck in pan mode.
+    const onBlur = () => setSpaceHeld(false);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, []);
+
+  // Pan: viewport pointerdown when spaceHeld OR middle button.
+  // The teardown function for the in-flight pan is hoisted into a
+  // ref so the unmount effect below can clear stray window-level
+  // listeners if the user navigates away mid-drag.
+  const panTeardownRef = useRef<(() => void) | null>(null);
+  const onViewportPointerDown = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      const isPanGesture = spaceHeldRef.current || e.button === 1;
+      if (!isPanGesture) return;
+      e.preventDefault();
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const startCam =
+        camerasRef.current[selectedDiagramRef.current] ?? CTAD_CAMERA_DEFAULT;
+      setIsPanning(true);
+      const onMove = (ev: PointerEvent) => {
+        const dx = ev.clientX - startX;
+        const dy = ev.clientY - startY;
+        updateCameraForActive(() => ({
+          zoom: startCam.zoom,
+          panX: startCam.panX + dx,
+          panY: startCam.panY + dy,
+        }));
+      };
+      const teardown = () => {
+        setIsPanning(false);
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", teardown);
+        window.removeEventListener("pointercancel", teardown);
+        panTeardownRef.current = null;
+      };
+      panTeardownRef.current = teardown;
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", teardown);
+      window.addEventListener("pointercancel", teardown);
+    },
+    [updateCameraForActive],
+  );
+  // Defensive unmount: if the user navigates away mid-pan, drop
+  // the global listeners so they don't leak past the component.
+  useEffect(() => {
+    return () => {
+      if (panTeardownRef.current !== null) panTeardownRef.current();
+    };
+  }, []);
 
   // Promote drop handler factory — returns a handler bound to a
   // specific quadrant id. The dataTransfer carries the dragged
@@ -955,7 +1408,17 @@ export default function CtadDesignShell() {
 
         {/* ---------------- Canvas ---------------- */}
         <section
-          className="overflow-auto bg-muted/20"
+          ref={viewportRef}
+          onPointerDown={onViewportPointerDown}
+          className="relative overflow-hidden bg-muted/20"
+          style={{
+            cursor: isPanning
+              ? "grabbing"
+              : spaceHeld
+                ? "grab"
+                : "default",
+            touchAction: "none",
+          }}
           data-testid="ctad-design-canvas-scroll"
         >
           <div
@@ -969,6 +1432,12 @@ export default function CtadDesignShell() {
               backgroundImage:
                 "linear-gradient(to right, rgba(127,127,127,.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(127,127,127,.08) 1px, transparent 1px)",
               backgroundSize: "20px 20px",
+              transform: `translate(${camera.panX}px, ${camera.panY}px) scale(${camera.zoom})`,
+              transformOrigin: "0 0",
+              // While the user is panning (or holding space), neutralise
+              // pointer events on cards/edges so the pan capture on the
+              // viewport always wins.
+              pointerEvents: spaceHeld || isPanning ? "none" : undefined,
             }}
             data-testid="ctad-design-canvas"
           >
@@ -1062,6 +1531,95 @@ export default function CtadDesignShell() {
               />
             ))}
           </div>
+
+          {/* Camera toolbar (Task #157). Floats over the top-left
+              of the viewport. Buttons share a single state-mutator
+              path, so persistence and bounds are guaranteed
+              consistent across all entrypoints. */}
+          <div
+            className="absolute top-2 left-2 flex flex-col gap-1 bg-background/85 backdrop-blur border border-border/50 rounded-md p-1 shadow-sm"
+            data-testid="ctad-design-camera-toolbar"
+            title={LABELS.cameraPanHint}
+          >
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              onClick={onZoomIn}
+              aria-label={LABELS.cameraZoomIn}
+              title={LABELS.cameraZoomIn}
+              data-testid="ctad-design-camera-zoom-in"
+            >
+              <ZoomIn className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              onClick={onZoomOut}
+              aria-label={LABELS.cameraZoomOut}
+              title={LABELS.cameraZoomOut}
+              data-testid="ctad-design-camera-zoom-out"
+            >
+              <ZoomOut className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              onClick={onResetCamera}
+              aria-label={LABELS.cameraReset}
+              title={LABELS.cameraReset}
+              data-testid="ctad-design-camera-reset"
+            >
+              <RefreshCcw className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              onClick={onFitToContent}
+              aria-label={LABELS.cameraFit}
+              title={LABELS.cameraFit}
+              data-testid="ctad-design-camera-fit"
+            >
+              <Maximize className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              onClick={onRecentreSelection}
+              aria-label={LABELS.cameraRecentre}
+              title={LABELS.cameraRecentre}
+              disabled={
+                !selectedNode ||
+                selectedNode.parentId !== null ||
+                selectedNode.diagramType !== selectedDiagram
+              }
+              data-testid="ctad-design-camera-recentre"
+            >
+              <Locate className="size-4" />
+            </Button>
+            <div
+              className="text-[10px] text-center text-muted-foreground tabular-nums px-1 pt-0.5"
+              aria-label={LABELS.cameraZoomLevelLabel}
+              data-testid="ctad-design-camera-zoom-level"
+            >
+              {Math.round(camera.zoom * 100)}%
+            </div>
+          </div>
+
+          {/* Minimap. Renders a scaled-down outline of every node
+              on the active diagram plus a viewport rectangle that
+              tracks the current pan/zoom. Read-only — Task #157
+              keeps interactions on the toolbar and the main canvas. */}
+          <CtadCameraMinimap
+            nodes={canvasNodes}
+            camera={camera}
+            viewportSize={viewportSize}
+            label={LABELS.minimapLabel}
+          />
         </section>
 
         {/* ---------------- Properties + Promote ---------------- */}
@@ -1133,6 +1691,86 @@ export default function CtadDesignShell() {
 // ---------------------------------------------------------------------------
 // Sub-components.
 // ---------------------------------------------------------------------------
+
+// Camera minimap (Task #157). Renders a fixed-size SVG in the
+// bottom-right of the canvas viewport showing every node on the
+// active diagram, plus a rectangle indicating the portion of the
+// canvas currently visible. Read-only: drag-to-pan on the minimap
+// is intentionally out of scope for this task.
+function CtadCameraMinimap({
+  nodes,
+  camera,
+  viewportSize,
+  label,
+}: {
+  readonly nodes: readonly AcwNode[];
+  readonly camera: CtadCameraState;
+  readonly viewportSize: { readonly w: number; readonly h: number };
+  readonly label: string;
+}) {
+  const W = 160;
+  const H = 100;
+  // The minimap always frames the full design canvas, not the
+  // current bbox of nodes — that way the viewport rectangle's
+  // movement matches what the user sees when they pan, and
+  // dragging a node off-screen doesn't make the minimap rescale
+  // unexpectedly.
+  const sx = W / CANVAS_MIN_WIDTH;
+  const sy = H / CANVAS_MIN_HEIGHT;
+  // Convert the camera's pan/zoom into a "what region of the
+  // canvas is currently visible" rectangle in canvas coordinates,
+  // then scale that into minimap pixels.
+  const z = camera.zoom || 1;
+  const visX = -camera.panX / z;
+  const visY = -camera.panY / z;
+  const visW = (viewportSize.w || 0) / z;
+  const visH = (viewportSize.h || 0) / z;
+  const rectX = Math.max(0, visX * sx);
+  const rectY = Math.max(0, visY * sy);
+  const rectW = Math.max(2, Math.min(W - rectX, visW * sx));
+  const rectH = Math.max(2, Math.min(H - rectY, visH * sy));
+  return (
+    <div
+      className="absolute bottom-2 right-2 bg-background/85 backdrop-blur border border-border/50 rounded-md p-1 shadow-sm"
+      data-testid="ctad-design-minimap"
+      aria-label={label}
+      title={label}
+    >
+      <svg width={W} height={H} className="block">
+        <rect
+          x={0}
+          y={0}
+          width={W}
+          height={H}
+          fill="rgba(127,127,127,.08)"
+          stroke="rgba(127,127,127,.35)"
+          strokeWidth={1}
+        />
+        {nodes.map((n) => (
+          <rect
+            key={n.id}
+            x={n.x * sx}
+            y={n.y * sy}
+            width={Math.max(1, CANVAS_NODE_WIDTH * sx)}
+            height={Math.max(1, CANVAS_NODE_HEIGHT * sy)}
+            fill="currentColor"
+            opacity={0.5}
+          />
+        ))}
+        <rect
+          x={rectX}
+          y={rectY}
+          width={rectW}
+          height={rectH}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.25}
+          data-testid="ctad-design-minimap-viewport"
+        />
+      </svg>
+    </div>
+  );
+}
 
 function PaletteTile({ item }: { readonly item: CtadPaletteItem }) {
   const { Icon } = item;
