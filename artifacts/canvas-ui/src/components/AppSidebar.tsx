@@ -25,6 +25,7 @@ import {
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { OrgWorkItemSwitcher } from "@/components/OrgWorkItemSwitcher";
 
 interface NavItem {
   href: string;
@@ -516,6 +517,7 @@ export function AppShell({ children }: AppShellProps) {
             >
               {pageTitle}
             </span>
+            <OrgWorkItemSwitcher />
           </div>
           <div
             className="hairline-accent h-px w-full opacity-60"

@@ -12,6 +12,8 @@ import { useState } from "react";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { assertAllGovernanceLanguage } from "@/governance/staticTextGuard";
+import { useCurrentScope } from "@/governance/CurrentOrgWorkItemContext";
+import { getWorkItem } from "@/governance/workItemStore";
 import {
   exportSRS,
   type SrsExportFormat,
@@ -44,6 +46,7 @@ export function SrsExportButton({
   variant = "default",
   testIdSuffix = "",
 }: SrsExportButtonProps) {
+  const { workItemId } = useCurrentScope();
   const [format, setFormat] = useState<SrsExportFormat>("pdf");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +55,14 @@ export function SrsExportButton({
     setError(null);
     setBusy(true);
     try {
-      await exportSRS(format);
+      if (!workItemId) {
+        throw new Error("No active Work Item.");
+      }
+      const wi = getWorkItem(workItemId);
+      await exportSRS(format, {
+        workItemId,
+        workItemTitle: wi?.title ?? `Work Item ${workItemId}`,
+      });
     } catch (err) {
       setError(
         STATIC_LABELS.errorPrefix +

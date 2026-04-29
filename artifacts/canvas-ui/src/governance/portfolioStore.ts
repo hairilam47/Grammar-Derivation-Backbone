@@ -19,8 +19,18 @@ import {
 // runtime circular dependency.
 import { deriveExposure } from "./exposureDerive";
 import { deriveResponsibilityLens } from "./responsibilityLens";
+import { resolveActiveKey, currentScope } from "./storageKeyUtils";
 
-const STORAGE_KEY = "adc.portfolio.v1";
+// Phase 2 (SaaS Onboarding) — every persisted ADC document is now
+// scoped to the active Organisation + Work Item via
+// `storageKeyUtils.resolveActiveKey`. The base key is preserved so
+// the legacy-migration utility can locate any flat-key data written
+// by an earlier build.
+export const BASE_STORAGE_KEY = "adc.portfolio.v1";
+
+function getStorageKey(): string | null {
+  return resolveActiveKey(BASE_STORAGE_KEY, true);
+}
 
 // HC4: top-level allow-list. The portfolio entry persists EXACTLY these
 // 17 fields and nothing else. The full ADS is intentionally NOT
@@ -343,8 +353,10 @@ function withDefaults(entry: PortfolioEntry): PortfolioEntry {
 
 function readAll(): PortfolioEntry[] {
   if (typeof window === "undefined") return [];
+  const key = getStorageKey();
+  if (key === null) return [];
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -356,7 +368,21 @@ function readAll(): PortfolioEntry[] {
 
 function writeAll(entries: PortfolioEntry[]): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+  const key = getStorageKey();
+  if (key === null) return;
+  window.localStorage.setItem(key, JSON.stringify(entries));
+}
+
+// Re-render every subscribed view when the active scope changes so a
+// scope flip (e.g. switch Work Item) causes the portfolio table to
+// re-read from the new effective key. The store does not maintain
+// its own listener API (the table simply re-reads on every render),
+// but the `currentScope` subscription is preserved so a future
+// caching layer would see the invalidation hook in place.
+if (typeof window !== "undefined") {
+  currentScope.subscribe(() => {
+    /* noop — readers re-fetch via readAll() */
+  });
 }
 
 export function listEntries(): PortfolioEntry[] {

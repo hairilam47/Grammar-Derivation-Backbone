@@ -91,6 +91,7 @@ import {
   publishRefusal,
   __acwRefusalChannelInternals,
 } from "@/acw/acwRefusalChannel";
+import { resolveActiveKey } from "@/governance/storageKeyUtils";
 import type {
   OrganisationContext,
   TradeOffSettings,
@@ -98,7 +99,10 @@ import type {
 } from "@workspace/architecture-grammar";
 
 // Storage keys touched by the seeder. Listed explicitly so the
-// preflight clear is exhaustive and discoverable.
+// preflight clear is exhaustive and discoverable. These are the
+// BASE keys (the on-disk localStorage keys are scoped through
+// `<orgId>:<workItemId>:<base>` or `<orgId>:<base>`; the seeder
+// resolves them through `resolveActiveKey` at every touch).
 const STORAGE_KEYS = [
   "adc.portfolio.v1",
   "adc.policy-signals.v1",
@@ -112,6 +116,25 @@ const STORAGE_KEYS = [
   "acw.organisational-units.v1",
   "acw.track3.viewprefs.v1",
 ] as const;
+
+// Base keys that are scoped to the Organisation only (the
+// remainder are scoped to Organisation + Work Item). Keep in sync
+// with the `needsWorkItem` argument passed to `resolveActiveKey`
+// in each store's `getKey()`.
+const ORG_ONLY_BASE_KEYS: ReadonlySet<string> = new Set<string>([
+  "adc.module-catalog.v1",
+  "acw.organisational-units.v1",
+]);
+
+// Resolves the on-disk key for a base key against the currently
+// active scope. Returns null when no Organisation (or no
+// Work-Item, for Org+WI-scoped stores) is selected; the caller
+// must skip that key, since the underlying store would also
+// no-op.
+function resolveSeedKey(baseKey: string): string | null {
+  const needsWorkItem = !ORG_ONLY_BASE_KEYS.has(baseKey);
+  return resolveActiveKey(baseKey, needsWorkItem);
+}
 
 // Frozen instant for the entire seed run. Keeps every store-internal
 // `new Date()` / `Date.now()` call resolving to the same value so the
@@ -282,8 +305,10 @@ const STUDIO_LENS_ID = "/workspace/studio";
 
 function clearAllSeededKeys(): void {
   if (typeof window === "undefined") return;
-  for (const key of STORAGE_KEYS) {
-    window.localStorage.removeItem(key);
+  for (const baseKey of STORAGE_KEYS) {
+    const scopedKey = resolveSeedKey(baseKey);
+    if (scopedKey === null) continue;
+    window.localStorage.removeItem(scopedKey);
   }
   // Reload caches for stores that hold an in-memory cache. Stores
   // that read on every call (portfolio, signals, all CTAD stores,
@@ -742,8 +767,10 @@ export function runSeedProbe(): SeedProbeResult {
     return { ok: false, errorMessage: "Probe requires a browser environment." };
   }
   const snapshot: Record<string, string | null> = {};
-  for (const key of STORAGE_KEYS) {
-    snapshot[key] = window.localStorage.getItem(key);
+  for (const baseKey of STORAGE_KEYS) {
+    const scopedKey = resolveSeedKey(baseKey);
+    if (scopedKey === null) continue;
+    snapshot[scopedKey] = window.localStorage.getItem(scopedKey);
   }
   try {
     const summary = seedAll();
@@ -761,12 +788,11 @@ export function runSeedProbe(): SeedProbeResult {
       errorMessage: (err as Error).message,
     };
   } finally {
-    for (const key of STORAGE_KEYS) {
-      const prev = snapshot[key];
+    for (const [scopedKey, prev] of Object.entries(snapshot)) {
       if (prev === null) {
-        window.localStorage.removeItem(key);
+        window.localStorage.removeItem(scopedKey);
       } else {
-        window.localStorage.setItem(key, prev);
+        window.localStorage.setItem(scopedKey, prev);
       }
     }
     __acwStoreInternals.reloadFromStorageForTest();

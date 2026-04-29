@@ -54,8 +54,40 @@ import { __acwViewStateInternals } from "@/acw/acwViewState";
 import { __acwWorkspaceViewPrefsInternals } from "@/acw/acwWorkspaceViewPrefs";
 import { __ouStoreInternals } from "@/acw/orgUnits/ouStore";
 import { __track3ViewPrefsInternals } from "@/acw/track3/track3ViewPrefs";
+import {
+  __snapshotScope,
+  __restoreScopeSnapshot,
+  currentScope,
+  getScopedKey,
+} from "@/governance/storageKeyUtils";
 
-const STORAGE_KEYS = __seedAllInternals.STORAGE_KEYS;
+// Phase 2 (multi-tenant scoping): seedAll's underlying stores
+// resolve their localStorage keys through `<orgId>:<workItemId>:<base>`.
+// The probe installs a dedicated synthetic scope for the duration
+// of the run and restores the original (typically empty) scope in
+// the same `finally` block that restores its localStorage
+// snapshot, so probe execution remains invisible to the running
+// app.
+const PROBE_ORG_ID = "__seed-all-probe-org__";
+const PROBE_WI_ID = "__seed-all-probe-wi__";
+
+// The seeder reports BASE storage keys (e.g. "ctad.state.v1"). To
+// snapshot/restore in localStorage we must use the SCOPED form
+// resolved against the synthetic probe scope above.
+const BASE_KEYS = __seedAllInternals.STORAGE_KEYS;
+// Org+Work-Item-scoped base keys. Keep in sync with the
+// `needsWorkItem` flag in each store's `getKey()`. The org-only
+// stores (module-catalog, OU registry) drop the workItemId
+// segment.
+const ORG_ONLY_BASE_KEYS = new Set<string>([
+  "adc.module-catalog.v1",
+  "acw.organisational-units.v1",
+]);
+const STORAGE_KEYS: readonly string[] = BASE_KEYS.map((base) =>
+  ORG_ONLY_BASE_KEYS.has(base)
+    ? getScopedKey(base, PROBE_ORG_ID)
+    : getScopedKey(base, PROBE_ORG_ID, PROBE_WI_ID),
+);
 
 // Spec-contract counts. See `.local/tasks/seed-all-test-data.md`
 // step "Visible counts" — locking these here means any drift in a
@@ -222,7 +254,13 @@ const isDev =
   import.meta.env.DEV === true;
 
 if (isBrowser && isDev) {
-  runProbe();
+  const __scopeSnap = __snapshotScope();
+  currentScope.set({ orgId: PROBE_ORG_ID, workItemId: PROBE_WI_ID });
+  try {
+    runProbe();
+  } finally {
+    __restoreScopeSnapshot(__scopeSnap);
+  }
 }
 
 export const __seedAllInvariantsInternals = Object.freeze({

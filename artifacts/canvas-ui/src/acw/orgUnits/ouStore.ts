@@ -23,9 +23,21 @@ import {
   getWorkspace,
   updateNodeProperties,
 } from "../acwStore";
+import {
+  resolveActiveKey,
+  currentScope,
+} from "@/governance/storageKeyUtils";
 
 export const OU_SCHEMA_VERSION = "ou-1.0" as const;
-const STORAGE_KEY = "acw.organisational-units.v1";
+// Phase 2 (SaaS Onboarding) — Org-only scope. The OU registry is
+// shared across every Work Item inside an Organisation (the same
+// org chart is meaningful regardless of which Enhancement / Change
+// Request the workspace is currently representing).
+export const BASE_STORAGE_KEY = "acw.organisational-units.v1";
+
+function getStorageKey(): string | null {
+  return resolveActiveKey(BASE_STORAGE_KEY, false);
+}
 
 export interface OrganisationalUnit {
   readonly id: string;
@@ -142,8 +154,10 @@ function notify(): void {
 
 function readFromStorage(): OrganisationalUnitDocument {
   if (typeof window === "undefined") return emptyDocument();
+  const key = getStorageKey();
+  if (key === null) return emptyDocument();
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     if (!raw) return emptyDocument();
     const parsed = JSON.parse(raw);
     if (!isValid(parsed)) return emptyDocument();
@@ -156,7 +170,22 @@ function readFromStorage(): OrganisationalUnitDocument {
 function writeToStorage(doc: OrganisationalUnitDocument): void {
   assertValid(doc);
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
+  const key = getStorageKey();
+  if (key === null) return;
+  window.localStorage.setItem(key, JSON.stringify(doc));
+}
+
+// Phase 2 (SaaS Onboarding) — invalidate the in-memory cache when
+// the active scope changes. The OU registry caches its document
+// for hot-path reads (`getOrganisationalUnits`); without this hook
+// a switch from Org A → Org B would continue to surface Org A's
+// units. Dropping the cache forces the next read to pull from the
+// freshly-scoped storage key.
+if (typeof window !== "undefined") {
+  currentScope.subscribe(() => {
+    cache = null;
+    notify();
+  });
 }
 
 function freshOuId(): string {

@@ -25,7 +25,16 @@
 //   - `type === 'hardware'` requires a `hardwareDetails` block with
 //     `quantity > 0`. Other types must NOT carry hardwareDetails.
 
-const STORAGE_KEY = "adc.requirements.v1";
+import { resolveActiveKey, currentScope } from "./storageKeyUtils";
+
+// Phase 2 (SaaS Onboarding) — Org+WorkItem scope. The base key is
+// preserved for the legacy migration utility; readers/writers go
+// through the scoped resolver.
+export const BASE_STORAGE_KEY = "adc.requirements.v1";
+
+function getStorageKey(): string | null {
+  return resolveActiveKey(BASE_STORAGE_KEY, true);
+}
 export const REQUIREMENTS_SCHEMA_VERSION = "req-1.0" as const;
 
 const REQUIREMENT_ID_RE = /^req-[0-9a-f]{12}$/;
@@ -175,8 +184,10 @@ export function isValidRequirement(value: unknown): value is Requirement {
 
 function readDoc(): RequirementsDoc {
   if (typeof window === "undefined" || !window.localStorage) return EMPTY_DOC;
+  const key = getStorageKey();
+  if (key === null) return EMPTY_DOC;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     if (!raw) return EMPTY_DOC;
     const parsed = JSON.parse(raw) as Partial<RequirementsDoc> & Record<string, unknown>;
     if (
@@ -208,8 +219,19 @@ function readDoc(): RequirementsDoc {
 
 function writeDoc(doc: RequirementsDoc): void {
   if (typeof window === "undefined" || !window.localStorage) return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
+  const key = getStorageKey();
+  if (key === null) return;
+  window.localStorage.setItem(key, JSON.stringify(doc));
   bumpVersion();
+}
+
+// Phase 2 (SaaS Onboarding) — re-render every subscribed view when
+// the active scope changes so the Requirements screen re-reads from
+// the new effective key.
+if (typeof window !== "undefined") {
+  currentScope.subscribe(() => {
+    bumpVersion();
+  });
 }
 
 let storeVersion = 0;

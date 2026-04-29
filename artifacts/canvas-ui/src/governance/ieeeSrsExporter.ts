@@ -48,7 +48,6 @@ import {
   type SrsContext,
 } from "./srsGenerators";
 
-import { getPlaceholderWorkItem } from "./workItemPlaceholder";
 import { listModules } from "./moduleCatalogStore";
 import { listRequirements } from "./requirementsStore";
 import { listContracts } from "./requirementsContractStore";
@@ -61,7 +60,8 @@ const INTEGRITY_FOOTER =
 export type SrsExportFormat = "pdf" | "docx";
 
 export interface ExportSrsOptions {
-  readonly workItemId?: string;
+  readonly workItemId: string;
+  readonly workItemTitle?: string;
   readonly template?: SrsTemplateConfig;
 }
 
@@ -71,10 +71,13 @@ export interface ExportSrsOptions {
 
 export async function exportSRS(
   format: SrsExportFormat,
-  options?: ExportSrsOptions,
+  options: ExportSrsOptions,
 ): Promise<void> {
-  const cfg = options?.template ?? DEFAULT_SRS_TEMPLATE;
-  const ctx = buildContext(options?.workItemId);
+  if (!options || typeof options.workItemId !== "string" || options.workItemId.length === 0) {
+    throw new Error("exportSRS: options.workItemId is required.");
+  }
+  const cfg = options.template ?? DEFAULT_SRS_TEMPLATE;
+  const ctx = buildContext(options.workItemId, options.workItemTitle);
   const isDraft = isDraftDataset(ctx);
   const filename = buildFilename(ctx, cfg, format, isDraft);
   const titlePage = buildTitlePage(ctx, cfg, isDraft);
@@ -89,18 +92,14 @@ export async function exportSRS(
 // Context assembly
 // ---------------------------------------------------------------------------
 
-function buildContext(workItemIdOpt?: string): SrsContext {
-  const placeholder = getPlaceholderWorkItem();
-  const workItemId = workItemIdOpt ?? placeholder.workItemId;
-  // Title resolution: when the caller did not override the work-item
-  // id (or overrode it with the placeholder id), we use the
-  // placeholder title verbatim. When they passed a different id, the
-  // placeholder title would be misleading, so we synthesise a title
-  // from the override id. This keeps `projectName` and the data
-  // queries (requirements, contracts) consistent with each other.
+function buildContext(workItemId: string, workItemTitleOpt?: string): SrsContext {
+  // The active Work-Item title is supplied by the caller (which has
+  // direct access to the Work-Item registry through the React scope
+  // context). When omitted we synthesise a stable placeholder title
+  // so the exporter never produces an empty `projectName`.
   const workItemTitle =
-    workItemId === placeholder.workItemId
-      ? placeholder.title
+    workItemTitleOpt && workItemTitleOpt.length > 0
+      ? workItemTitleOpt
       : `Work Item ${workItemId}`;
   const modules = listModules();
   const requirements = listRequirements(workItemId);

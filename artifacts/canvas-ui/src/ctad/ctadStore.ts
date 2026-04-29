@@ -36,8 +36,20 @@ import {
   generateArchitectureId,
   isValidArchitectureId,
 } from "./architectureIdentity";
+import {
+  resolveActiveKey,
+  currentScope,
+} from "@/governance/storageKeyUtils";
 
-const STORAGE_KEY = "ctad.state.v1";
+// Phase 2 (SaaS Onboarding) — Org+WorkItem scope. The CTAD state
+// document is the per-Work-Item exploration workspace; switching
+// Work Items must surface a different CTAD state. The base key is
+// preserved for the legacy migration utility.
+export const BASE_STORAGE_KEY = "ctad.state.v1";
+
+function getStorageKey(): string | null {
+  return resolveActiveKey(BASE_STORAGE_KEY, true);
+}
 
 export type CtadParamValue = string | readonly string[] | null;
 
@@ -184,8 +196,10 @@ function migrateArchitectureDoc(raw: unknown): CtadArchitectureDoc | null {
 
 function readDoc(): CtadStoreDoc {
   if (typeof window === "undefined" || !window.localStorage) return EMPTY_DOC;
+  const key = getStorageKey();
+  if (key === null) return EMPTY_DOC;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     if (!raw) return EMPTY_DOC;
     const parsed = JSON.parse(raw) as Partial<CtadStoreDoc>;
     if (
@@ -240,9 +254,21 @@ function readDoc(): CtadStoreDoc {
 
 function writeDoc(doc: CtadStoreDoc): void {
   if (typeof window === "undefined" || !window.localStorage) return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
+  const key = getStorageKey();
+  if (key === null) return;
+  window.localStorage.setItem(key, JSON.stringify(doc));
   storeVersion += 1;
   notify();
+}
+
+// Phase 2 (SaaS Onboarding) — re-render every subscribed view when
+// the active scope changes so the CTAD shell re-reads the document
+// for the newly active Work Item.
+if (typeof window !== "undefined") {
+  currentScope.subscribe(() => {
+    storeVersion += 1;
+    notify();
+  });
 }
 
 // Monotonic version counter incremented on every successful write.
@@ -817,7 +843,9 @@ export function exportArchitectureState(
 
 // Internal hook for the build-time grammar invariant ----------------
 export const __ctadStoreInternals = {
-  STORAGE_KEY,
+  STORAGE_KEY: BASE_STORAGE_KEY,
+  BASE_STORAGE_KEY,
+  getStorageKey,
   readDoc,
   EMPTY_DOC,
 };

@@ -639,3 +639,50 @@ export function assertUrgencyLanguage(text: string): void {
 export function assertAllUrgencyLanguage(texts: readonly string[]): void {
   for (const t of texts) assertUrgencyLanguage(t);
 }
+
+// Phase 2 (SaaS Onboarding) — Onboarding-vocabulary tier.
+//
+// The onboarding surface (OrgSelector, NewOrgDialog, WorkItemDashboard,
+// NewWorkItemDialog, WorkspaceHub, and the AppShell scope switcher)
+// is META — it lets an architect pick which Organisation and Work
+// Item they will then operate inside. It does not author any
+// architectural artefact, render a governance reading, or imply
+// ranking, judgement, or recommendation about the orgs or work
+// items it lists. Every static label rendered by the new
+// onboarding modules is asserted against this tier at module load.
+//
+// ONBOARDING_FORBIDDEN is a SIBLING tier of REFLECTIVE /
+// EXPOSURE_NARRATIVE / RESPONSIBILITY_LENS / URGENCY — it extends
+// SIGNALS with the additional bans that protect the descriptive,
+// non-prescriptive posture of the onboarding surface. The tier is
+// extended from TOGAF_CONTAINMENT (which itself extends
+// SCENARIO_READING) so onboarding text inherits every authority
+// vocabulary ban already enforced inside the constitutional layer.
+//
+// Layering: ... ⊂ SCENARIO_READING ⊂ TOGAF_CONTAINMENT ⊂
+//           ONBOARDING
+//
+// Carve-out notes for substring matching (Onboarding surface):
+//   - All transitive carve-outs from lower tiers (best/must/lead/
+//     low/high/owner/address/recommend/optimise/target) apply
+//     unchanged. Onboarding labels deliberately use neutral nouns
+//     (Organisation, Sector, Nature of business, Work Item, EA
+//     Blueprint, Project, Enhancement, Change Request) and neutral
+//     verbs (Create, Open, Switch, Continue) only.
+//   - The literal label "Change Request" contains the bare word
+//     "change", which is NOT banned in TOGAF_CONTAINMENT (the
+//     constitutional layer chose to keep "change" available so the
+//     mandatory non-authority disclaimer can negate it). The
+//     onboarding tier preserves that decision so the Work-Item
+//     type label "Change Request" passes the substring scan.
+export const ONBOARDING_FORBIDDEN = dedup([
+  ...TOGAF_CONTAINMENT_FORBIDDEN,
+]);
+
+export function assertOnboardingLanguage(text: string): void {
+  checkAgainst(text, ONBOARDING_FORBIDDEN);
+}
+
+export function assertAllOnboardingLanguage(texts: readonly string[]): void {
+  for (const t of texts) assertOnboardingLanguage(t);
+}

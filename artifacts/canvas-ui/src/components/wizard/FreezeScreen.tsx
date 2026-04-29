@@ -70,7 +70,7 @@ import {
   freezeContract,
   type RequirementsContract,
 } from "@/governance/requirementsContractStore";
-import { PLACEHOLDER_WORK_ITEM_ID } from "@/governance/workItemPlaceholder";
+import { useCurrentScope } from "@/governance/CurrentOrgWorkItemContext";
 import { assertAllUrgencyLanguage } from "@/governance/staticTextGuard";
 import { SrsExportButton } from "./SrsExportButton";
 
@@ -134,9 +134,10 @@ export function FreezeScreen({
   onStartOver,
   onAfterFreezeDecision,
 }: FreezeScreenProps) {
+  const { workItemId } = useCurrentScope();
   const [metadata, setMetadata] = useState<ProjectMetadata>(EMPTY_METADATA);
   const [requirements, setRequirements] = useState<readonly Requirement[]>(
-    () => listRequirements(PLACEHOLDER_WORK_ITEM_ID),
+    () => (workItemId ? listRequirements(workItemId) : []),
   );
   const [contract, setContract] = useState<RequirementsContract | null>(null);
   const [decisionFrozen, setDecisionFrozen] = useState(false);
@@ -144,13 +145,18 @@ export function FreezeScreen({
   const [decisionError, setDecisionError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!workItemId) {
+      setRequirements([]);
+      return;
+    }
+    setRequirements(listRequirements(workItemId));
     const unsub = subscribeRequirements(() => {
-      setRequirements(listRequirements(PLACEHOLDER_WORK_ITEM_ID));
+      setRequirements(listRequirements(workItemId));
     });
     return () => {
       unsub();
     };
-  }, []);
+  }, [workItemId]);
 
   const approvedAndFrozen = useMemo(
     () => requirements.filter((r) => r.status === "approved" || r.status === "frozen"),
@@ -178,6 +184,9 @@ export function FreezeScreen({
   const onFreezeRequirements = () => {
     setReqError(null);
     try {
+      if (!workItemId) {
+        throw new Error("No active Work Item.");
+      }
       const eligible = approvedAndFrozen;
       if (eligible.length === 0) {
         throw new Error(
@@ -185,11 +194,11 @@ export function FreezeScreen({
         );
       }
       const c = freezeContract(
-        PLACEHOLDER_WORK_ITEM_ID,
+        workItemId,
         eligible,
-        // The work item placeholder doubles as a stable "frozen by"
+        // The active workItemId doubles as a stable "frozen by"
         // marker until a real identity layer is wired in.
-        PLACEHOLDER_WORK_ITEM_ID,
+        workItemId,
       );
       setContract(c);
     } catch (e) {

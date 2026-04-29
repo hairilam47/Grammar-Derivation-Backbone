@@ -98,6 +98,11 @@ const ALLOWED_IMPORT_PREFIXES: readonly string[] = [
   "@/components/ui",
   // Vocabulary guard — read-only assertion utility.
   "@/governance/staticTextGuard",
+  // Storage-key scoping helper (Phase 2 onboarding). Pure
+  // string-composition utility used by Track 3's view-prefs store
+  // so its localStorage document is partitioned by Organisation +
+  // Work Item; introduces no decision-pipeline coupling.
+  "@/governance/storageKeyUtils",
   // Read-only CTAD store. The named-import scan below further
   // constrains Track 3 to a small allow-list of read symbols.
   // The portfolio store is intentionally absent: Phase 3

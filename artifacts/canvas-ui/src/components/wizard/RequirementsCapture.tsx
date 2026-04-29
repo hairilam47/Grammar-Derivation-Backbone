@@ -49,7 +49,7 @@ import {
   listModules,
   subscribe as subscribeModules,
 } from "@/governance/moduleCatalogStore";
-import { PLACEHOLDER_WORK_ITEM_ID } from "@/governance/workItemPlaceholder";
+import { useCurrentScope } from "@/governance/CurrentOrgWorkItemContext";
 import { assertAllUrgencyLanguage } from "@/governance/staticTextGuard";
 import { SrsExportButton } from "./SrsExportButton";
 
@@ -160,16 +160,22 @@ function emptyDraft(): DraftRequirement {
 }
 
 export function RequirementsCapture({ onBack, onNext }: RequirementsCaptureProps) {
+  const { workItemId } = useCurrentScope();
   const [requirements, setRequirements] = useState<readonly Requirement[]>(
-    () => listRequirements(PLACEHOLDER_WORK_ITEM_ID),
+    () => (workItemId ? listRequirements(workItemId) : []),
   );
   const [modules, setModules] = useState<readonly Module[]>(() => listModules());
   const [draft, setDraft] = useState<DraftRequirement | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!workItemId) {
+      setRequirements([]);
+      return;
+    }
+    setRequirements(listRequirements(workItemId));
     const unsubR = subscribeRequirements(() => {
-      setRequirements(listRequirements(PLACEHOLDER_WORK_ITEM_ID));
+      setRequirements(listRequirements(workItemId));
     });
     const unsubM = subscribeModules(() => {
       setModules(listModules());
@@ -178,7 +184,7 @@ export function RequirementsCapture({ onBack, onNext }: RequirementsCaptureProps
       unsubR();
       unsubM();
     };
-  }, []);
+  }, [workItemId]);
 
   const moduleNameById = useMemo(() => {
     const m: Record<string, string> = {};
@@ -212,10 +218,14 @@ export function RequirementsCapture({ onBack, onNext }: RequirementsCaptureProps
   const saveDraft = () => {
     if (!draft) return;
     setError(null);
+    if (!workItemId) {
+      setError("No active Work Item.");
+      return;
+    }
     try {
       saveRequirement({
         id: draft.editingId ?? undefined,
-        workItemId: PLACEHOLDER_WORK_ITEM_ID,
+        workItemId,
         title: draft.title,
         description: draft.description,
         type: draft.type,

@@ -46,8 +46,20 @@ import {
   type ValidatorWorkspaceView,
 } from "./acwValidator";
 
+import {
+  resolveActiveKey,
+  currentScope,
+} from "@/governance/storageKeyUtils";
+
 export const ACW_SCHEMA_VERSION = "acw-1.0" as const;
-const STORAGE_KEY = "acw.workspace.v1";
+// Phase 2 (SaaS Onboarding) — Org+WorkItem scope. Each Work Item
+// owns its own ACW workspace document; switching Work Items must
+// surface a different graph.
+export const BASE_STORAGE_KEY = "acw.workspace.v1";
+
+function getStorageKey(): string | null {
+  return resolveActiveKey(BASE_STORAGE_KEY, true);
+}
 
 // ---------------------------------------------------------------------------
 // Document shape
@@ -447,8 +459,10 @@ function notify(): void {
 
 function readFromStorage(): AcwWorkspace {
   if (typeof window === "undefined") return emptyWorkspace();
+  const key = getStorageKey();
+  if (key === null) return emptyWorkspace();
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     if (!raw) return emptyWorkspace();
     const parsed = JSON.parse(raw);
     if (!isValidWorkspace(parsed)) return emptyWorkspace();
@@ -461,7 +475,19 @@ function readFromStorage(): AcwWorkspace {
 function writeToStorage(workspace: AcwWorkspace): void {
   assertAllowedFields(workspace);
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(workspace));
+  const key = getStorageKey();
+  if (key === null) return;
+  window.localStorage.setItem(key, JSON.stringify(workspace));
+}
+
+// Phase 2 (SaaS Onboarding) — invalidate the in-memory workspace
+// cache when the active scope changes so Work-Item switches and
+// Org switches surface a different graph.
+if (typeof window !== "undefined") {
+  currentScope.subscribe(() => {
+    cache = null;
+    notify();
+  });
 }
 
 export function getWorkspace(): AcwWorkspace {

@@ -22,8 +22,18 @@
 //     same on both paths.
 
 import { getCapabilityById } from "@workspace/architecture-grammar";
+import { resolveActiveKey, currentScope } from "./storageKeyUtils";
 
-const STORAGE_KEY = "adc.module-catalog.v1";
+// Phase 2 (SaaS Onboarding) — Org-only scope. The Module Catalogue
+// is shared across every Work Item inside a single Organisation
+// (an Enhancement, a Change Request and an EA Blueprint all author
+// against the same module taxonomy), so the resolver does not bind
+// to a Work Item id.
+export const BASE_STORAGE_KEY = "adc.module-catalog.v1";
+
+function getStorageKey(): string | null {
+  return resolveActiveKey(BASE_STORAGE_KEY, false);
+}
 export const MODULE_CATALOG_SCHEMA_VERSION = "mod-1.0" as const;
 
 const MODULE_ID_RE = /^module:[a-z0-9-]+$/;
@@ -77,8 +87,10 @@ function isValidModule(value: unknown): value is Module {
 
 function readDoc(): ModuleCatalogDoc {
   if (typeof window === "undefined" || !window.localStorage) return EMPTY_DOC;
+  const key = getStorageKey();
+  if (key === null) return EMPTY_DOC;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     if (!raw) return EMPTY_DOC;
     const parsed = JSON.parse(raw) as Partial<ModuleCatalogDoc> & Record<string, unknown>;
     if (
@@ -110,8 +122,20 @@ function readDoc(): ModuleCatalogDoc {
 
 function writeDoc(doc: ModuleCatalogDoc): void {
   if (typeof window === "undefined" || !window.localStorage) return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
+  const key = getStorageKey();
+  if (key === null) return;
+  window.localStorage.setItem(key, JSON.stringify(doc));
   bumpVersion();
+}
+
+// Phase 2 (SaaS Onboarding) — re-render every subscribed view when
+// the active scope changes (Org switch, Org-then-WorkItem switch),
+// so the Modules screen re-reads the document for the newly active
+// Organisation.
+if (typeof window !== "undefined") {
+  currentScope.subscribe(() => {
+    bumpVersion();
+  });
 }
 
 let storeVersion = 0;

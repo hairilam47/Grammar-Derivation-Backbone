@@ -33,7 +33,14 @@ import {
   type Requirement,
 } from "./requirementsStore";
 
-const STORAGE_KEY = "adc.requirements-contracts.v1";
+import { resolveActiveKey, currentScope } from "./storageKeyUtils";
+
+// Phase 2 (SaaS Onboarding) — Org+WorkItem scope.
+export const BASE_STORAGE_KEY = "adc.requirements-contracts.v1";
+
+function getStorageKey(): string | null {
+  return resolveActiveKey(BASE_STORAGE_KEY, true);
+}
 export const REQUIREMENTS_CONTRACT_SCHEMA_VERSION = "rc-1.0" as const;
 
 const CONTRACT_ID_RE = /^rc-[0-9a-f]{12}$/;
@@ -118,8 +125,10 @@ function isValidContract(value: unknown): value is RequirementsContract {
 
 function readDoc(): ContractDoc {
   if (typeof window === "undefined" || !window.localStorage) return EMPTY_DOC;
+  const key = getStorageKey();
+  if (key === null) return EMPTY_DOC;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     if (!raw) return EMPTY_DOC;
     const parsed = JSON.parse(raw) as Partial<ContractDoc> & Record<string, unknown>;
     if (
@@ -151,8 +160,16 @@ function readDoc(): ContractDoc {
 
 function writeDoc(doc: ContractDoc): void {
   if (typeof window === "undefined" || !window.localStorage) return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
+  const key = getStorageKey();
+  if (key === null) return;
+  window.localStorage.setItem(key, JSON.stringify(doc));
   bumpVersion();
+}
+
+if (typeof window !== "undefined") {
+  currentScope.subscribe(() => {
+    bumpVersion();
+  });
 }
 
 let storeVersion = 0;

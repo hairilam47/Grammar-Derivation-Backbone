@@ -12,8 +12,18 @@
 // every card that has been applied. The two are kept consistent
 // by the binding engine (`cncfBindingEngine.ts`).
 
-const STORAGE_KEY = "ctad.applied-cards.v1";
+import {
+  resolveActiveKey,
+  currentScope,
+} from "@/governance/storageKeyUtils";
+
+// Phase 2 (SaaS Onboarding) — Org+WorkItem scope.
+export const BASE_STORAGE_KEY = "ctad.applied-cards.v1";
 const SCHEMA_VERSION = "ctad-applied-cards-1.0" as const;
+
+function getStorageKey(): string | null {
+  return resolveActiveKey(BASE_STORAGE_KEY, true);
+}
 
 import type { CtadBinding, CtadParamValue } from "./ctadStore";
 
@@ -61,8 +71,10 @@ function bindingKey(b: CtadBinding): string {
 
 function readDoc(): AppliedCardsStoreDoc {
   if (typeof window === "undefined" || !window.localStorage) return EMPTY_DOC;
+  const key = getStorageKey();
+  if (key === null) return EMPTY_DOC;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     if (!raw) return EMPTY_DOC;
     const parsed = JSON.parse(raw) as Partial<AppliedCardsStoreDoc>;
     if (
@@ -85,9 +97,18 @@ function readDoc(): AppliedCardsStoreDoc {
 
 function writeDoc(doc: AppliedCardsStoreDoc): void {
   if (typeof window === "undefined" || !window.localStorage) return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
+  const key = getStorageKey();
+  if (key === null) return;
+  window.localStorage.setItem(key, JSON.stringify(doc));
   storeVersion += 1;
   notify();
+}
+
+if (typeof window !== "undefined") {
+  currentScope.subscribe(() => {
+    storeVersion += 1;
+    notify();
+  });
 }
 
 let storeVersion = 0;
@@ -181,7 +202,9 @@ export function removeAppliedCardEntry(b: CtadBinding, cardId: string): void {
 }
 
 export const __ctadAppliedCardsInternals = {
-  STORAGE_KEY,
+  STORAGE_KEY: BASE_STORAGE_KEY,
+  BASE_STORAGE_KEY,
+  getStorageKey,
   SCHEMA_VERSION,
   readDoc,
 };

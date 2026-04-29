@@ -35,10 +35,28 @@ import {
   getWorkspace,
   updateNodeProperties,
 } from "../acwStore";
+import {
+  __snapshotScope,
+  __restoreScopeSnapshot,
+  getScopedKey,
+} from "../../governance/storageKeyUtils";
 
-const STORE_KEY = "acw.workspace.v1";
-const VIEW_KEY = "acw.workspace.view.v1";
-const OU_KEY = "acw.organisational-units.v1";
+// Phase 2 (SaaS Onboarding) — workspace + view-state are
+// Org+Work-Item-scoped; the OU registry is Org-scoped. The probe
+// runs against an isolated tenant so user data is never disturbed.
+const PROBE_ORG_ID = "probe-org-ou";
+const PROBE_WORK_ITEM_ID = "probe-wi-ou";
+const STORE_KEY = getScopedKey(
+  "acw.workspace.v1",
+  PROBE_ORG_ID,
+  PROBE_WORK_ITEM_ID,
+);
+const VIEW_KEY = getScopedKey(
+  "acw.workspace.view.v1",
+  PROBE_ORG_ID,
+  PROBE_WORK_ITEM_ID,
+);
+const OU_KEY = getScopedKey("acw.organisational-units.v1", PROBE_ORG_ID);
 
 function snapshotLocalStorage(): {
   ws: string | null;
@@ -130,8 +148,15 @@ if (OU_SCHEMA_VERSION !== "ou-1.0") {
 
 // (3 + 4 + 5) Live-store probes. Snapshot every relevant
 // localStorage key first; restore on the way out so the user's
-// persisted units / workspace survive a probe failure.
+// persisted units / workspace survive a probe failure. Phase 2
+// (SaaS Onboarding) — also snapshot/restore the active scope so
+// the probe runs under a deterministic probe tenant.
 const saved = snapshotLocalStorage();
+const __scopeSnap = __snapshotScope();
+__restoreScopeSnapshot({
+  orgId: PROBE_ORG_ID,
+  workItemId: PROBE_WORK_ITEM_ID,
+});
 try {
   if (typeof window !== "undefined") {
     window.localStorage.removeItem(OU_KEY);
@@ -273,6 +298,7 @@ try {
   }
 } finally {
   restoreLocalStorage(saved);
+  __restoreScopeSnapshot(__scopeSnap);
 }
 
 export function assertOuStoreInvariants(): void {

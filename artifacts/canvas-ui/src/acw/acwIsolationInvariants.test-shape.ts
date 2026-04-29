@@ -107,6 +107,16 @@ const ALLOWED_IMPORT_PREFIXES: readonly string[] = [
   "@/governance/staticTextGuard",
   "../governance/staticTextGuard",
   "../../governance/staticTextGuard",
+  // Phase 2 (SaaS Onboarding) — multi-tenant storage-key scoping
+  // utility. Pure key composition + a mutable `currentScope` mirror
+  // for the React provider; carries no decision-pipeline state and
+  // does not import any pipeline module. Required so ACW stores
+  // (workspace, view-state, view-prefs, OUs, track3 view-prefs)
+  // can resolve their effective localStorage key under the active
+  // Organisation + Work-Item scope.
+  "@/governance/storageKeyUtils",
+  "../governance/storageKeyUtils",
+  "../../governance/storageKeyUtils",
   // Phase 5 — one-way read of the CTAD parameter REGISTRY
   // (sections, parameters, options) into ACW so the semantic
   // binding helpers in `acw/semantic/*` can resolve a node's

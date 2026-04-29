@@ -29,9 +29,19 @@
 // `track3ViewPrefs`, whose validator messages also contain
 // "must"/"required" wording for the same reason.
 
+import {
+  resolveActiveKey,
+  currentScope,
+} from "@/governance/storageKeyUtils";
+
 export const ACW_WORKSPACE_VIEWPREFS_SCHEMA_VERSION =
   "acw-workspace-viewprefs-1.0" as const;
-const STORAGE_KEY = "acw.workspace.viewprefs.v1";
+// Phase 2 (SaaS Onboarding) — Org+WorkItem scope.
+export const BASE_STORAGE_KEY = "acw.workspace.viewprefs.v1";
+
+function getStorageKey(): string | null {
+  return resolveActiveKey(BASE_STORAGE_KEY, true);
+}
 
 const DEFAULT_FULLSCREEN = true;
 
@@ -135,8 +145,10 @@ const subscribers = new Set<() => void>();
 
 function readFromStorage(): AcwWorkspaceViewPrefsDoc {
   if (typeof window === "undefined") return emptyDoc();
+  const key = getStorageKey();
+  if (key === null) return emptyDoc();
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     if (!raw) return emptyDoc();
     const parsed = JSON.parse(raw);
     if (!isValid(parsed)) return emptyDoc();
@@ -152,7 +164,16 @@ function readFromStorage(): AcwWorkspaceViewPrefsDoc {
 function writeToStorage(doc: AcwWorkspaceViewPrefsDoc): void {
   assertValidPrefsDoc(doc);
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
+  const key = getStorageKey();
+  if (key === null) return;
+  window.localStorage.setItem(key, JSON.stringify(doc));
+}
+
+if (typeof window !== "undefined") {
+  currentScope.subscribe(() => {
+    cache = null;
+    notify();
+  });
 }
 
 function notify(): void {
@@ -221,7 +242,9 @@ export const __acwWorkspaceViewPrefsInternals = Object.freeze({
   defaultLensPrefs,
   ALLOWED_TOP,
   ALLOWED_LENS,
-  STORAGE_KEY,
+  STORAGE_KEY: BASE_STORAGE_KEY,
+  BASE_STORAGE_KEY,
+  getStorageKey,
   reloadFromStorageForTest(): void {
     cache = null;
     notify();

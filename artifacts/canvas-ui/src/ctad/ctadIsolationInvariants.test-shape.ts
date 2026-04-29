@@ -82,6 +82,12 @@ const ALLOWED_IMPORT_PREFIXES: readonly string[] = [
   // Vocabulary guard — read-only assertion utility shared with the
   // rest of the application; introduces no decision-pipeline coupling.
   "@/governance/staticTextGuard",
+  // Storage-key scoping helper (Phase 2 onboarding). Pure
+  // string-composition utility (`<orgId>:<workItemId>:<base>` or
+  // `<orgId>:<base>`) with no decision-pipeline state of its own.
+  // CTAD stores import `getScopedKey` so their localStorage
+  // documents are partitioned by Organisation + Work Item.
+  "@/governance/storageKeyUtils",
   // Portfolio store: read-only access only. The allowlist permits
   // the import path; the named-import scan below ensures CTAD
   // imports only the read symbols (listEntries, getEntry, PortfolioEntry).

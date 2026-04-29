@@ -10,7 +10,16 @@
 // S6-HC6 Fixed lifecycle: three states, forward-only, human-initiated.
 // S6-HC9 Interpretation guidance phrased as questions only (validator).
 
-const STORAGE_KEY = "adc.policy-signals.v1";
+import { resolveActiveKey } from "./storageKeyUtils";
+
+// Phase 2 (SaaS Onboarding) — Org+WorkItem scope. Base key kept for
+// the legacy migration utility; readers / writers go through the
+// scoped resolver below.
+export const BASE_STORAGE_KEY = "adc.policy-signals.v1";
+
+function getStorageKey(): string | null {
+  return resolveActiveKey(BASE_STORAGE_KEY, true);
+}
 
 export const SIGNAL_CATEGORIES = [
   "Risk Accumulation",
@@ -204,8 +213,10 @@ function isValidSignal(raw: unknown): raw is PolicySignal {
 
 function readAll(): PolicySignal[] {
   if (typeof window === "undefined") return [];
+  const key = getStorageKey();
+  if (key === null) return [];
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -217,7 +228,9 @@ function readAll(): PolicySignal[] {
 
 function writeAll(signals: PolicySignal[]): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(signals));
+  const key = getStorageKey();
+  if (key === null) return;
+  window.localStorage.setItem(key, JSON.stringify(signals));
 }
 
 export function listSignals(): PolicySignal[] {

@@ -31,8 +31,18 @@ import {
   type AcwLodLevel,
 } from "./acwGrammar";
 
+import {
+  resolveActiveKey,
+  currentScope,
+} from "@/governance/storageKeyUtils";
+
 export const ACW_VIEW_SCHEMA_VERSION = "acw-view-1.0" as const;
-const STORAGE_KEY = "acw.workspace.view.v1";
+// Phase 2 (SaaS Onboarding) — Org+WorkItem scope.
+export const BASE_STORAGE_KEY = "acw.workspace.view.v1";
+
+function getStorageKey(): string | null {
+  return resolveActiveKey(BASE_STORAGE_KEY, true);
+}
 
 export type AcwLensViewMode = "2d" | "3d";
 const ALLOWED_VIEW_MODES: readonly AcwLensViewMode[] = ["2d", "3d"];
@@ -445,8 +455,10 @@ function normalize(raw: AcwViewState): AcwViewState {
 
 function readFromStorage(): AcwViewState {
   if (typeof window === "undefined") return emptyView();
+  const key = getStorageKey();
+  if (key === null) return emptyView();
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     if (!raw) return emptyView();
     const parsed = JSON.parse(raw);
     if (!isValid(parsed)) return emptyView();
@@ -459,7 +471,16 @@ function readFromStorage(): AcwViewState {
 function writeToStorage(state: AcwViewState): void {
   assertValid(state);
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  const key = getStorageKey();
+  if (key === null) return;
+  window.localStorage.setItem(key, JSON.stringify(state));
+}
+
+if (typeof window !== "undefined") {
+  currentScope.subscribe(() => {
+    cache = null;
+    notify();
+  });
 }
 
 export function getViewState(): AcwViewState {

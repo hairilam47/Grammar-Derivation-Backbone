@@ -71,6 +71,12 @@ const ALLOWED_IMPORT_PREFIXES: readonly string[] = [
   "@/components/ui",
   // Vocabulary guard — read-only assertion utility.
   "@/governance/staticTextGuard",
+  // Phase 2 (SaaS Onboarding) — multi-tenant storage-key scoping
+  // utility. Pure key composition + a mutable `currentScope` mirror
+  // for the React provider; carries no decision-pipeline state.
+  // Required so the L3 generator can resolve the active CTAD state
+  // key under the current Organisation + Work-Item scope.
+  "@/governance/storageKeyUtils",
   // The L3 carve-out: read-only CTAD store. The named-import scan
   // below further constrains the carve-out to the SINGLE allowed
   // symbol `exportArchitectureState` (no roster enumerator, no

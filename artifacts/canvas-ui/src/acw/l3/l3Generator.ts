@@ -304,21 +304,26 @@ export function runL3Generator(architectureId: string): readonly string[] {
 // CTAD store's persisted document directly through `localStorage`,
 // which is a global runtime affordance and not an import. The CTAD
 // storage key (`ctad.state.v1`) is documented in §10C of
-// docs/ARCHITECTURE.md; we read it defensively here (no schema
-// validation, no migration — those live in the CTAD store) purely
-// to enumerate architecture ids. Each id is then handed to the
-// allowlisted `exportArchitectureState` for the actual snapshot.
-// Any malformed or absent storage value is a silent no-op so a
-// fresh user (no CTAD data yet) sees an empty L3 surface instead
-// of a crash.
+// docs/ARCHITECTURE.md; under Phase 2 (SaaS Onboarding) it is now
+// further scoped by the active Organisation + Work-Item via
+// `storageKeyUtils.resolveActiveKey`. We read it defensively here
+// (no schema validation, no migration — those live in the CTAD
+// store) purely to enumerate architecture ids. Each id is then
+// handed to the allowlisted `exportArchitectureState` for the
+// actual snapshot. Any malformed or absent storage value is a
+// silent no-op so a fresh user (no CTAD data yet, or no active
+// Work Item) sees an empty L3 surface instead of a crash.
 // ---------------------------------------------------------------------------
-const CTAD_STORAGE_KEY = "ctad.state.v1";
+import { resolveActiveKey } from "@/governance/storageKeyUtils";
+const CTAD_BASE_STORAGE_KEY = "ctad.state.v1";
 
 function readPersistedArchitectureIds(): readonly string[] {
   if (typeof window === "undefined") return [];
+  const ctadKey = resolveActiveKey(CTAD_BASE_STORAGE_KEY, true);
+  if (ctadKey === null) return [];
   let raw: string | null;
   try {
-    raw = window.localStorage.getItem(CTAD_STORAGE_KEY);
+    raw = window.localStorage.getItem(ctadKey);
   } catch {
     return [];
   }

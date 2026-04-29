@@ -35,10 +35,31 @@ import {
 } from "../acwStore";
 import { enumerateLensVisibility } from "../acwLensStructure";
 import { generateL3Nodes, __l3GeneratorInternals } from "./l3Generator";
+import {
+  __snapshotScope,
+  __restoreScopeSnapshot,
+  currentScope,
+  getScopedKey,
+} from "@/governance/storageKeyUtils";
 
 const PREFIX = "ACW L3 generator invariant violation";
-const ACW_STORE_KEY = "acw.workspace.v1";
-const CTAD_STORE_KEY = "ctad.state.v1";
+// Phase 2 (multi-tenant scoping): the acw + ctad stores resolve
+// their localStorage keys through `<orgId>:<workItemId>:<base>`.
+// This probe installs a dedicated synthetic scope at module-load
+// time so its seed/restore round-trips through the same key the
+// stores use.
+const PROBE_ORG_ID = "__l3-probe-org__";
+const PROBE_WI_ID = "__l3-probe-wi__";
+const ACW_STORE_KEY = getScopedKey(
+  "acw.workspace.v1",
+  PROBE_ORG_ID,
+  PROBE_WI_ID,
+);
+const CTAD_STORE_KEY = getScopedKey(
+  "ctad.state.v1",
+  PROBE_ORG_ID,
+  PROBE_WI_ID,
+);
 const ARCH_ID = "arch-probe-deadbeef";
 
 interface SnapshotPair {
@@ -186,6 +207,8 @@ function seedWorkspace(): void {
 }
 
 if (typeof window !== "undefined") {
+  const __scopeSnap = __snapshotScope();
+  currentScope.set({ orgId: PROBE_ORG_ID, workItemId: PROBE_WI_ID });
   const snap = snapshotStorage();
   try {
     // ------------------------------------------------------------
@@ -587,5 +610,6 @@ if (typeof window !== "undefined") {
     }
   } finally {
     restoreStorage(snap);
+    __restoreScopeSnapshot(__scopeSnap);
   }
 }

@@ -27,9 +27,18 @@ import {
   deleteRequirement,
   listRequirements,
 } from "./requirementsStore";
+import {
+  __snapshotScope,
+  __restoreScopeSnapshot,
+  getScopedKey,
+} from "./storageKeyUtils";
 
 const EXPECTED_SCHEMA_VERSION = "req-1.0";
-const STORAGE_KEY = "adc.requirements.v1";
+const BASE_STORAGE_KEY = "adc.requirements.v1";
+// Phase 2 (SaaS Onboarding) — requirements are Org+Work-Item-scoped.
+const PROBE_ORG_ID = "probe-org-requirements";
+const PROBE_WORK_ITEM_ID = "probe-wi-requirements";
+const PROBE_KEY = getScopedKey(BASE_STORAGE_KEY, PROBE_ORG_ID, PROBE_WORK_ITEM_ID);
 
 if (REQUIREMENTS_SCHEMA_VERSION !== EXPECTED_SCHEMA_VERSION) {
   throw new Error(
@@ -40,21 +49,27 @@ if (REQUIREMENTS_SCHEMA_VERSION !== EXPECTED_SCHEMA_VERSION) {
 
 function withIsolatedStorage(probe: () => void): void {
   const hasWindow = typeof window !== "undefined" && !!window.localStorage;
-  const prior = hasWindow ? window.localStorage.getItem(STORAGE_KEY) : null;
-  if (hasWindow) window.localStorage.removeItem(STORAGE_KEY);
+  const prior = hasWindow ? window.localStorage.getItem(PROBE_KEY) : null;
+  if (hasWindow) window.localStorage.removeItem(PROBE_KEY);
+  const scopeSnap = __snapshotScope();
+  __restoreScopeSnapshot({
+    orgId: PROBE_ORG_ID,
+    workItemId: PROBE_WORK_ITEM_ID,
+  });
   try {
     probe();
   } finally {
+    __restoreScopeSnapshot(scopeSnap);
     if (hasWindow) {
-      if (prior === null) window.localStorage.removeItem(STORAGE_KEY);
-      else window.localStorage.setItem(STORAGE_KEY, prior);
+      if (prior === null) window.localStorage.removeItem(PROBE_KEY);
+      else window.localStorage.setItem(PROBE_KEY, prior);
     }
   }
 }
 
 function assertDocAllowListShape(): void {
   if (typeof window === "undefined" || !window.localStorage) return;
-  const raw = window.localStorage.getItem(STORAGE_KEY);
+  const raw = window.localStorage.getItem(PROBE_KEY);
   if (raw === null) return;
   const doc = JSON.parse(raw) as Record<string, unknown>;
   const allowedTop = new Set(["schemaVersion", "requirements"]);

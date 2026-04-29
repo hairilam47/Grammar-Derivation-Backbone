@@ -22,9 +22,19 @@
 // (the new default).
 import { TRACK3_PERSPECTIVES, type Track3Perspective } from "./track3Types";
 
+import {
+  resolveActiveKey,
+  currentScope,
+} from "@/governance/storageKeyUtils";
+
 export const TRACK3_VIEWPREFS_SCHEMA_VERSION = "acw-track3-viewprefs-1.1" as const;
 const LEGACY_SCHEMA_VERSION_V10 = "acw-track3-viewprefs-1.0" as const;
-const STORAGE_KEY = "acw.track3.viewprefs.v1";
+// Phase 2 (SaaS Onboarding) — Org+WorkItem scope.
+export const BASE_STORAGE_KEY = "acw.track3.viewprefs.v1";
+
+function getStorageKey(): string | null {
+  return resolveActiveKey(BASE_STORAGE_KEY, true);
+}
 
 export type Track3ViewMode = "2d" | "3d";
 const ALLOWED_VIEW_MODES: readonly Track3ViewMode[] = ["2d", "3d"];
@@ -238,8 +248,10 @@ const subscribers = new Set<() => void>();
 
 function readFromStorage(): Track3ViewPrefsDoc {
   if (typeof window === "undefined") return emptyDoc();
+  const key = getStorageKey();
+  if (key === null) return emptyDoc();
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     if (!raw) return emptyDoc();
     const parsed = JSON.parse(raw);
     // Try v1.0 → v1.1 migration first; if not a v1.0 doc, fall
@@ -263,7 +275,16 @@ function readFromStorage(): Track3ViewPrefsDoc {
 function writeToStorage(doc: Track3ViewPrefsDoc): void {
   assertValidPrefsDoc(doc);
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
+  const key = getStorageKey();
+  if (key === null) return;
+  window.localStorage.setItem(key, JSON.stringify(doc));
+}
+
+if (typeof window !== "undefined") {
+  currentScope.subscribe(() => {
+    cache = null;
+    notify();
+  });
 }
 
 function notify(): void {

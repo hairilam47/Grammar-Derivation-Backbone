@@ -4,7 +4,13 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppShell } from "@/components/AppSidebar";
 import NotFound from "@/pages/not-found";
-import LandingPage from "@/pages/LandingPage";
+import OrgSelector from "@/pages/onboarding/OrgSelector";
+import WorkItemDashboard from "@/pages/dashboard/WorkItemDashboard";
+import WorkspaceHub from "@/pages/workspace/WorkspaceHub";
+import {
+  CurrentOrgWorkItemProvider,
+  useCurrentScope,
+} from "@/governance/CurrentOrgWorkItemContext";
 import DecisionCanvasShell from "@/components/DecisionCanvasShell";
 import Portfolio from "@/pages/Portfolio";
 import Signals from "@/pages/Signals";
@@ -110,6 +116,16 @@ import "@/acw/l3/acwL3GeneratorInvariants.test-shape";
 import "@/governance/moduleCatalogInvariants.test-shape";
 import "@/governance/requirementsStoreInvariants.test-shape";
 import "@/governance/requirementsContractStoreInvariants.test-shape";
+// Phase 2 (SaaS Onboarding) — module-load side effects for the
+// multi-tenant scoping foundation: storage-key shape, organisation
+// + Work-Item registries, schema-version locks (org-1.0 / wi-1.0),
+// allow-list shape probes, slug-pattern / sector-enum / nature-of-
+// business-enum violations, every-org-has-an-EA-Blueprint rule, and
+// the Enhancement / Change-Request guard.
+import "@/governance/storageKeyUtilsInvariants.test-shape";
+import "@/governance/workItemStoreInvariants.test-shape";
+import "@/governance/orgStoreInvariants.test-shape";
+import "@/governance/legacyMigrationInvariants.test-shape";
 
 // Dev-only deterministic seed page (Task #119). Both the lazy
 // import expression and the route registration are gated on
@@ -153,28 +169,128 @@ function RouteTransition({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Phase 2 (SaaS Onboarding) — root gate. `/` routes through the
+// onboarding flow based on the active scope: no org → OrgSelector,
+// org but no Work Item → WorkItemDashboard, both → WorkspaceHub.
+function RootGate() {
+  const { orgId, workItemId } = useCurrentScope();
+  if (!orgId) return <OrgSelector />;
+  if (!workItemId) return <WorkItemDashboard />;
+  return <WorkspaceHub />;
+}
+
+// Phase 2 (SaaS Onboarding) — tool gate. Every tool route must
+// have a current Organisation AND a current Work Item resolved
+// before its inner component reads from any tenant-scoped store.
+// When the scope is insufficient we render the appropriate
+// onboarding step instead of the tool, so a deep-link into a tool
+// without an active scope cannot crash a store reader.
+function ToolGate({ children }: { children: React.ReactNode }) {
+  const { orgId, workItemId } = useCurrentScope();
+  if (!orgId) return <OrgSelector />;
+  if (!workItemId) return <WorkItemDashboard />;
+  return <>{children}</>;
+}
+
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={LandingPage} />
-      <Route path="/decision-canvas" component={DecisionCanvasShell} />
-      <Route path="/portfolio" component={Portfolio} />
-      <Route path="/signals" component={Signals} />
-      <Route path="/reflection" component={Reflection} />
-      <Route path="/exposure/:adsId" component={Exposure} />
-      <Route path="/governance/containment" component={Containment} />
-      <Route path="/workspace" component={ContextDomain} />
-      <Route path="/workspace/context" component={ContextDomain} />
-      <Route path="/workspace/landscape" component={SystemLandscape} />
-      <Route path="/workspace/integration" component={IntegrationView} />
-      <Route path="/workspace/deployment" component={Deployment} />
-      <Route path="/workspace/operations" component={OperationsContinuity} />
-      <Route path="/workspace/studio" component={StudioCanvas} />
-      <Route path="/ctad" component={CtadEntry} />
-      <Route path="/ctad/arch/:architectureId" component={CtadArchitectureShell} />
-      <Route path="/ctad/:adsId/:adsVersion" component={CtadShell} />
-      <Route path="/acw/derived" component={Track3Entry} />
-      <Route path="/acw/derived/arch/:architectureId" component={Track3Shell} />
+      <Route path="/" component={RootGate} />
+      <Route path="/dashboard">
+        <ToolGate>
+          <WorkItemDashboard />
+        </ToolGate>
+      </Route>
+      <Route path="/decision-canvas">
+        <ToolGate>
+          <DecisionCanvasShell />
+        </ToolGate>
+      </Route>
+      <Route path="/portfolio">
+        <ToolGate>
+          <Portfolio />
+        </ToolGate>
+      </Route>
+      <Route path="/signals">
+        <ToolGate>
+          <Signals />
+        </ToolGate>
+      </Route>
+      <Route path="/reflection">
+        <ToolGate>
+          <Reflection />
+        </ToolGate>
+      </Route>
+      <Route path="/exposure/:adsId">
+        <ToolGate>
+          <Exposure />
+        </ToolGate>
+      </Route>
+      <Route path="/governance/containment">
+        <ToolGate>
+          <Containment />
+        </ToolGate>
+      </Route>
+      <Route path="/workspace">
+        <ToolGate>
+          <ContextDomain />
+        </ToolGate>
+      </Route>
+      <Route path="/workspace/context">
+        <ToolGate>
+          <ContextDomain />
+        </ToolGate>
+      </Route>
+      <Route path="/workspace/landscape">
+        <ToolGate>
+          <SystemLandscape />
+        </ToolGate>
+      </Route>
+      <Route path="/workspace/integration">
+        <ToolGate>
+          <IntegrationView />
+        </ToolGate>
+      </Route>
+      <Route path="/workspace/deployment">
+        <ToolGate>
+          <Deployment />
+        </ToolGate>
+      </Route>
+      <Route path="/workspace/operations">
+        <ToolGate>
+          <OperationsContinuity />
+        </ToolGate>
+      </Route>
+      <Route path="/workspace/studio">
+        <ToolGate>
+          <StudioCanvas />
+        </ToolGate>
+      </Route>
+      <Route path="/ctad">
+        <ToolGate>
+          <CtadEntry />
+        </ToolGate>
+      </Route>
+      <Route path="/ctad/arch/:architectureId">
+        <ToolGate>
+          <CtadArchitectureShell />
+        </ToolGate>
+      </Route>
+      <Route path="/ctad/:adsId/:adsVersion">
+        <ToolGate>
+          <CtadShell />
+        </ToolGate>
+      </Route>
+      <Route path="/acw/derived">
+        <ToolGate>
+          <Track3Entry />
+        </ToolGate>
+      </Route>
+      <Route path="/acw/derived/arch/:architectureId">
+        <ToolGate>
+          <Track3Shell />
+        </ToolGate>
+      </Route>
       {import.meta.env.DEV && SeedAllPage !== null && (
         <Route path="/seed-all">
           <Suspense fallback={null}>
@@ -193,11 +309,13 @@ function App() {
       <DarkModeApplier />
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <AppShell>
-            <RouteTransition>
-              <Router />
-            </RouteTransition>
-          </AppShell>
+          <CurrentOrgWorkItemProvider>
+            <AppShell>
+              <RouteTransition>
+                <Router />
+              </RouteTransition>
+            </AppShell>
+          </CurrentOrgWorkItemProvider>
         </WouterRouter>
         <Toaster />
       </TooltipProvider>

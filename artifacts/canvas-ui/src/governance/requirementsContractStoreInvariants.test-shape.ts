@@ -24,10 +24,29 @@ import {
   getRequirement,
   listRequirements,
 } from "./requirementsStore";
+import {
+  __snapshotScope,
+  __restoreScopeSnapshot,
+  getScopedKey,
+} from "./storageKeyUtils";
 
 const EXPECTED_SCHEMA_VERSION = "rc-1.0";
-const CONTRACT_STORAGE_KEY = "adc.requirements-contracts.v1";
-const REQUIREMENTS_STORAGE_KEY = "adc.requirements.v1";
+const BASE_CONTRACT_KEY = "adc.requirements-contracts.v1";
+const BASE_REQUIREMENTS_KEY = "adc.requirements.v1";
+// Phase 2 (SaaS Onboarding) — contracts and requirements are
+// Org+Work-Item-scoped; the probe runs against an isolated tenant.
+const PROBE_ORG_ID = "probe-org-rc";
+const PROBE_WORK_ITEM_ID = "probe-wi-rc";
+const CONTRACT_STORAGE_KEY = getScopedKey(
+  BASE_CONTRACT_KEY,
+  PROBE_ORG_ID,
+  PROBE_WORK_ITEM_ID,
+);
+const REQUIREMENTS_STORAGE_KEY = getScopedKey(
+  BASE_REQUIREMENTS_KEY,
+  PROBE_ORG_ID,
+  PROBE_WORK_ITEM_ID,
+);
 
 if (REQUIREMENTS_CONTRACT_SCHEMA_VERSION !== EXPECTED_SCHEMA_VERSION) {
   throw new Error(
@@ -48,9 +67,15 @@ function withIsolatedStorage(probe: () => void): void {
     window.localStorage.removeItem(CONTRACT_STORAGE_KEY);
     window.localStorage.removeItem(REQUIREMENTS_STORAGE_KEY);
   }
+  const scopeSnap = __snapshotScope();
+  __restoreScopeSnapshot({
+    orgId: PROBE_ORG_ID,
+    workItemId: PROBE_WORK_ITEM_ID,
+  });
   try {
     probe();
   } finally {
+    __restoreScopeSnapshot(scopeSnap);
     if (hasWindow) {
       if (priorContracts === null)
         window.localStorage.removeItem(CONTRACT_STORAGE_KEY);

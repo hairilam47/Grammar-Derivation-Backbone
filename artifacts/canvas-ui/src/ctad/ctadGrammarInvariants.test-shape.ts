@@ -46,6 +46,11 @@ import {
   isValidArchitectureId,
   slugifyArchitectureName,
 } from "./architectureIdentity";
+import {
+  __snapshotScope,
+  __restoreScopeSnapshot,
+  currentScope,
+} from "@/governance/storageKeyUtils";
 
 const PREFIX = "CTAD v1 grammar invariant violation";
 
@@ -289,7 +294,21 @@ if (ENVIRONMENT_HOSTING_MODEL_OPTIONS.length === 0) {
 // round-trips through createArchitecture / exportArchitectureState
 // with all parameters null and an empty environments list, and
 // that removeArchitecture leaves no trace in the persisted doc.
+//
+// Phase 2 (multi-tenant scoping): the CTAD store now resolves its
+// localStorage key through `<orgId>:<workItemId>:<base>`. At
+// module-load time no scope is set, so this probe installs a
+// dedicated `__invariant-probe__` scope for the duration of the
+// block and restores the previous (typically empty) snapshot in a
+// `finally`. The synthetic scope is never written to by the app
+// outside this probe and is cleaned up by `removeArchitecture`
+// before restoration.
 {
+  const __scopeSnap = __snapshotScope();
+  currentScope.set({
+    orgId: "__invariant-probe-org__",
+    workItemId: "__invariant-probe-wi__",
+  });
   const slug = slugifyArchitectureName("Probe Architecture #1");
   if (slug !== "probe-architecture-1") {
     throw new Error(
@@ -316,7 +335,13 @@ if (ENVIRONMENT_HOSTING_MODEL_OPTIONS.length === 0) {
     }
   }
 
-  const created = createArchitecture("Invariant Probe");
+  let created: { architectureId: string };
+  try {
+    created = createArchitecture("Invariant Probe");
+  } catch (e) {
+    __restoreScopeSnapshot(__scopeSnap);
+    throw e;
+  }
   try {
     if (!isValidArchitectureId(created.architectureId)) {
       throw new Error(
@@ -400,16 +425,32 @@ if (ENVIRONMENT_HOSTING_MODEL_OPTIONS.length === 0) {
   } finally {
     removeArchitecture(created.architectureId);
   }
-  if (getArchitectureDoc(created.architectureId) !== null) {
-    throw new Error(
-      `${PREFIX}: removeArchitecture did not delete the architecture entry.`,
-    );
-  }
-  const finalDoc = __ctadStoreInternals.readDoc();
-  if (finalDoc.architectures[created.architectureId] !== undefined) {
-    throw new Error(
-      `${PREFIX}: invariant probe architecture leaked into persisted store.`,
-    );
+  try {
+    if (getArchitectureDoc(created.architectureId) !== null) {
+      throw new Error(
+        `${PREFIX}: removeArchitecture did not delete the architecture entry.`,
+      );
+    }
+    const finalDoc = __ctadStoreInternals.readDoc();
+    if (finalDoc.architectures[created.architectureId] !== undefined) {
+      throw new Error(
+        `${PREFIX}: invariant probe architecture leaked into persisted store.`,
+      );
+    }
+  } finally {
+    // Best-effort cleanup of the synthetic-scope localStorage key
+    // and unconditional restoration of the original (empty) scope so
+    // the app starts up with no Org/Work-Item selected.
+    try {
+      if (typeof localStorage !== "undefined") {
+        localStorage.removeItem(
+          "__invariant-probe-org__:__invariant-probe-wi__:ctad.state.v1",
+        );
+      }
+    } catch {
+      // ignore — quota/private-mode failures must not mask the real probe outcome.
+    }
+    __restoreScopeSnapshot(__scopeSnap);
   }
 }
 

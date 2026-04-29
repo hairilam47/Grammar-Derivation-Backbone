@@ -39,10 +39,28 @@ import {
   createArchitecture,
   removeArchitecture,
 } from "@/ctad/ctadStore";
+import {
+  __snapshotScope,
+  __restoreScopeSnapshot,
+  getScopedKey,
+} from "./storageKeyUtils";
 
 const EXPECTED_SCHEMA_VERSION = "att-1.0";
-const STORAGE_KEY = "adc.architecture-attachments.v1";
-const CTAD_STORAGE_KEY = "ctad.state.v1";
+const BASE_ATTACH_KEY = "adc.architecture-attachments.v1";
+const BASE_CTAD_KEY = "ctad.state.v1";
+// Phase 2 (SaaS Onboarding) — both stores are Org+Work-Item-scoped.
+const PROBE_ORG_ID = "probe-org-attach";
+const PROBE_WORK_ITEM_ID = "probe-wi-attach";
+const STORAGE_KEY = getScopedKey(
+  BASE_ATTACH_KEY,
+  PROBE_ORG_ID,
+  PROBE_WORK_ITEM_ID,
+);
+const CTAD_STORAGE_KEY = getScopedKey(
+  BASE_CTAD_KEY,
+  PROBE_ORG_ID,
+  PROBE_WORK_ITEM_ID,
+);
 
 if (ATTACHMENT_SCHEMA_VERSION !== EXPECTED_SCHEMA_VERSION) {
   throw new Error(
@@ -62,9 +80,15 @@ function withIsolatedStorage(probe: () => void): void {
   const priorAttach = hasWindow ? window.localStorage.getItem(STORAGE_KEY) : null;
   const priorCtad = hasWindow ? window.localStorage.getItem(CTAD_STORAGE_KEY) : null;
   if (hasWindow) window.localStorage.removeItem(STORAGE_KEY);
+  const scopeSnap = __snapshotScope();
+  __restoreScopeSnapshot({
+    orgId: PROBE_ORG_ID,
+    workItemId: PROBE_WORK_ITEM_ID,
+  });
   try {
     probe();
   } finally {
+    __restoreScopeSnapshot(scopeSnap);
     if (hasWindow) {
       if (priorAttach === null) window.localStorage.removeItem(STORAGE_KEY);
       else window.localStorage.setItem(STORAGE_KEY, priorAttach);
