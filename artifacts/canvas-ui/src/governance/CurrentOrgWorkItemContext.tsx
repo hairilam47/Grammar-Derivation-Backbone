@@ -96,17 +96,25 @@ export function CurrentOrgWorkItemProvider({ children }: { children: ReactNode }
   const initial = useRef<CurrentScope | null>(null);
   if (initial.current === null) {
     initial.current = reconcilePersistedScope(readPersistedScope());
+    // SYNCHRONOUSLY mirror the reconciled initial scope into
+    // `storageKeyUtils.currentScope` BEFORE the first render so
+    // any plain-TS store that reads its document during initial
+    // mount (e.g. hard-refresh deep-linked into a tool route)
+    // sees the correct scoped key on the very first read instead
+    // of momentarily reading from `<no-scope>:<base>` and showing
+    // a transient empty state. The post-mount `useEffect` below
+    // continues to handle every subsequent change.
+    storageKeyCurrentScope.set(initial.current);
   }
   const [orgId, setOrgIdState] = useState<string | null>(initial.current.orgId);
   const [workItemId, setWorkItemIdState] = useState<string | null>(
     initial.current.workItemId,
   );
 
-  // Mirror into the storage-key utility on EVERY change (including
-  // the initial mount) so plain-TS stores observe the active scope
-  // without needing to subscribe to React state. The mirror also
-  // notifies the store-level `currentScope.subscribe` hooks so
-  // every store re-reads its document under the new scope.
+  // Mirror into the storage-key utility on every state change.
+  // The initial mount value is already mirrored synchronously
+  // above; this effect picks up subsequent transitions and also
+  // persists the change back to localStorage.
   useEffect(() => {
     storageKeyCurrentScope.set({ orgId, workItemId });
     writePersistedScope({ orgId, workItemId });
