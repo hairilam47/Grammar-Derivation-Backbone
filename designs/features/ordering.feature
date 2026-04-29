@@ -1,4 +1,4 @@
-# Generated from designs/system-model.yaml on 2026-04-29T05:37:19.432Z. Do not hand-edit.
+# Generated from designs/system-model.yaml on 2026-04-29T09:00:54.108Z. Do not hand-edit.
 # Epic: Ordering
 
 Feature: customer-orders-food

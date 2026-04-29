@@ -1,6 +1,6 @@
 # Architecture Traceability
 
-Generated from `designs/system-model.yaml` on 2026-04-29T05:37:19.732Z.
+Generated from `designs/system-model.yaml` on 2026-04-29T09:00:54.398Z.
 
 This report walks every business process down through the stack: tasks → functions → entities → services → modules → deployment nodes. Gaps in the trace are flagged with ⚠ and listed in the summary at the bottom.
 
