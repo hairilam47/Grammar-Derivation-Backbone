@@ -4,10 +4,13 @@
 // view over the EAStudio workspace. The placeholder card grid was
 // replaced by `LensCanvas` (the same primitive the System Landscape
 // and Deployment lenses use) wired to the Integration filter from
-// `acwLensFilters`. The canvas surfaces nodes that participate in
-// integration edges (INTERFACES_WITH / DATA_FLOW always; CONNECTS
-// when its endpoints straddle different domain tags) plus any node
-// the user has tagged `external`.
+// `acwLensFilters`. Per the Phase 4 spec the lens is narrowed to
+// **cross-domain `CONNECTS` edges** plus any node the user has
+// tagged `external`. Same-domain `CONNECTS` and the
+// `INTERFACES_WITH` / `DATA_FLOW` edge kinds belong to other
+// lenses (Landscape / Operations) and are deliberately excluded
+// here so the integration view focuses on cross-boundary
+// connections only.
 //
 // "exchange" is used throughout in place of "flow" because "flow"
 // embeds the substring "low", which is banned by the

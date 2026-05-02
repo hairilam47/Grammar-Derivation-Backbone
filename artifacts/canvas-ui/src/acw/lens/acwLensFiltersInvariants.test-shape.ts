@@ -415,6 +415,86 @@ function expectReject(
   }
 }
 
+// -------------------------------------------------------------------
+// Step 9(c) — every lens predicate is purely node-local: a child
+// node that fails its filter must be rejected even when its parent
+// node would pass. The Phase 4 lens predicates never look at
+// `parentId`; we lock that property in here so a future refactor
+// can't silently start admitting children by inheritance.
+// -------------------------------------------------------------------
+{
+  const PARENT = "parent-1";
+
+  // Context — parent is a business Zone (admitted), child is a
+  // technology-tagged Component (not business-shaped). The child
+  // must still be rejected.
+  expectReject(
+    isContextDomainNode,
+    n({
+      id: "ctx-child",
+      parentId: PARENT,
+      type: "Component",
+      domainTag: "technology",
+    }),
+    "Context (technology Component child of business Zone)",
+  );
+
+  // System Landscape — parent is an application Zone (admitted),
+  // child is a business-tagged BusinessEntity (not application-
+  // shaped). Rejected regardless of parent.
+  expectReject(
+    isSystemLandscapeNode,
+    n({
+      id: "land-child",
+      parentId: PARENT,
+      type: "BusinessEntity",
+      domainTag: "business",
+    }),
+    "Landscape (business BusinessEntity child of application Zone)",
+  );
+
+  // Integration — parent is `external` (admitted), child is a
+  // plain business-tagged Component. Rejected regardless of parent.
+  expectReject(
+    isIntegrationNode,
+    n({
+      id: "int-child",
+      parentId: PARENT,
+      type: "Component",
+      domainTag: "business",
+    }),
+    "Integration (business Component child of external node)",
+  );
+
+  // Deployment — parent is a technology Zone (admitted), child is
+  // a business-tagged BusinessEntity. Rejected regardless of
+  // parent.
+  expectReject(
+    isDeploymentNode,
+    n({
+      id: "dep-child",
+      parentId: PARENT,
+      type: "BusinessEntity",
+      domainTag: "business",
+    }),
+    "Deployment (business BusinessEntity child of technology Zone)",
+  );
+
+  // Operations & Continuity — parent is a technology ComputeNode
+  // (admitted), child is an application-tagged Component.
+  // Rejected regardless of parent.
+  expectReject(
+    isOperationsContinuityNode,
+    n({
+      id: "ops-child",
+      parentId: PARENT,
+      type: "Component",
+      domainTag: "application",
+    }),
+    "Operations (application Component child of technology ComputeNode)",
+  );
+}
+
 // Exported predicate so future callers (or a follow-up test
 // harness) can re-run the assertions on demand.
 export function assertAcwLensFilterInvariants(): void {
