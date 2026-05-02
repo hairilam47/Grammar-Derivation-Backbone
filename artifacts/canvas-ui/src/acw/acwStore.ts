@@ -439,7 +439,7 @@ function assertAllowedFields(workspace: unknown): void {
     if (node.domainTag !== undefined) {
       if (!isAcwDomainTag(node.domainTag)) {
         throw new Error(
-          "ACW node.domainTag, when present, must be one of: business, data, application, technology.",
+          "ACW node.domainTag, when present, must be one of: business, data, application, technology, operations, external.",
         );
       }
     }
@@ -902,7 +902,7 @@ export function createNode(req: CreateNodeRequest): CreateNodeResult {
     return {
       ok: false,
       reason:
-        "domainTag, when supplied, must be one of: business, data, application, technology.",
+        "domainTag, when supplied, must be one of: business, data, application, technology, operations, external.",
     };
   }
   if (

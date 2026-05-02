@@ -27,6 +27,8 @@ import {
   ACW_EXPLICIT_EDGE_KINDS,
   ACW_CONTAINMENT_RULES,
   ACW_EDGE_RULES,
+  ACW_DOMAIN_TAGS,
+  isAcwDomainTag,
   type AcwElementType,
 } from "./acwGrammar";
 import { canCreateNode, canCreateEdge, type ValidatorWorkspaceView } from "./acwValidator";
@@ -401,6 +403,42 @@ expectRefusal(
   if (r.ok !== true) {
     throw new Error(
       `${PREFIX}: Application-as-System under top Zone refused: ${r.ok === false ? r.reason : "unknown reason"}.`,
+    );
+  }
+}
+
+// (7) EAStudio Phase 4 (Task #170) — domain-tag membership probe.
+// The lens filters at `/workspace/*` partition nodes by `domainTag`,
+// so the registered tag set must include the four core domains
+// (business / data / application / technology) plus the two
+// lens-only tags Phase 4 introduced (operations / external). A
+// future commit that drops or renames any of these silently breaks
+// the corresponding lens; this probe fails the bundle instead.
+{
+  const expected = [
+    "business",
+    "data",
+    "application",
+    "technology",
+    "operations",
+    "external",
+  ] as const;
+  for (const tag of expected) {
+    if (!(ACW_DOMAIN_TAGS as readonly string[]).includes(tag)) {
+      throw new Error(
+        `${PREFIX}: ACW_DOMAIN_TAGS is missing the well-known tag "${tag}".`,
+      );
+    }
+    if (!isAcwDomainTag(tag)) {
+      throw new Error(
+        `${PREFIX}: isAcwDomainTag refused the well-known tag "${tag}".`,
+      );
+    }
+  }
+  // Negative — a clearly-not-a-tag string is refused.
+  if (isAcwDomainTag("not-a-domain")) {
+    throw new Error(
+      `${PREFIX}: isAcwDomainTag accepted a string that is not a registered tag.`,
     );
   }
 }

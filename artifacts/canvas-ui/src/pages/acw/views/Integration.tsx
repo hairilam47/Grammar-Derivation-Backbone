@@ -1,47 +1,308 @@
-// ACW lens — Integration (Application + Data).
+// ACW lens — Integration (Application + Data + cross-boundary).
 //
-// Empty interface slots and data-exchange placeholders. No schema,
-// sensitivity, or risk attributes. ("exchange" is used throughout
-// in place of "flow" because "flow" embeds the substring "low",
-// which is banned by the responsibility-lens tier the ACW vocabulary
-// transitively inherits.)
+// EAStudio Phase 4 (Task #170) — the lens is now a live filtered
+// view over the EAStudio workspace. The placeholder card grid was
+// replaced by `LensCanvas` (the same primitive the System Landscape
+// and Deployment lenses use) wired to the Integration filter from
+// `acwLensFilters`. The canvas surfaces nodes that participate in
+// integration edges (INTERFACES_WITH / DATA_FLOW always; CONNECTS
+// when its endpoints straddle different domain tags) plus any node
+// the user has tagged `external`.
+//
+// "exchange" is used throughout in place of "flow" because "flow"
+// embeds the substring "low", which is banned by the
+// responsibility-lens tier the ACW vocabulary transitively
+// inherits.
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { Maximize2 } from "lucide-react";
 import { WorkspaceShell } from "../WorkspaceShell";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { LensCanvas } from "@/components/acw/LensCanvas";
 import { LiveStructurePanel } from "@/components/acw/LiveStructurePanel";
+import { AuthoringPanel } from "@/components/acw/AuthoringPanel";
+import { WorkspaceLensFloatingOverlay } from "@/components/acw/WorkspaceLensFloatingOverlay";
+import { useAcwWorkspace } from "@/acw/acwGrammarHooks";
+import { ACW_ELEMENT_TYPE_LABEL } from "@/acw/acwGrammar";
+import { updateNodePosition, type AcwEdge, type AcwNode } from "@/acw/acwStore";
+import {
+  getDoc as getViewPrefsDoc,
+  getLensPrefs,
+  setLensFullscreen,
+  subscribePrefs,
+} from "@/acw/acwWorkspaceViewPrefs";
+import {
+  isIntegrationEdge,
+  isIntegrationNode,
+} from "@/acw/lens/acwLensFilters";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 
 const LENS_TITLE = "Integration";
 const LENS_LAYER = "Application + Data";
 const LENS_HINT =
-  "Empty interface slots and data-exchange placeholders. No schema or sensitivity attributes are inferred.";
-const INTERFACE_LABEL = "Interface";
-const INTERFACE_EMPTY = "No interface defined";
-const FLOW_LABEL = "Data exchange";
-const FLOW_EMPTY = "No data exchange defined";
-const INTERFACE_COUNT = 4;
-const FLOW_COUNT = 3;
+  "Interface and data-exchange canvas. Pan with mouse drag, zoom with mouse wheel. Edges shown are interface, data-exchange, and cross-domain connections.";
+const EMPTY_HINT = "Add interfaces or data-exchange edges to begin";
+const ROOT_CRUMB = "Root";
+const BACK_LABEL = "Step out";
+const DEPTH_LABEL = "Depth";
+const ENTER_FULLSCREEN_LABEL = "Enter full-page canvas";
+const LENS_PATH = "/workspace/integration";
 
 assertAllAcwPlaceholderLanguage([
   LENS_TITLE,
   LENS_LAYER,
   LENS_HINT,
-  INTERFACE_LABEL,
-  INTERFACE_EMPTY,
-  FLOW_LABEL,
-  FLOW_EMPTY,
+  EMPTY_HINT,
+  ROOT_CRUMB,
+  BACK_LABEL,
+  DEPTH_LABEL,
+  ENTER_FULLSCREEN_LABEL,
 ]);
 
+function autoPosition(index: number): { x: number; y: number } {
+  const cols = 4;
+  const col = index % cols;
+  const row = Math.floor(index / cols);
+  return { x: 80 + col * 144, y: 80 + row * 96 };
+}
+
+function useViewPrefsDoc(): unknown {
+  return useSyncExternalStore(
+    subscribePrefs,
+    getViewPrefsDoc,
+    getViewPrefsDoc,
+  );
+}
+
 export default function Integration() {
+  useViewPrefsDoc();
+  const isFullscreen = getLensPrefs(LENS_PATH).isFullscreen;
+  const [depthPath, setDepthPath] = useState<readonly string[]>([]);
+  const workspace = useAcwWorkspace();
+
+  const handleDrillDown = useCallback((nodeId: string) => {
+    setDepthPath((prev) => [...prev, nodeId]);
+  }, []);
+  const handleStepOut = useCallback(() => {
+    setDepthPath((prev) => prev.slice(0, -1));
+  }, []);
+  const handleEnterFullscreen = useCallback(
+    () => setLensFullscreen(LENS_PATH, true),
+    [],
+  );
+  const handleExitFullscreen = useCallback(
+    () => setLensFullscreen(LENS_PATH, false),
+    [],
+  );
+
+  useEffect(() => {
+    function isEditableTarget(t: EventTarget | null): boolean {
+      if (!(t instanceof HTMLElement)) return false;
+      const tag = t.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+      if (t.isContentEditable) return true;
+      return false;
+    }
+    function onKey(ev: KeyboardEvent) {
+      if (ev.key !== "Escape") return;
+      if (isEditableTarget(ev.target)) return;
+      if (ev.defaultPrevented) return;
+      setLensFullscreen(LENS_PATH, !isFullscreen);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isFullscreen]);
+
+  // Integration lens — two-pass:
+  //   (1) admit base nodes via the type / tag filter;
+  //   (2) admit edges that pass `isIntegrationEdge` between admitted
+  //       endpoints, then expand the visible-node set to include
+  //       any extra endpoint touched by an admitted edge (so a
+  //       cross-boundary CONNECTS edge into a node the base filter
+  //       would have hidden still surfaces both endpoints).
+  const baseLensNodes = useMemo(
+    () => workspace.structureGraph.nodes.filter(isIntegrationNode),
+    [workspace],
+  );
+
+  const nodeById = useMemo(() => {
+    const m = new Map<string, AcwNode>();
+    for (const n of workspace.structureGraph.nodes) m.set(n.id, n);
+    return m;
+  }, [workspace]);
+
+  const lensEdges = useMemo<readonly AcwEdge[]>(() => {
+    const baseIds = new Set(baseLensNodes.map((n) => n.id));
+    const out: AcwEdge[] = [];
+    for (const e of workspace.structureGraph.edges) {
+      const from = nodeById.get(e.fromId);
+      const to = nodeById.get(e.toId);
+      if (from === undefined || to === undefined) continue;
+      // INTERFACES_WITH / DATA_FLOW: keep when at least one endpoint
+      // is in the base set so the canvas always has a node to
+      // render the edge against.
+      // CONNECTS: keep only cross-domain.
+      if (!isIntegrationEdge(e, from.domainTag, to.domainTag)) continue;
+      if (e.kind === "CONNECTS") {
+        out.push(e);
+      } else if (baseIds.has(from.id) || baseIds.has(to.id)) {
+        out.push(e);
+      }
+    }
+    return out;
+  }, [workspace, baseLensNodes, nodeById]);
+
+  const lensNodes = useMemo<readonly AcwNode[]>(() => {
+    const ids = new Set(baseLensNodes.map((n) => n.id));
+    for (const e of lensEdges) {
+      ids.add(e.fromId);
+      ids.add(e.toId);
+    }
+    const out: AcwNode[] = [];
+    for (const n of workspace.structureGraph.nodes) {
+      if (ids.has(n.id)) out.push(n);
+    }
+    return out;
+  }, [workspace, baseLensNodes, lensEdges]);
+
+  const focusedParentId =
+    depthPath.length === 0 ? null : depthPath[depthPath.length - 1];
+
+  useEffect(() => {
+    const siblings = lensNodes.filter((n) => n.parentId === focusedParentId);
+    let i = 0;
+    for (const s of siblings) {
+      if (s.x === 0 && s.y === 0) {
+        const p = autoPosition(i);
+        updateNodePosition(s.id, p.x, p.y);
+      }
+      i += 1;
+    }
+  }, [lensNodes, focusedParentId]);
+
+  const crumbs = useMemo(() => {
+    const acc: string[] = [ROOT_CRUMB];
+    for (const id of depthPath) {
+      const n = workspace.structureGraph.nodes.find((x) => x.id === id);
+      acc.push(n ? `${ACW_ELEMENT_TYPE_LABEL[n.type]}: ${n.label}` : id);
+    }
+    return acc;
+  }, [depthPath, workspace]);
+
+  // LiveStructurePanel filters — node predicate mirrors the
+  // expanded `lensNodes` set; edge predicate mirrors the same
+  // `isIntegrationEdge` rule by reading domain tags off the
+  // workspace graph.
+  const visibleIdSet = useMemo(
+    () => new Set(lensNodes.map((n) => n.id)),
+    [lensNodes],
+  );
+  const liveNodeFilter = useCallback(
+    (n: AcwNode) => visibleIdSet.has(n.id),
+    [visibleIdSet],
+  );
+  const liveEdgeFilter = useCallback(
+    (e: AcwEdge) => {
+      const from = nodeById.get(e.fromId);
+      const to = nodeById.get(e.toId);
+      if (from === undefined || to === undefined) return false;
+      return isIntegrationEdge(e, from.domainTag, to.domainTag);
+    },
+    [nodeById],
+  );
+
+  if (isFullscreen) {
+    return (
+      <WorkspaceShell hideShellChrome>
+        <div
+          className="fixed inset-0 z-0 bg-background"
+          data-testid="acw-integration-fullscreen-canvas"
+        >
+          <LensCanvas
+            key={`integration-fullscreen:${LENS_PATH}`}
+            lensId={LENS_PATH}
+            nodes={lensNodes}
+            edges={lensEdges}
+            focusedParentId={focusedParentId}
+            emptyHint={EMPTY_HINT}
+            height="100%"
+            testId="acw-integration-canvas"
+            onDrillDown={handleDrillDown}
+          />
+          <WorkspaceLensFloatingOverlay
+            testIdPrefix="acw-integration-overlay"
+            lensName={LENS_TITLE}
+            lensLayer={LENS_LAYER}
+            authoringSlot={<AuthoringPanel />}
+            structureSlot={
+              <LiveStructurePanel
+                testIdPrefix="acw-integration-structure"
+                nodeFilter={liveNodeFilter}
+                edgeFilter={liveEdgeFilter}
+              />
+            }
+            bottomCenterSlot={
+              <div
+                className="inline-flex items-center gap-2"
+                data-testid="acw-integration-overlay-breadcrumb"
+              >
+                <span>{DEPTH_LABEL}:</span>
+                <span
+                  className="font-mono normal-case tracking-normal text-muted-foreground/80 truncate max-w-[40vw]"
+                  data-testid="acw-integration-overlay-breadcrumb-path"
+                  title={crumbs.join(" / ")}
+                >
+                  {crumbs.join(" / ")}
+                </span>
+                {depthPath.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={handleStepOut}
+                    className="px-1.5 py-0.5 border border-border/60 rounded text-[10px] hover:text-primary hover:border-primary/60 transition-colors"
+                    data-testid="acw-integration-overlay-step-out"
+                  >
+                    {BACK_LABEL}
+                  </button>
+                ) : null}
+              </div>
+            }
+            onExitFullscreen={handleExitFullscreen}
+          />
+        </div>
+      </WorkspaceShell>
+    );
+  }
+
   return (
     <WorkspaceShell>
       <Card data-testid="acw-integration-header">
         <CardHeader>
-          <CardTitle className="text-sm font-semibold uppercase tracking-wider">
-            {LENS_TITLE}
-          </CardTitle>
-          <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
-            {LENS_LAYER}
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle className="text-sm font-semibold uppercase tracking-wider">
+                {LENS_TITLE}
+              </CardTitle>
+              <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                {LENS_LAYER}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-[10px]"
+              onClick={handleEnterFullscreen}
+              data-testid="acw-integration-enter-fullscreen"
+            >
+              <Maximize2 className="w-3 h-3 mr-1" />
+              {ENTER_FULLSCREEN_LABEL}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="text-xs text-muted-foreground">
           {LENS_HINT}
@@ -49,56 +310,41 @@ export default function Integration() {
       </Card>
 
       <div
-        className="grid grid-cols-1 md:grid-cols-2 gap-3"
-        data-testid="acw-integration-interfaces"
+        className="flex items-center gap-3 text-[10px] uppercase tracking-widest text-muted-foreground"
+        data-testid="acw-integration-breadcrumb"
       >
-        {Array.from({ length: INTERFACE_COUNT }).map((_, i) => (
-          <Card
-            key={`interface-${i}`}
-            data-testid={`acw-integration-interface-${i + 1}`}
-            className="border-dashed"
+        <span>{DEPTH_LABEL}:</span>
+        <span data-testid="acw-integration-breadcrumb-path">
+          {crumbs.join(" / ")}
+        </span>
+        {depthPath.length > 0 ? (
+          <button
+            type="button"
+            onClick={handleStepOut}
+            className="px-2 py-0.5 border border-border/60 rounded hover:text-primary hover:border-primary/60 transition-colors"
+            data-testid="acw-integration-step-out"
           >
-            <CardHeader>
-              <CardTitle className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                {INTERFACE_LABEL}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-[11px] italic text-muted-foreground/70 min-h-[60px] flex items-center justify-center">
-              {INTERFACE_EMPTY}
-            </CardContent>
-          </Card>
-        ))}
+            {BACK_LABEL}
+          </button>
+        ) : null}
       </div>
 
-      <div
-        className="grid grid-cols-1 md:grid-cols-3 gap-3"
-        data-testid="acw-integration-flows"
-      >
-        {Array.from({ length: FLOW_COUNT }).map((_, i) => (
-          <Card
-            key={`flow-${i}`}
-            data-testid={`acw-integration-flow-${i + 1}`}
-            className="border-dashed"
-          >
-            <CardHeader>
-              <CardTitle className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                {FLOW_LABEL}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-[11px] italic text-muted-foreground/70 min-h-[40px] flex items-center justify-center">
-              {FLOW_EMPTY}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <LensCanvas
+        key={`integration-inline:${LENS_PATH}`}
+        lensId={LENS_PATH}
+        nodes={lensNodes}
+        edges={lensEdges}
+        focusedParentId={focusedParentId}
+        emptyHint={EMPTY_HINT}
+        height={460}
+        testId="acw-integration-canvas"
+        onDrillDown={handleDrillDown}
+      />
 
-      {/* Application + Data lens filter: Systems and Components,
-          plus the two relationship kinds that carry interface and
-          data-exchange semantics. */}
       <LiveStructurePanel
         testIdPrefix="acw-integration-structure"
-        nodeFilter={(n) => n.type === "System" || n.type === "Component"}
-        edgeFilter={(e) => e.kind === "INTERFACES_WITH" || e.kind === "DATA_FLOW"}
+        nodeFilter={liveNodeFilter}
+        edgeFilter={liveEdgeFilter}
       />
     </WorkspaceShell>
   );

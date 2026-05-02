@@ -58,6 +58,12 @@ import "@/acw/acwGrammarInvariants.test-shape";
 // boundParam / boundTechnologyCategory shape probes (see "(7)"
 // inside that file).
 import "@/acw/acwGrammarV2Invariants.test-shape";
+// EAStudio Phase 4 (Task #170) — `/workspace/*` lens-filter
+// invariants. Fails the bundle if any of the five lens admission
+// predicates drift away from the partition the lens pages depend
+// on (e.g. Application <-> Technology disjointness, Operations
+// cross-layer admission).
+import "@/acw/lens/acwLensFiltersInvariants.test-shape";
 // ACW Phase 5 — vendor-neutral icon-registry invariants. Fails
 // the bundle if a brand / product name leaks into a registry entry
 // or if the vendor denylist is silently weakened.

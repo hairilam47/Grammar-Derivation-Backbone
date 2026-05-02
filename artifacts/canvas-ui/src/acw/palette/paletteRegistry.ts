@@ -50,6 +50,7 @@ import {
   Globe,
   Handshake,
   HardDrive,
+  Heart,
   Key,
   KeyRound,
   Landmark,
@@ -64,6 +65,7 @@ import {
   Repeat,
   Ruler,
   Server,
+  Share2,
   Shield,
   ShieldCheck,
   Smartphone,
@@ -133,10 +135,10 @@ export interface PaletteItem {
 
 // ---------------------------------------------------------------------------
 // Domain catalog (visible labels used by the tab bar and quadrant
-// headers). The four entries are themselves asserted against the
-// vocabulary tier; the keys mirror `ACW_DOMAIN_TAGS` and any future
-// drift between the two sets fails the bundle via the matching
-// assertion at the bottom of this module.
+// headers). Entries are themselves asserted against the vocabulary
+// tier; the keys mirror `ACW_DOMAIN_TAGS` and any future drift
+// between the two sets fails the bundle via the matching assertion
+// at the bottom of this module.
 // ---------------------------------------------------------------------------
 export const ACW_DOMAIN_LABEL: Readonly<Record<AcwDomainTag, string>> =
   Object.freeze({
@@ -144,6 +146,11 @@ export const ACW_DOMAIN_LABEL: Readonly<Record<AcwDomainTag, string>> =
     data: "Data",
     application: "Application",
     technology: "Technology",
+    // EAStudio Phase 4 (Task #170) — additive entries for the two
+    // lens-only tags. They surface in the lens filters at
+    // `/workspace/*` but do NOT seed Studio canvas quadrants.
+    operations: "Operations",
+    external: "External",
   });
 
 // Icon for each domain — used by DomainTabBar and the quadrant
@@ -156,6 +163,8 @@ export const ACW_DOMAIN_ICON: Readonly<Record<AcwDomainTag, LucideIcon>> =
     data: Database,
     application: Layers,
     technology: Server,
+    operations: Heart,
+    external: Share2,
   });
 
 // Tailwind colour token per domain. Used as a thin border accent on
@@ -167,6 +176,8 @@ export const ACW_DOMAIN_ACCENT: Readonly<Record<AcwDomainTag, string>> =
     data: "border-cyan-500/40 text-cyan-400",
     application: "border-purple-500/40 text-purple-400",
     technology: "border-emerald-500/40 text-emerald-400",
+    operations: "border-rose-500/40 text-rose-400",
+    external: "border-slate-500/40 text-slate-400",
   });
 
 // Short domain key used in the prototype CSS variables
@@ -179,6 +190,8 @@ export const ACW_DOMAIN_SHORTHAND: Readonly<Record<AcwDomainTag, string>> =
     data: "data",
     application: "app",
     technology: "tech",
+    operations: "ops",
+    external: "ext",
   });
 
 // ---------------------------------------------------------------------------

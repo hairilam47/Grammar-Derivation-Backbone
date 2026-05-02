@@ -38,6 +38,7 @@ import {
   setLensFullscreen,
   subscribePrefs,
 } from "@/acw/acwWorkspaceViewPrefs";
+import { isSystemLandscapeNode } from "@/acw/lens/acwLensFilters";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 
 const LENS_TITLE = "System Landscape";
@@ -64,6 +65,14 @@ assertAllAcwPlaceholderLanguage([
 
 // Lens filter for the Application layer: Systems and Components.
 // Zones / ComputeNodes belong to the Technology lens (Deployment).
+//
+// EAStudio Phase 4 (Task #170) — node admission now delegates to
+// `isSystemLandscapeNode` from `@/acw/lens/acwLensFilters`, which
+// honours `domainTag` (an `application`-tagged node is admitted
+// regardless of its element type, and a node tagged `technology`
+// / `external` / `operations` / `business` is excluded). The local
+// `APPLICATION_TYPES` set is retained because the canvas's
+// `permitContainerType` UX scope is type-keyed, not tag-keyed.
 const APPLICATION_TYPES = new Set(["System", "Component"] as const);
 
 // Auto-place any node that lacks user-set coordinates so a freshly
@@ -135,10 +144,7 @@ export default function SystemLandscape() {
   // whole tree so the canvas can render containment cues for
   // Systems whose Components are visible inside them.
   const lensNodes = useMemo(
-    () =>
-      workspace.structureGraph.nodes.filter((n) =>
-        APPLICATION_TYPES.has(n.type as "System" | "Component"),
-      ),
+    () => workspace.structureGraph.nodes.filter(isSystemLandscapeNode),
     [workspace],
   );
 
@@ -217,9 +223,7 @@ export default function SystemLandscape() {
             structureSlot={
               <LiveStructurePanel
                 testIdPrefix="acw-landscape-structure"
-                nodeFilter={(n) =>
-                  APPLICATION_TYPES.has(n.type as "System" | "Component")
-                }
+                nodeFilter={isSystemLandscapeNode}
                 edgeFilter={(e) =>
                   e.kind === "CONNECTS" || e.kind === "INTERFACES_WITH"
                 }
@@ -320,7 +324,7 @@ export default function SystemLandscape() {
 
       <LiveStructurePanel
         testIdPrefix="acw-landscape-structure"
-        nodeFilter={(n) => APPLICATION_TYPES.has(n.type as "System" | "Component")}
+        nodeFilter={isSystemLandscapeNode}
         edgeFilter={(e) => e.kind === "CONNECTS" || e.kind === "INTERFACES_WITH"}
       />
     </WorkspaceShell>

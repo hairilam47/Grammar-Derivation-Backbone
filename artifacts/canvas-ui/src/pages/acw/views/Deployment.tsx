@@ -31,6 +31,7 @@ import { WorkspaceLensFloatingOverlay } from "@/components/acw/WorkspaceLensFloa
 import { useAcwWorkspace } from "@/acw/acwGrammarHooks";
 import { ACW_ELEMENT_TYPE_LABEL } from "@/acw/acwGrammar";
 import { updateNodePosition } from "@/acw/acwStore";
+import { isDeploymentNode } from "@/acw/lens/acwLensFilters";
 import {
   getDoc as getViewPrefsDoc,
   getLensPrefs,
@@ -125,16 +126,15 @@ export default function Deployment() {
     return () => window.removeEventListener("keydown", onKey);
   }, [isFullscreen]);
 
+  // EAStudio Phase 4 (Task #170) — admission delegates to
+  // `isDeploymentNode` from `@/acw/lens/acwLensFilters`. The shared
+  // filter honours `domainTag` (a node tagged `technology` is
+  // admitted regardless of element type; tags `business` /
+  // `application` / `external` / `operations` are excluded) and
+  // preserves the legacy "bare-root Systems belong to the
+  // Application lens" rule.
   const lensNodes = useMemo(
-    () =>
-      workspace.structureGraph.nodes.filter((n) => {
-        if (!TECHNOLOGY_TYPES.has(n.type as "Zone" | "ComputeNode" | "System")) {
-          return false;
-        }
-        // Bare-root Systems belong to the Application lens.
-        if (n.type === "System" && n.parentId === null) return false;
-        return true;
-      }),
+    () => workspace.structureGraph.nodes.filter(isDeploymentNode),
     [workspace],
   );
 
@@ -202,10 +202,7 @@ export default function Deployment() {
             structureSlot={
               <LiveStructurePanel
                 testIdPrefix="acw-deployment-structure"
-                nodeFilter={(n) => {
-                  if (n.type === "Zone" || n.type === "ComputeNode") return true;
-                  return n.type === "System" && n.parentId !== null;
-                }}
+                nodeFilter={isDeploymentNode}
                 edgeFilter={(e) => e.kind === "CONNECTS"}
               />
             }
@@ -304,10 +301,7 @@ export default function Deployment() {
 
       <LiveStructurePanel
         testIdPrefix="acw-deployment-structure"
-        nodeFilter={(n) => {
-          if (n.type === "Zone" || n.type === "ComputeNode") return true;
-          return n.type === "System" && n.parentId !== null;
-        }}
+        nodeFilter={isDeploymentNode}
         edgeFilter={(e) => e.kind === "CONNECTS"}
       />
     </WorkspaceShell>

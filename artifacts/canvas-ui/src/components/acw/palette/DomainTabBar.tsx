@@ -16,11 +16,12 @@
 //     at module load.
 import { useEffect, useState } from "react";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
-import { ACW_DOMAIN_TAGS, type AcwDomainTag } from "@/acw/acwGrammar";
+import { type AcwDomainTag } from "@/acw/acwGrammar";
 import {
   ACW_DOMAIN_LABEL,
   ACW_DOMAIN_ICON,
 } from "@/acw/palette/paletteRegistry";
+import { ACW_DOMAIN_CONTAINERS } from "@/acw/palette/domainContainerSeed";
 import {
   getCurrentDomain,
   setCurrentDomain,
@@ -28,6 +29,18 @@ import {
 } from "@/acw/acwViewState";
 
 assertAllAcwPlaceholderLanguage([...Object.values(ACW_DOMAIN_LABEL)]);
+
+// EAStudio Phase 4 (Task #170) — DomainTabBar enumerates the
+// quadrant-bound domains (business / data / application /
+// technology) by reading the seed list rather than `ACW_DOMAIN_TAGS`.
+// Phase 4 widened `ACW_DOMAIN_TAGS` with `operations` and `external`
+// for the lens filters at `/workspace/*`; those tags do NOT seed
+// Studio canvas quadrants, so iterating the seed keeps the studio
+// surface four-quadrant without re-introducing a hard-coded literal
+// list.
+const STUDIO_DOMAIN_TAGS: readonly AcwDomainTag[] = ACW_DOMAIN_CONTAINERS.map(
+  (c) => c.domain,
+);
 
 export interface DomainTabBarProps {
   readonly lensId: string;
@@ -47,7 +60,7 @@ export function DomainTabBar({ lensId }: DomainTabBarProps) {
       className="es-dtabs"
       role="tablist"
     >
-      {ACW_DOMAIN_TAGS.map((tag: AcwDomainTag) => {
+      {STUDIO_DOMAIN_TAGS.map((tag: AcwDomainTag) => {
         const Icon = ACW_DOMAIN_ICON[tag];
         const isActive = active === tag;
         return (

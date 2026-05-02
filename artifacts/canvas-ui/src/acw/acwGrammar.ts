@@ -50,15 +50,34 @@ export type AcwElementType = (typeof ACW_ELEMENT_TYPES)[number];
 
 // EAStudio Phase 1 — domain markers carried as optional metadata on
 // every node. Pure UI categorisation; the validator has no opinion
-// about a node's `domainTag`. The four-domain partition (Business /
-// Data / Application / Technology) mirrors the four immutable
+// about a node's `domainTag`. The four core domains (Business /
+// Data / Application / Technology) mirror the four immutable
 // domain container nodes the EAStudio canvas seeds at workspace
 // initialisation.
+//
+// EAStudio Phase 4 (Task #170) — additive widening to register two
+// further tags used by the lens-page filters at `/workspace/*`:
+//   - `operations`: nodes that play a continuity / operations role
+//     (e.g. a runbook annotation, a redundancy container, a backup
+//     policy reference). Surfaced by the Operations & Continuity
+//     lens alongside Technology nodes.
+//   - `external`: nodes that represent an external actor or
+//     boundary system (e.g. an upstream consumer, a partner system,
+//     a third-party identity provider). Surfaced by the Integration
+//     lens as the cross-boundary side of an integration edge.
+//
+// Both new tags are pure metadata. They do NOT seed new domain
+// container quadrants on the Studio canvas — `domainContainerSeed`
+// continues to ship four containers — and the StudioCanvas
+// `DomainTabBar` keeps iterating over `ACW_DOMAIN_CONTAINERS` (not
+// `ACW_DOMAIN_TAGS`) so the studio surface stays four-quadrant.
 export const ACW_DOMAIN_TAGS = [
   "business",
   "data",
   "application",
   "technology",
+  "operations",
+  "external",
 ] as const;
 export type AcwDomainTag = (typeof ACW_DOMAIN_TAGS)[number];
 
