@@ -93,7 +93,7 @@ import type { AcwNodeStatus, AcwNodeMaturity, AcwNodePriority } from "@/acw/acwN
 // Constants
 // ---------------------------------------------------------------------------
 
-const ORG_ID   = "org-jabatan-imigresen";
+const ORG_ID   = "org-jabatanimigresen";
 const ORG_NAME = "Jabatan Imigresen Malaysia";
 const WI_TITLE = "Immigration Systems Modernisation";
 
@@ -378,6 +378,15 @@ const REQUIREMENT_FIXTURES: readonly RequirementFixture[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Internals export — for probe / invariant use only
+// ---------------------------------------------------------------------------
+
+export const __seedGoldenInternals = Object.freeze({
+  GOLDEN_BASE_KEYS,
+  ORG_ID,
+});
+
+// ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
 
@@ -646,16 +655,19 @@ export function seedGolden(): GoldenSeedSummary {
     }
 
     const CTAD_NODES: readonly CtadNodeSpec[] = [
-      // -- BPMN: Border Entry Process (→ gn-imm-bprocess Zone) --
-      { id: "gn-ctad-bpmn-pool",       label: "Border Entry Pool",  diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN", targetParentId: "gn-imm-bprocess", stagingParentId: "domain-technology", x: 860, y:  60, boundRequirementIds: ["req-aa01bb02cc03", "req-bb02cc03dd04"], moduleId: "module:citizen-portal" },
-      { id: "gn-ctad-bpmn-lane-officer",label: "Officer Lane",       diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN", targetParentId: "gn-imm-bprocess", x: 860, y: 200 },
-      { id: "gn-ctad-bpmn-lane-traveller",label:"Traveller Lane",    diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN", targetParentId: "gn-imm-bprocess", x: 860, y: 340 },
-      { id: "gn-ctad-bpmn-task-check",  label: "Check Documents",    diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN", targetParentId: "gn-imm-bprocess", x:1060, y: 200 },
-      { id: "gn-ctad-bpmn-task-bio",    label: "Biometric Scan",     diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN", targetParentId: "gn-imm-bprocess", x:1260, y: 200 },
-      { id: "gn-ctad-bpmn-task-log",    label: "Log Entry",          diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN", targetParentId: "gn-imm-bprocess", x:1460, y: 200 },
-      { id: "gn-ctad-bpmn-gateway",     label: "Approved?",          diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN", targetParentId: "gn-imm-bprocess", x:1060, y: 340 },
-      { id: "gn-ctad-bpmn-evt-start",   label: "Entry Start",        diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN", targetParentId: "gn-imm-bprocess", x: 760, y: 270 },
-      { id: "gn-ctad-bpmn-evt-end",     label: "Entry Complete",     diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN", targetParentId: "gn-imm-bprocess", x:1660, y: 270 },
+      // -- BPMN: Border Entry Process (→ domain-application Zone) --
+      // Note: the Business Process palette item resolves to a Zone subtype that
+      // requires the full BusinessEntity→Department→OrgUnit containment chain,
+      // so BPMN CTAD System nodes land in the application domain instead.
+      { id: "gn-ctad-bpmn-pool",       label: "Border Entry Pool",  diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN", targetParentId: "domain-application", stagingParentId: "domain-technology", x: 860, y:  60, boundRequirementIds: ["req-aa01bb02cc03", "req-bb02cc03dd04"], moduleId: "module:citizen-portal" },
+      { id: "gn-ctad-bpmn-lane-officer",label: "Officer Lane",       diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN", targetParentId: "domain-application", x: 860, y: 200 },
+      { id: "gn-ctad-bpmn-lane-traveller",label:"Traveller Lane",    diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN", targetParentId: "domain-application", x: 860, y: 340 },
+      { id: "gn-ctad-bpmn-task-check",  label: "Check Documents",    diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN", targetParentId: "domain-application", x:1060, y: 200 },
+      { id: "gn-ctad-bpmn-task-bio",    label: "Biometric Scan",     diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN", targetParentId: "domain-application", x:1260, y: 200 },
+      { id: "gn-ctad-bpmn-task-log",    label: "Log Entry",          diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN", targetParentId: "domain-application", x:1460, y: 200 },
+      { id: "gn-ctad-bpmn-gateway",     label: "Approved?",          diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN", targetParentId: "domain-application", x:1060, y: 340 },
+      { id: "gn-ctad-bpmn-evt-start",   label: "Entry Start",        diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN", targetParentId: "domain-application", x: 760, y: 270 },
+      { id: "gn-ctad-bpmn-evt-end",     label: "Entry Complete",     diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN", targetParentId: "domain-application", x:1660, y: 270 },
       // -- ERD: Core Entities (→ domain-data Zone) --
       { id: "gn-ctad-erd-traveller",    label: "Traveller",          diagramType: "erd",  diagramSubtype: "Core Entities ERD", targetParentId: "domain-data", stagingParentId: "domain-technology", x: 860, y: 480, boundRequirementIds: ["req-0222a333b444"], moduleId: "module:document-mgmt" },
       { id: "gn-ctad-erd-permit",       label: "Permit",             diagramType: "erd",  diagramSubtype: "Core Entities ERD", targetParentId: "domain-data",  x:1060, y: 480 },

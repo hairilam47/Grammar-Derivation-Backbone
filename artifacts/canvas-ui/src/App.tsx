@@ -170,6 +170,17 @@ if (import.meta.env.DEV) {
   void import("@/dev/seedAllInvariants.test-shape");
 }
 
+// Dev-only golden-scenario seeder determinism invariant (Task #178).
+// Loaded via a dynamic `import()` inside an `import.meta.env.DEV`
+// guard so the production bundle dead-code-eliminates both the import
+// call and every transitive byte of the golden seeder. The probe runs
+// once at module load (browser only), runs `seedGolden` twice, asserts
+// byte-identical persisted state across both runs and spec-count
+// contracts, and restores the original localStorage snapshot.
+if (import.meta.env.DEV) {
+  void import("@/dev/seedGoldenInvariants.test-shape");
+}
+
 function DarkModeApplier() {
   useEffect(() => {
     document.documentElement.classList.add("dark");
