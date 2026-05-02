@@ -46,8 +46,8 @@ import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 const LENS_TITLE = "Integration";
 const LENS_LAYER = "Application + Data";
 const LENS_HINT =
-  "Interface and data-exchange canvas. Pan with mouse drag, zoom with mouse wheel. Edges shown are interface, data-exchange, and cross-domain connections.";
-const EMPTY_HINT = "Add interfaces or data-exchange edges to begin";
+  "Cross-domain integration canvas. Pan with mouse drag, zoom with mouse wheel. Surfaces external boundary nodes and cross-domain CONNECTS edges.";
+const EMPTY_HINT = "Add cross-domain connections or external nodes to begin";
 const ROOT_CRUMB = "Root";
 const BACK_LABEL = "Step out";
 const DEPTH_LABEL = "Depth";
@@ -119,13 +119,11 @@ export default function Integration() {
     return () => window.removeEventListener("keydown", onKey);
   }, [isFullscreen]);
 
-  // Integration lens — two-pass:
-  //   (1) admit base nodes via the type / tag filter;
-  //   (2) admit edges that pass `isIntegrationEdge` between admitted
-  //       endpoints, then expand the visible-node set to include
-  //       any extra endpoint touched by an admitted edge (so a
-  //       cross-boundary CONNECTS edge into a node the base filter
-  //       would have hidden still surfaces both endpoints).
+  // Integration lens — Phase 4 spec (Step 6):
+  //   - surface every `domainTag: 'external'` node;
+  //   - surface every node touched by a cross-domain CONNECTS edge
+  //     (different `domainTag` on each end, including `external`);
+  //   - surface those cross-domain CONNECTS edges themselves.
   const baseLensNodes = useMemo(
     () => workspace.structureGraph.nodes.filter(isIntegrationNode),
     [workspace],
@@ -138,25 +136,17 @@ export default function Integration() {
   }, [workspace]);
 
   const lensEdges = useMemo<readonly AcwEdge[]>(() => {
-    const baseIds = new Set(baseLensNodes.map((n) => n.id));
     const out: AcwEdge[] = [];
     for (const e of workspace.structureGraph.edges) {
       const from = nodeById.get(e.fromId);
       const to = nodeById.get(e.toId);
       if (from === undefined || to === undefined) continue;
-      // INTERFACES_WITH / DATA_FLOW: keep when at least one endpoint
-      // is in the base set so the canvas always has a node to
-      // render the edge against.
-      // CONNECTS: keep only cross-domain.
-      if (!isIntegrationEdge(e, from.domainTag, to.domainTag)) continue;
-      if (e.kind === "CONNECTS") {
-        out.push(e);
-      } else if (baseIds.has(from.id) || baseIds.has(to.id)) {
+      if (isIntegrationEdge(e, from.domainTag, to.domainTag)) {
         out.push(e);
       }
     }
     return out;
-  }, [workspace, baseLensNodes, nodeById]);
+  }, [workspace, nodeById]);
 
   const lensNodes = useMemo<readonly AcwNode[]>(() => {
     const ids = new Set(baseLensNodes.map((n) => n.id));

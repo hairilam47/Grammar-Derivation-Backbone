@@ -24,7 +24,7 @@ import { AuthoringPanel } from "@/components/acw/AuthoringPanel";
 import { WorkspaceLensFloatingOverlay } from "@/components/acw/WorkspaceLensFloatingOverlay";
 import { useAcwWorkspace } from "@/acw/acwGrammarHooks";
 import { ACW_ELEMENT_TYPE_LABEL } from "@/acw/acwGrammar";
-import { updateNodePosition } from "@/acw/acwStore";
+import { updateNodePosition, type AcwEdge, type AcwNode } from "@/acw/acwStore";
 import {
   getDoc as getViewPrefsDoc,
   getLensPrefs,
@@ -32,7 +32,7 @@ import {
   subscribePrefs,
 } from "@/acw/acwWorkspaceViewPrefs";
 import {
-  edgesWithinVisibleNodes,
+  edgesTouchingVisibleNodes,
   isOperationsContinuityNode,
 } from "@/acw/lens/acwLensFilters";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
@@ -113,10 +113,33 @@ export default function OperationsContinuity() {
     return () => window.removeEventListener("keydown", onKey);
   }, [isFullscreen]);
 
-  const lensNodes = useMemo(
+  // Phase 4 spec (Step 8): the Operations lens admits any edge
+  // with **at least one** endpoint passing the node filter, then
+  // expands the visible-node set to include the off-lens endpoint
+  // so the canvas always has a node to anchor the edge against.
+  const baseLensNodes = useMemo(
     () => workspace.structureGraph.nodes.filter(isOperationsContinuityNode),
     [workspace],
   );
+
+  const baseVisibleIds = useMemo(
+    () => new Set(baseLensNodes.map((n) => n.id)),
+    [baseLensNodes],
+  );
+
+  const { lensEdges, lensNodes } = useMemo<{
+    lensEdges: readonly AcwEdge[];
+    lensNodes: readonly AcwNode[];
+  }>(() => {
+    const { edges, expandedIds } = edgesTouchingVisibleNodes(
+      workspace.structureGraph.edges,
+      baseVisibleIds,
+    );
+    const nodes = workspace.structureGraph.nodes.filter((n) =>
+      expandedIds.has(n.id),
+    );
+    return { lensEdges: edges, lensNodes: nodes };
+  }, [workspace, baseVisibleIds]);
 
   const focusedParentId =
     depthPath.length === 0 ? null : depthPath[depthPath.length - 1];
@@ -133,13 +156,18 @@ export default function OperationsContinuity() {
     }
   }, [lensNodes, focusedParentId]);
 
-  const visibleIds = useMemo(
+  const liveNodeIds = useMemo(
     () => new Set(lensNodes.map((n) => n.id)),
     [lensNodes],
   );
-  const lensEdges = useMemo(
-    () => edgesWithinVisibleNodes(workspace.structureGraph.edges, visibleIds),
-    [workspace, visibleIds],
+  const liveNodeFilter = useCallback(
+    (n: AcwNode) => liveNodeIds.has(n.id),
+    [liveNodeIds],
+  );
+  const liveEdgeFilter = useCallback(
+    (e: AcwEdge) =>
+      baseVisibleIds.has(e.fromId) || baseVisibleIds.has(e.toId),
+    [baseVisibleIds],
   );
 
   const crumbs = useMemo(() => {
@@ -177,7 +205,8 @@ export default function OperationsContinuity() {
             structureSlot={
               <LiveStructurePanel
                 testIdPrefix="acw-operations-structure"
-                nodeFilter={isOperationsContinuityNode}
+                nodeFilter={liveNodeFilter}
+                edgeFilter={liveEdgeFilter}
               />
             }
             bottomCenterSlot={
@@ -276,7 +305,8 @@ export default function OperationsContinuity() {
 
       <LiveStructurePanel
         testIdPrefix="acw-operations-structure"
-        nodeFilter={isOperationsContinuityNode}
+        nodeFilter={liveNodeFilter}
+        edgeFilter={liveEdgeFilter}
       />
     </WorkspaceShell>
   );
