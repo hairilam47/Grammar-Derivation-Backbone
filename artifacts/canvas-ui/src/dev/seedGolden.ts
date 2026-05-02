@@ -2,24 +2,40 @@
 // "Immigration Department of Malaysia – Core Systems Modernisation".
 //
 // Routes exclusively through validator-gated public store APIs
-// (`createOrganisation`, `renameWorkItem`, `createModule`,
-// `saveRequirement`, `approveRequirement`, `createOu`,
-// `createNode`, `createEdge`, `clearWorkspace`,
-// `ensureDomainContainers`, `createSignal`).
-// No raw localStorage write is performed.
+// (createOrganisation, renameWorkItem, createModule, saveRequirement,
+// approveRequirement, createOu, createNode, updateNodeParent,
+// updateNodeProperties, createEdge, clearWorkspace, clearOus,
+// ensureDomainContainers, createSignal).
+// No raw localStorage write is performed for governance / ACW state.
 //
-// Determinism: wraps every mutation in `withFrozenClock` so every
-// store-internal `new Date()` / `Date.now()` / `Math.random()` call
-// resolves to a fixed instant or counter across reruns.
+// Determinism contract
+// --------------------
+// Running the seeder twice over the seeded state must produce a
+// byte-identical localStorage snapshot. To ensure that:
+//   * The scope is set to FIXED keys (ORG_ID + WI_SCOPE_ID) before any
+//     store write. All WI-scoped storage therefore resolves to the same
+//     on-disk keys on every run.
+//   * The existing data under those keys is cleared before re-seeding,
+//     so reruns are idempotent.
+//   * withFrozenClock freezes Date, Math.random, crypto.randomUUID, and
+//     crypto.getRandomValues so every store-internal timestamp, counter,
+//     and random id (including the auto-generated blueprint WI id that
+//     createOrganisation assigns) resolves to the same value every run.
 //
-// Idempotency: deletes the org (if it exists) and clears the scoped
-// storage layer before re-seeding so a second run produces a
-// byte-identical snapshot.
+// Idempotency flow
+// ----------------
+//   1. Set currentScope to the fixed (ORG_ID, WI_SCOPE_ID) pair.
+//   2. Resolve + removeItem each governed base key from localStorage.
+//   3. clearWorkspace() + clearOus() clear the in-memory and on-disk
+//      caches for the canvas and OU stores.
+//   4. removeOrganisation(ORG_ID) removes the org entry if it exists.
+//   5. __resetScopedStorageForTest() + store reload flush all caches.
+//   6. Re-seed from scratch inside withFrozenClock.
 
 import {
   createOrganisation,
   getOrganisation,
-  deleteOrganisation,
+  removeOrganisation,
 } from "@/governance/orgStore";
 import { renameWorkItem } from "@/governance/workItemStore";
 import { createModule } from "@/governance/moduleCatalogStore";
@@ -34,6 +50,8 @@ import { createSignal, type CreateSignalInput } from "@/governance/signalsStore"
 import {
   createNode,
   createEdge,
+  updateNodeParent,
+  updateNodeProperties,
   clearWorkspace,
   __acwStoreInternals,
   type AcwDiagramType,
@@ -45,50 +63,75 @@ import {
   clearOus,
   __ouStoreInternals,
 } from "@/acw/orgUnits/ouStore";
-import { currentScope } from "@/governance/storageKeyUtils";
 import {
-  __resetScopedStorageForTest,
-  clearScope,
-} from "@/governance/scopedStorageClient";
+  currentScope,
+  resolveActiveKey,
+} from "@/governance/storageKeyUtils";
+import { __resetScopedStorageForTest } from "@/governance/scopedStorageClient";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
 
 const ORG_ID = "org-jabatan-imigresen";
 const ORG_NAME = "Jabatan Imigresen Malaysia";
-const WI_TITLE =
-  "Immigration Department of Malaysia – Core Systems Modernisation";
+// Fixed scope key used for all WI-scoped storage. Stable across reruns.
+const WI_SCOPE_ID = "wi-immigration-modernisation";
+// Display title applied to the auto-created blueprint work item.
+const WI_TITLE = "Immigration Systems Modernisation";
 
 const FROZEN_ISO = "2026-01-15T12:00:00.000Z";
 const FROZEN_MS = Date.parse(FROZEN_ISO);
 
+// Base keys that the seeder writes to, matched with their scoping rule.
+// Org-only keys resolve under <orgId>:<key>; WI-scoped under
+// <orgId>:<workItemId>:<key>. Keep in sync with each store's getKey().
+const GOLDEN_BASE_KEYS: ReadonlyArray<{ key: string; needsWorkItem: boolean }> =
+  [
+    { key: "adc.module-catalog.v1",       needsWorkItem: false },
+    { key: "adc.requirements.v1",         needsWorkItem: true  },
+    { key: "adc.policy-signals.v1",       needsWorkItem: true  },
+    { key: "acw.workspace.v1",            needsWorkItem: true  },
+    { key: "acw.workspace.view.v1",       needsWorkItem: true  },
+    { key: "acw.organisational-units.v1", needsWorkItem: false },
+  ];
+
+// ---------------------------------------------------------------------------
+// Public summary type
+// ---------------------------------------------------------------------------
+
 export interface GoldenSeedSummary {
-  readonly orgId: string;
-  readonly workItemId: string;
   readonly modules: number;
   readonly requirements: number;
-  readonly nodes: number;
+  readonly ctadNodes: number;
+  readonly acwNodes: number;
   readonly edges: number;
   readonly ous: number;
   readonly signals: number;
-  readonly ctadNodes: number;
-  readonly promotions: number;
 }
 
 // ---------------------------------------------------------------------------
-// Deterministic clock freeze (mirrors the pattern in seedAll.ts)
+// Deterministic clock + entropy freeze
 // ---------------------------------------------------------------------------
 
-type GlobalsBag = {
+type SavedGlobals = {
   Date: typeof Date;
+  mathRandom: () => number;
   randomUUID?: typeof crypto.randomUUID;
+  getRandomValues?: typeof crypto.getRandomValues;
 };
 
 function withFrozenClock<T>(fn: () => T): T {
   const RealDate = globalThis.Date;
-  const realNow = RealDate.now;
-  const realRandom = Math.random;
-  const realUuid =
-    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID.bind(crypto)
-      : null;
+  const realMathRandom = Math.random;
+  const hasCrypto =
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function" &&
+    typeof crypto.getRandomValues === "function";
+  const realUuid = hasCrypto ? crypto.randomUUID.bind(crypto) : undefined;
+  const realGetRandomValues = hasCrypto
+    ? crypto.getRandomValues.bind(crypto)
+    : undefined;
 
   class FrozenDate extends RealDate {
     constructor(...args: ConstructorParameters<typeof Date> | []) {
@@ -104,19 +147,26 @@ function withFrozenClock<T>(fn: () => T): T {
   }
 
   let randomCounter = 0;
-  const frozenRandom = (): number => {
+  const nextLcg = (): number => {
     randomCounter += 1;
     const x = (randomCounter * 1103515245 + 12345) >>> 0;
-    return (x % 0x7fffffff) / 0x7fffffff;
+    return x;
   };
+  const frozenRandom = (): number => (nextLcg() % 0x7fffffff) / 0x7fffffff;
 
-  const savedGlobals: GlobalsBag = { Date: RealDate };
+  const saved: SavedGlobals = {
+    Date: RealDate,
+    mathRandom: realMathRandom,
+    randomUUID: realUuid,
+    getRandomValues: realGetRandomValues,
+  };
 
   try {
     globalThis.Date = FrozenDate as unknown as typeof Date;
     (globalThis.Date as unknown as { now: () => number }).now = FrozenDate.now;
     Math.random = frozenRandom;
-    if (typeof crypto !== "undefined" && realUuid) {
+
+    if (hasCrypto && typeof crypto !== "undefined") {
       crypto.randomUUID = (): ReturnType<typeof crypto.randomUUID> => {
         const seg = (): string =>
           Math.floor(frozenRandom() * 0x10000)
@@ -126,39 +176,72 @@ function withFrozenClock<T>(fn: () => T): T {
           typeof crypto.randomUUID
         >;
       };
-      savedGlobals.randomUUID = realUuid;
+      crypto.getRandomValues = <T extends ArrayBufferView | null>(
+        array: T,
+      ): T => {
+        if (array === null) return array;
+        const buf = array as unknown as { length: number; [i: number]: number };
+        for (let i = 0; i < buf.length; i++) {
+          buf[i] = nextLcg() & 0xff;
+        }
+        return array;
+      };
     }
+
     return fn();
   } finally {
-    globalThis.Date = savedGlobals.Date;
-    (globalThis.Date as unknown as { now: () => number }).now = realNow;
-    Math.random = realRandom;
-    if (savedGlobals.randomUUID && typeof crypto !== "undefined") {
-      crypto.randomUUID = savedGlobals.randomUUID;
+    globalThis.Date = saved.Date;
+    (globalThis.Date as unknown as { now: () => number }).now =
+      saved.Date.now.bind(saved.Date);
+    Math.random = saved.mathRandom;
+    if (
+      hasCrypto &&
+      typeof crypto !== "undefined" &&
+      saved.randomUUID !== undefined &&
+      saved.getRandomValues !== undefined
+    ) {
+      crypto.randomUUID = saved.randomUUID;
+      crypto.getRandomValues = saved.getRandomValues;
     }
   }
 }
 
 // ---------------------------------------------------------------------------
-// Clear + reset helpers
+// Idempotent clear — wipes the target scope before re-seeding
 // ---------------------------------------------------------------------------
 
 function clearGoldenScope(): void {
   if (typeof window === "undefined") return;
 
-  // Set org-only scope so org-scoped stores can be addressed during cleanup.
-  currentScope.set({ orgId: ORG_ID, workItemId: null });
+  // Step 1: Fix the scope to the stable (orgId, workItemId) pair so that
+  // resolveActiveKey resolves the same on-disk keys on every run.
+  currentScope.set({ orgId: ORG_ID, workItemId: WI_SCOPE_ID });
 
-  // Remove org (cascades WI removal) if it already exists.
-  if (getOrganisation(ORG_ID) !== null) {
-    deleteOrganisation(ORG_ID);
+  // Step 2: Remove each governed base key from localStorage so a second
+  // run starts from a truly empty slate at the storage layer.
+  for (const { key, needsWorkItem } of GOLDEN_BASE_KEYS) {
+    const resolved = resolveActiveKey(key, needsWorkItem);
+    if (resolved !== null) {
+      window.localStorage.removeItem(resolved);
+    }
   }
 
-  // Wipe L1 (in-memory) and L2 (localStorage) for every key under this org.
-  clearScope(ORG_ID);
+  // Step 3: Tell the canvas and OU store caches to forget their in-memory
+  // state (they may have been populated by a previous seed run).
+  clearWorkspace();
+  clearOus();
+
+  // Step 4: Remove the org entry (which also carries the real blueprint WI
+  // id). On the first run the org does not exist yet — guard accordingly.
+  if (getOrganisation(ORG_ID) !== null) {
+    removeOrganisation(ORG_ID);
+  }
+
+  // Step 5: Flush the scoped-storage layer's internal state so subsequent
+  // reads return empty instead of a stale snapshot.
   __resetScopedStorageForTest();
 
-  // Reload in-memory caches so subsequent reads return empty, not stale.
+  // Step 6: Reload in-memory caches from the now-cleared storage.
   __acwStoreInternals.reloadFromStorageForTest();
   __ouStoreInternals.reloadFromStorageForTest();
 }
@@ -175,14 +258,22 @@ interface DomainNodeSpec {
   readonly y: number;
 }
 
+// 5 CTAD logical-diagram nodes. All are created inside domain-technology
+// as a staging container; then updateNodeParent promotes each to its
+// semantically correct domain (the three that also receive
+// boundRequirementIds via updateNodeProperties are the "promoted" nodes
+// referenced in the task spec).
 interface CtadNodeSpec {
   readonly id: string;
-  readonly parentId: string;
+  readonly stagingParentId: string;
+  readonly targetParentId: string;
   readonly label: string;
+  readonly diagramType: AcwDiagramType;
+  readonly diagramSubtype: string;
   readonly x: number;
   readonly y: number;
-  readonly diagramType: AcwDiagramType;
   readonly boundRequirementIds?: readonly string[];
+  readonly moduleId?: string;
 }
 
 const DOMAIN_NODES: readonly DomainNodeSpec[] = [
@@ -223,46 +314,61 @@ const DOMAIN_NODES: readonly DomainNodeSpec[] = [
   { id: "gn-tec-cicd",       label: "CI/CD Pipeline",   parentId: "domain-technology",  x: 660, y: 220 },
 ];
 
-// 5 CTAD diagram-type nodes. The first 3 carry `boundRequirementIds`
-// making them explicit CTAD-to-canvas promotions.
+// All 5 CTAD nodes start in domain-technology (staging), then each is
+// moved to its semantic target domain via updateNodeParent. The three
+// that also receive boundRequirementIds are the "CTAD-to-canvas
+// promoted" nodes (task spec §1, promotion step).
 const CTAD_NODES: readonly CtadNodeSpec[] = [
   {
-    id: "gn-ctad-bpmn",
-    parentId: "domain-application",
-    label: "Permit Application Flow",
+    id:              "gn-ctad-bpmn",
+    stagingParentId: "domain-technology",
+    targetParentId:  "domain-business",
+    label:           "Border Entry Process",
+    diagramType:     "bpmn",
+    diagramSubtype:  "Border Entry Process BPMN",
     x: 860, y: 60,
-    diagramType: "bpmn",
     boundRequirementIds: ["req-aa01bb02cc03", "req-bb02cc03dd04"],
+    moduleId: "module:citizen-portal",
   },
   {
-    id: "gn-ctad-erd",
-    parentId: "domain-data",
-    label: "Applicant Data Model",
+    id:              "gn-ctad-erd",
+    stagingParentId: "domain-technology",
+    targetParentId:  "domain-data",
+    label:           "Core Entities ERD",
+    diagramType:     "erd",
+    diagramSubtype:  "Core Entities ERD",
     x: 860, y: 60,
-    diagramType: "erd",
     boundRequirementIds: ["req-0222a333b444"],
+    moduleId: "module:document-mgmt",
   },
   {
-    id: "gn-ctad-ddl",
-    parentId: "domain-data",
-    label: "Case Registry Schema",
+    id:              "gn-ctad-seq",
+    stagingParentId: "domain-technology",
+    targetParentId:  "domain-application",
+    label:           "Visa Application Flow",
+    diagramType:     "sequence",
+    diagramSubtype:  "Visa Application Flow",
     x: 860, y: 220,
-    diagramType: "ddl",
     boundRequirementIds: ["req-a333b444c555"],
+    moduleId: "module:workflow-approval",
   },
   {
-    id: "gn-ctad-seq",
-    parentId: "domain-application",
-    label: "Verification Sequence",
-    x: 860, y: 220,
-    diagramType: "sequence",
-  },
-  {
-    id: "gn-ctad-class",
-    parentId: "domain-application",
-    label: "Service Class Model",
+    id:              "gn-ctad-ddl",
+    stagingParentId: "domain-technology",
+    targetParentId:  "domain-data",
+    label:           "Physical DDL",
+    diagramType:     "ddl",
+    diagramSubtype:  "Physical DDL",
     x: 1060, y: 60,
-    diagramType: "class",
+  },
+  {
+    id:              "gn-ctad-class",
+    stagingParentId: "domain-technology",
+    targetParentId:  "domain-application",
+    label:           "Payment Module Class",
+    diagramType:     "class",
+    diagramSubtype:  "Payment Module Class Diagram",
+    x: 1060, y: 220,
   },
 ];
 
@@ -277,19 +383,92 @@ interface RequirementFixture {
 }
 
 const REQUIREMENT_FIXTURES: readonly RequirementFixture[] = [
-  { id: "req-aa01bb02cc03", title: "Citizen Self-Service Portal",    description: "Travellers access permit applications through a self-service web channel.",             type: "functional",     urgency: "medium",   moduleId: "module:citizen-portal"    },
-  { id: "req-bb02cc03dd04", title: "Application Submission",         description: "Permit applications are submitted digitally with structured field validation.",          type: "functional",     urgency: "high",     moduleId: "module:citizen-portal"    },
-  { id: "req-cc03dd04ee05", title: "Biometric Verification",         description: "Fingerprint and facial biometrics are captured at border entry points.",                 type: "functional",     urgency: "critical", moduleId: "module:citizen-portal"    },
-  { id: "req-dd04ee05ff06", title: "Case Status Tracking",           description: "Officers and applicants track case progress through defined workflow stages.",           type: "functional",     urgency: "medium",   moduleId: "module:case-management"   },
-  { id: "req-ee05ff060011", title: "Case Assignment",                description: "Cases are routed to available officers based on workload and specialisation.",           type: "functional",     urgency: "medium",   moduleId: "module:case-management"   },
-  { id: "req-ff0600110222", title: "System Response Time",           description: "Portal transactions complete within an agreed latency threshold under peak load.",       type: "non-functional", urgency: "medium",   moduleId: "module:internal-admin"    },
-  { id: "req-00110222a333", title: "System Availability",            description: "Core services maintain continuous operation outside scheduled maintenance windows.",     type: "non-functional", urgency: "high",     moduleId: "module:internal-admin"    },
-  { id: "req-0222a333b444", title: "Data Sovereignty",               description: "All personal data is stored and processed within Malaysian jurisdiction.",               type: "constraint",     urgency: "high",     moduleId: "module:document-mgmt"     },
-  { id: "req-a333b444c555", title: "Audit Trail",                    description: "Every state transition in the permit workflow produces a tamper-evident audit record.", type: "constraint",     urgency: "critical", moduleId: "module:workflow-approval"  },
+  {
+    id: "req-aa01bb02cc03",
+    title: "Citizen Self-Service Portal",
+    description:
+      "Travellers access permit applications through a self-service web channel.",
+    type: "functional",
+    urgency: "medium",
+    moduleId: "module:citizen-portal",
+  },
+  {
+    id: "req-bb02cc03dd04",
+    title: "Application Submission",
+    description:
+      "Permit applications are submitted digitally with structured field validation.",
+    type: "functional",
+    urgency: "high",
+    moduleId: "module:citizen-portal",
+  },
+  {
+    id: "req-cc03dd04ee05",
+    title: "Biometric Verification",
+    description:
+      "Fingerprint and facial biometrics are captured at border entry points.",
+    type: "functional",
+    urgency: "critical",
+    moduleId: "module:citizen-portal",
+  },
+  {
+    id: "req-dd04ee05ff06",
+    title: "Case Status Tracking",
+    description:
+      "Officers and applicants track case progress through defined workflow stages.",
+    type: "functional",
+    urgency: "medium",
+    moduleId: "module:case-management",
+  },
+  {
+    id: "req-ee05ff060011",
+    title: "Case Assignment",
+    description:
+      "Cases are routed to available officers based on workload and specialisation.",
+    type: "functional",
+    urgency: "medium",
+    moduleId: "module:case-management",
+  },
+  {
+    id: "req-ff0600110222",
+    title: "System Response Time",
+    description:
+      "Portal transactions complete within an agreed latency threshold under peak load.",
+    type: "non-functional",
+    urgency: "medium",
+    moduleId: "module:internal-admin",
+  },
+  {
+    id: "req-00110222a333",
+    title: "System Availability",
+    description:
+      "Core services maintain continuous operation outside scheduled maintenance windows.",
+    type: "non-functional",
+    urgency: "high",
+    moduleId: "module:internal-admin",
+  },
+  {
+    id: "req-0222a333b444",
+    title: "Data Sovereignty",
+    description:
+      "All personal data is stored and processed within Malaysian jurisdiction.",
+    type: "constraint",
+    urgency: "high",
+    moduleId: "module:document-mgmt",
+  },
+  {
+    id: "req-a333b444c555",
+    title: "Audit Trail",
+    description:
+      "Every state transition in the permit workflow produces a tamper-evident audit record.",
+    type: "constraint",
+    urgency: "critical",
+    moduleId: "module:workflow-approval",
+  },
   {
     id: "req-b444c555d666",
     title: "Biometric Terminals",
-    description: "Fingerprint scanner units deployed at all gazetted border entry points.",
+    description:
+      "Fingerprint scanner units deployed at all gazetted border entry points.",
     type: "hardware",
     urgency: "high",
     moduleId: "module:citizen-portal",
@@ -298,10 +477,19 @@ const REQUIREMENT_FIXTURES: readonly RequirementFixture[] = [
       model: "DigitalPersona U.are.U 4500",
       quantity: 150,
       unitCostEstimate: 320,
-      notes: "Units cover all entry lanes; replacements held at regional depots.",
+      notes:
+        "Units cover all entry lanes; replacements held at regional depots.",
     },
   },
-  { id: "req-c555d666e777", title: "Audit Log Capacity",             description: "Audit log store supports ten years of retention for all permit workflow events.",      type: "non-functional", urgency: "low",      moduleId: "module:reporting-analytics" },
+  {
+    id: "req-c555d666e777",
+    title: "Audit Log Capacity",
+    description:
+      "Audit log store supports ten years of retention for all permit workflow events.",
+    type: "non-functional",
+    urgency: "low",
+    moduleId: "module:reporting-analytics",
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -309,12 +497,18 @@ const REQUIREMENT_FIXTURES: readonly RequirementFixture[] = [
 // ---------------------------------------------------------------------------
 
 export function seedGolden(): GoldenSeedSummary {
-  // Always wipe the scope first so re-runs are byte-stable.
+  // Wipe the target scope so every run starts from a clean slate.
   clearGoldenScope();
 
   return withFrozenClock(() => {
     // ------------------------------------------------------------------
     // 1. Organisation + EA Blueprint Work Item
+    //
+    // The scope was already set to (ORG_ID, WI_SCOPE_ID) by
+    // clearGoldenScope, so all WI-scoped store writes resolve to the
+    // stable key prefix. The blueprint WI created inside
+    // createOrganisation gets a deterministic id (crypto.getRandomValues
+    // is frozen above); we capture it only for the rename call below.
     // ------------------------------------------------------------------
     const { organisation: org, eaBlueprintWorkItemId: wiId } =
       createOrganisation({
@@ -327,13 +521,12 @@ export function seedGolden(): GoldenSeedSummary {
 
     renameWorkItem(wiId, WI_TITLE);
 
-    // Set full scope so WI-scoped stores can write.
-    currentScope.set({ orgId: org.id, workItemId: wiId });
+    // Reload caches now that the org and WI entries exist in storage.
     __acwStoreInternals.reloadFromStorageForTest();
     __ouStoreInternals.reloadFromStorageForTest();
 
     // ------------------------------------------------------------------
-    // 2. Six modules (one per capability)
+    // 2. Six modules (one per capability area)
     // ------------------------------------------------------------------
     const moduleList = [
       createModule({
@@ -397,20 +590,24 @@ export function seedGolden(): GoldenSeedSummary {
     // ------------------------------------------------------------------
     // 4. Organisational Units (2)
     // ------------------------------------------------------------------
-    createOu({ id: "ou-operations", name: "Immigration Operations" });
-    createOu({ id: "ou-digital",    name: "Digital Transformation" });
+    const ouBorderResult = createOu({
+      id: "ou-border",
+      name: "Border Control Operations",
+    });
+    const ouVisaResult = createOu({
+      id: "ou-visa",
+      name: "Visa Services",
+    });
 
     // ------------------------------------------------------------------
-    // 5. EAStudio canvas — 4 domain containers + 31 child nodes + 5 CTAD
+    // 5. EAStudio canvas — 4 domain containers + 31 child nodes
     // ------------------------------------------------------------------
     clearWorkspace();
     ensureDomainContainers();
 
-    // Map spec-id → resolved ACW node id (same when caller supplies id).
     const nodeIdMap = new Map<string, string>();
-    let nodeCount = 0;
+    let acwNodeCount = 0;
 
-    // Domain child nodes — derive elementType from the palette registry.
     for (const spec of DOMAIN_NODES) {
       const item = paletteItemByLabel(spec.label);
       if (item === undefined) continue;
@@ -430,64 +627,104 @@ export function seedGolden(): GoldenSeedSummary {
       });
       if (r.ok) {
         nodeIdMap.set(spec.id, r.id);
-        nodeCount += 1;
-      }
-    }
-
-    // CTAD diagram-type nodes (System type).
-    // First 3 carry `boundRequirementIds` → CTAD-to-canvas promotions.
-    let ctadNodeCount = 0;
-    for (const spec of CTAD_NODES) {
-      const r = createNode({
-        id: spec.id,
-        type: "System",
-        parentId: spec.parentId,
-        label: spec.label,
-        x: spec.x,
-        y: spec.y,
-        diagramType: spec.diagramType,
-        ...(spec.boundRequirementIds !== undefined
-          ? { boundRequirementIds: spec.boundRequirementIds }
-          : {}),
-      });
-      if (r.ok) {
-        nodeIdMap.set(spec.id, r.id);
-        nodeCount += 1;
-        ctadNodeCount += 1;
+        acwNodeCount += 1;
       }
     }
 
     // ------------------------------------------------------------------
-    // 6. Edges (≥10) — all between System-typed nodes within/across
-    //    domains via DATA_FLOW / CONNECTS / INTERFACES_WITH
+    // 6. OU assignments to Business Process domain nodes
+    // ------------------------------------------------------------------
+    const busProcId = nodeIdMap.get("gn-bus-process");
+    const busValueId = nodeIdMap.get("gn-bus-value");
+    if (ouBorderResult.ok && busProcId !== undefined) {
+      updateNodeProperties(busProcId, {
+        organisationalUnitId: ouBorderResult.id,
+      });
+    }
+    if (ouVisaResult.ok && busValueId !== undefined) {
+      updateNodeProperties(busValueId, {
+        organisationalUnitId: ouVisaResult.id,
+      });
+    }
+
+    // ------------------------------------------------------------------
+    // 7. CTAD logical-diagram nodes
+    //
+    // Two-step promotion flow (task spec §1, promotion step):
+    //   a) Create each CTAD node inside domain-technology (staging).
+    //   b) updateNodeParent to move it to its semantic target domain.
+    //   c) updateNodeProperties to set boundRequirementIds + moduleId on
+    //      the three promoted nodes (BPMN, ERD, Sequence).
+    // ------------------------------------------------------------------
+    let ctadNodeCount = 0;
+
+    for (const spec of CTAD_NODES) {
+      // a) Create in staging container.
+      const r = createNode({
+        id:            spec.id,
+        type:          "System",
+        parentId:      spec.stagingParentId,
+        label:         spec.label,
+        x:             spec.x,
+        y:             spec.y,
+        diagramType:   spec.diagramType,
+        diagramSubtype: spec.diagramSubtype,
+      });
+      if (!r.ok) continue;
+
+      nodeIdMap.set(spec.id, r.id);
+      acwNodeCount += 1;
+      ctadNodeCount += 1;
+
+      // b) Promote to semantic target domain via post-create parent update.
+      if (spec.targetParentId !== spec.stagingParentId) {
+        updateNodeParent(r.id, spec.targetParentId);
+      }
+
+      // c) Bind requirements + module on the promoted nodes.
+      if (spec.boundRequirementIds !== undefined || spec.moduleId !== undefined) {
+        updateNodeProperties(r.id, {
+          ...(spec.boundRequirementIds !== undefined
+            ? { boundRequirementIds: spec.boundRequirementIds }
+            : {}),
+          ...(spec.moduleId !== undefined
+            ? { moduleId: spec.moduleId }
+            : {}),
+        });
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // 8. Edges (≥ 10) — CONNECTS / DATA_FLOW / INTERFACES_WITH
     // ------------------------------------------------------------------
     type EdgeKind = "CONNECTS" | "DATA_FLOW" | "INTERFACES_WITH";
-    const EDGE_SPECS: readonly { from: string; to: string; kind: EdgeKind }[] = [
-      { from: "gn-app-portal",  to: "gn-app-gateway",  kind: "CONNECTS"        },
-      { from: "gn-app-mobile",  to: "gn-app-gateway",  kind: "CONNECTS"        },
-      { from: "gn-app-web",     to: "gn-app-gateway",  kind: "CONNECTS"        },
-      { from: "gn-app-gateway", to: "gn-app-service",  kind: "CONNECTS"        },
-      { from: "gn-app-gateway", to: "gn-app-events",   kind: "INTERFACES_WITH" },
-      { from: "gn-app-service", to: "gn-app-events",   kind: "INTERFACES_WITH" },
-      { from: "gn-app-service", to: "gn-dat-stream",   kind: "DATA_FLOW"       },
-      { from: "gn-app-service", to: "gn-dat-product",  kind: "DATA_FLOW"       },
-      { from: "gn-dat-etl",     to: "gn-dat-stream",   kind: "DATA_FLOW"       },
-      { from: "gn-app-portal",  to: "gn-app-service",  kind: "DATA_FLOW"       },
-      { from: "gn-ctad-seq",    to: "gn-app-service",  kind: "INTERFACES_WITH" },
-      { from: "gn-ctad-bpmn",   to: "gn-app-gateway",  kind: "DATA_FLOW"       },
-    ];
+    const EDGE_SPECS: readonly { from: string; to: string; kind: EdgeKind }[] =
+      [
+        { from: "gn-app-portal",  to: "gn-app-gateway",  kind: "CONNECTS"        },
+        { from: "gn-app-mobile",  to: "gn-app-gateway",  kind: "CONNECTS"        },
+        { from: "gn-app-web",     to: "gn-app-gateway",  kind: "CONNECTS"        },
+        { from: "gn-app-gateway", to: "gn-app-service",  kind: "CONNECTS"        },
+        { from: "gn-app-gateway", to: "gn-app-events",   kind: "INTERFACES_WITH" },
+        { from: "gn-app-service", to: "gn-app-events",   kind: "INTERFACES_WITH" },
+        { from: "gn-app-service", to: "gn-dat-stream",   kind: "DATA_FLOW"       },
+        { from: "gn-app-service", to: "gn-dat-product",  kind: "DATA_FLOW"       },
+        { from: "gn-dat-etl",     to: "gn-dat-stream",   kind: "DATA_FLOW"       },
+        { from: "gn-app-portal",  to: "gn-app-service",  kind: "DATA_FLOW"       },
+        { from: "gn-ctad-seq",    to: "gn-app-service",  kind: "INTERFACES_WITH" },
+        { from: "gn-ctad-bpmn",   to: "gn-app-gateway",  kind: "DATA_FLOW"       },
+      ];
 
     let edgeCount = 0;
     for (const e of EDGE_SPECS) {
       const fromId = nodeIdMap.get(e.from);
-      const toId   = nodeIdMap.get(e.to);
+      const toId = nodeIdMap.get(e.to);
       if (fromId === undefined || toId === undefined) continue;
       const r = createEdge({ kind: e.kind, fromId, toId });
       if (r.ok) edgeCount += 1;
     }
 
     // ------------------------------------------------------------------
-    // 7. Policy signals (2)
+    // 9. Policy signals (2)
     // ------------------------------------------------------------------
     const sig1: CreateSignalInput = {
       signalCategory: "Risk Accumulation",
@@ -510,19 +747,19 @@ export function seedGolden(): GoldenSeedSummary {
     };
 
     const sig2: CreateSignalInput = {
-      signalCategory: "Complexity Accumulation",
-      signalTitle: "Permit Workflow Branch Growth",
+      signalCategory: "Posture Drift",
+      signalTitle: "Permit Workflow Deviation Trend",
       signalDescription:
-        "Approval paths have grown to include over thirty conditional branches, reducing processing consistency across permit categories.",
+        "Observed approval paths are diverging from the ratified baseline across multiple permit categories over successive quarters.",
       evidenceSummary: {
         observationWindow: "Q4 2025 – Q1 2026",
-        relatedDecisionCount: 7,
+        relatedDecisionCount: 5,
         qualitativePattern:
-          "New permit categories added over successive quarters without rationalising existing branch conditions.",
+          "New conditional branches added without formal review, increasing deviation from the approved workflow model.",
       },
       interpretationGuidance: [
-        "Has the full set of workflow branches been reviewed against current permit categories?",
-        "Are branch conditions documented with explicit business justifications?",
+        "Has the current workflow baseline been re-ratified to account for recent permit category additions?",
+        "Are deviations from the approved workflow model being tracked and escalated systematically?",
       ],
       reviewingBody: "Digital Transformation Steering Committee",
     };
@@ -530,22 +767,18 @@ export function seedGolden(): GoldenSeedSummary {
     createSignal(sig1);
     createSignal(sig2);
 
-    const promotionCount = CTAD_NODES.filter(
-      (n) =>
-        n.boundRequirementIds !== undefined && n.boundRequirementIds.length > 0,
-    ).length;
+    // The org.id is used only internally; the stable scope key is
+    // WI_SCOPE_ID. Suppress the unused-variable lint for org.
+    void org;
 
     return {
-      orgId: org.id,
-      workItemId: wiId,
-      modules: moduleList.length,
+      modules:      moduleList.length,
       requirements: REQUIREMENT_FIXTURES.length,
-      nodes: nodeCount,
-      edges: edgeCount,
-      ous: 2,
-      signals: 2,
-      ctadNodes: ctadNodeCount,
-      promotions: promotionCount,
+      ctadNodes:    ctadNodeCount,
+      acwNodes:     acwNodeCount,
+      edges:        edgeCount,
+      ous:          2,
+      signals:      2,
     };
   });
 }

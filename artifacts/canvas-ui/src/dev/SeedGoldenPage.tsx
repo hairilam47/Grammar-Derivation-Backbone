@@ -12,11 +12,11 @@ import { seedGolden, type GoldenSeedSummary } from "./seedGolden";
 
 const PAGE_TITLE = "Golden scenario seed";
 const PAGE_LEAD =
-  "Populate the local browser store with the Immigration Department of Malaysia – Core Systems Modernisation scenario: one organisation, one EA Blueprint, six modules, eleven requirements, a four-domain canvas, two organisational units, and two policy signals.";
+  "Populate the local browser store with the Immigration Department of Malaysia scenario: one organisation, one EA Blueprint, six modules, eleven requirements, a four-domain canvas, two organisational units, and two policy signals.";
 const SEED_BUTTON = "Seed golden scenario";
 const HOME_LINK = "Back to landing";
 const STATUS_IDLE = "No run on this page load.";
-const STATUS_HEADING = "Last run";
+const STATUS_HEADING = "Last run summary";
 const FOOTER_NOTE =
   "This page is gated to development builds and is not bundled into a published deployment.";
 
@@ -36,33 +36,14 @@ interface RunState {
   readonly errorMessage?: string;
 }
 
-function SummaryTable({ summary }: { summary: GoldenSeedSummary }) {
-  const rows: [string, string | number][] = [
-    ["Org ID",         summary.orgId],
-    ["Work Item ID",   summary.workItemId],
-    ["Modules",        summary.modules],
-    ["Requirements",   summary.requirements],
-    ["Canvas nodes",   summary.nodes],
-    ["Canvas edges",   summary.edges],
-    ["Org units",      summary.ous],
-    ["CTAD nodes",     summary.ctadNodes],
-    ["Promotions",     summary.promotions],
-    ["Policy signals", summary.signals],
-  ];
+function SummaryJson({ summary }: { summary: GoldenSeedSummary }) {
   return (
-    <table
-      data-testid="text-golden-seed-summary"
-      className="mt-3 w-full border-collapse rounded-md border border-border/60 font-mono text-xs"
+    <pre
+      data-testid="text-golden-seed-summary-json"
+      className="mt-3 overflow-x-auto rounded-md border border-border/60 bg-card p-4 font-mono text-xs"
     >
-      <tbody>
-        {rows.map(([label, value]) => (
-          <tr key={label} className="border-b border-border/40 last:border-0">
-            <td className="px-3 py-1.5 text-muted-foreground">{label}</td>
-            <td className="px-3 py-1.5">{String(value)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+      {JSON.stringify(summary, null, 2)}
+    </pre>
   );
 }
 
@@ -98,7 +79,7 @@ export default function SeedGoldenPage() {
           <p className="mt-1 text-xs text-muted-foreground">{STATUS_IDLE}</p>
         )}
         {state.kind === "seeded" && state.summary !== undefined && (
-          <SummaryTable summary={state.summary} />
+          <SummaryJson summary={state.summary} />
         )}
         {state.kind === "error" && (
           <pre className="mt-3 overflow-x-auto rounded-md border border-destructive/40 bg-card p-4 font-mono text-xs text-destructive">
@@ -109,7 +90,10 @@ export default function SeedGoldenPage() {
 
       <p className="text-xs text-muted-foreground/60">{FOOTER_NOTE}</p>
 
-      <Link href="/" className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground">
+      <Link
+        href="/"
+        className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
+      >
         {HOME_LINK}
       </Link>
     </div>
