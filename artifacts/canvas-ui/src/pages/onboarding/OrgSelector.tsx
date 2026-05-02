@@ -66,13 +66,13 @@ export default function OrgSelector() {
 
   function handleSelect(orgId: string) {
     setOrgId(orgId);
-    navigate("/dashboard");
+    navigate("/org-home");
   }
 
   function handleCreated(orgId: string) {
     setDialogOpen(false);
     setOrgId(orgId);
-    navigate("/dashboard");
+    navigate("/org-home");
   }
 
   useEffect(() => {

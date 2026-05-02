@@ -64,7 +64,19 @@ export interface WorkItem {
   // missing `archived` field as `false` so old persisted documents
   // continue to validate without a schema-version bump.
   readonly archived: boolean;
+  // Optional free-form sub-classification surfaced in the New Work
+  // Item dialog when type is `project` or `enhancement` (e.g. "New
+  // Application", "New Software / 3rd-party Software", "New
+  // Infrastructure Setup", "Other"). Absent on every Work Item
+  // created before the field shipped — read-side normalisation
+  // leaves it undefined for those rows so old persisted documents
+  // continue to validate without a schema-version bump. When
+  // present it must be a non-empty string of at most 100
+  // characters. Purely descriptive — no validator keys off it.
+  readonly subtype?: string;
 }
+
+const MAX_SUBTYPE_LEN = 100;
 
 interface WorkItemDoc {
   readonly schemaVersion: typeof WORK_ITEM_SCHEMA_VERSION;
@@ -85,6 +97,7 @@ const ALLOWED_WORK_ITEM_KEYS = new Set([
   "description",
   "createdAt",
   "archived",
+  "subtype",
 ]);
 
 function isValidWorkItemId(id: unknown): id is string {
@@ -111,6 +124,16 @@ function isValidWorkItem(value: unknown): value is WorkItem {
   // were persisted without the field). When present it must be a
   // boolean — anything else means the document was tampered with.
   if (v.archived !== undefined && typeof v.archived !== "boolean") return false;
+  // `subtype` is optional. When present it must be a non-empty
+  // string of at most MAX_SUBTYPE_LEN characters — empty strings,
+  // whitespace-only strings, oversize strings, and non-strings
+  // are refused so a tampered document cannot smuggle bad data
+  // past the storage boundary.
+  if (v.subtype !== undefined) {
+    if (typeof v.subtype !== "string") return false;
+    if (v.subtype.trim().length === 0) return false;
+    if (v.subtype.length > MAX_SUBTYPE_LEN) return false;
+  }
   return true;
 }
 
@@ -144,6 +167,8 @@ function readDoc(): WorkItemDoc {
       const v = val as unknown as Record<string, unknown>;
       const archived =
         typeof v.archived === "boolean" ? (v.archived as boolean) : false;
+      const subtype =
+        typeof v.subtype === "string" ? (v.subtype as string) : undefined;
       cleaned[key] = Object.freeze({
         id: v.id as string,
         orgId: v.orgId as string,
@@ -152,6 +177,7 @@ function readDoc(): WorkItemDoc {
         description: v.description as string,
         createdAt: v.createdAt as string,
         archived,
+        ...(subtype !== undefined ? { subtype } : {}),
       });
     }
     return {
@@ -208,6 +234,8 @@ export async function hydrateWorkItemsFromServerForOrg(
   for (const r of rows) {
     if (!isValidWorkItem(r)) continue;
     const archived = typeof r.archived === "boolean" ? r.archived : false;
+    const subtype =
+      typeof r.subtype === "string" ? r.subtype : undefined;
     merged[r.id] = Object.freeze({
       id: r.id,
       orgId: r.orgId,
@@ -216,6 +244,7 @@ export async function hydrateWorkItemsFromServerForOrg(
       description: r.description,
       createdAt: r.createdAt,
       archived,
+      ...(subtype !== undefined ? { subtype } : {}),
     });
   }
   writeDoc({ schemaVersion: WORK_ITEM_SCHEMA_VERSION, workItems: merged });
@@ -260,6 +289,12 @@ export interface CreateWorkItemInput {
   readonly type: WorkItemType;
   readonly title: string;
   readonly description?: string;
+  // Optional sub-classification surfaced by the New Work Item
+  // dialog. When omitted or undefined, the persisted Work Item
+  // simply does not carry a `subtype` field. When supplied it is
+  // trimmed and must be a non-empty string of at most
+  // MAX_SUBTYPE_LEN characters after trimming.
+  readonly subtype?: string;
 }
 
 export function createWorkItem(input: CreateWorkItemInput): WorkItem {
@@ -320,6 +355,27 @@ export function createWorkItem(input: CreateWorkItemInput): WorkItem {
     }
   }
 
+  let subtype: string | undefined;
+  if (input.subtype !== undefined) {
+    if (typeof input.subtype !== "string") {
+      throw new Error(
+        "workItemStore: Work Item subtype, when supplied, must be a string.",
+      );
+    }
+    const trimmed = input.subtype.trim();
+    if (trimmed.length === 0) {
+      throw new Error(
+        "workItemStore: Work Item subtype, when supplied, must be a non-empty string.",
+      );
+    }
+    if (trimmed.length > MAX_SUBTYPE_LEN) {
+      throw new Error(
+        `workItemStore: Work Item subtype must be at most ${MAX_SUBTYPE_LEN} characters.`,
+      );
+    }
+    subtype = trimmed;
+  }
+
   const next: WorkItem = Object.freeze({
     id,
     orgId: input.orgId,
@@ -328,6 +384,7 @@ export function createWorkItem(input: CreateWorkItemInput): WorkItem {
     description,
     createdAt: new Date().toISOString(),
     archived: false,
+    ...(subtype !== undefined ? { subtype } : {}),
   });
   writeDoc({
     schemaVersion: WORK_ITEM_SCHEMA_VERSION,

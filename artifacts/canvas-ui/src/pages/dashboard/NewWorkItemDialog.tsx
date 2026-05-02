@@ -1,17 +1,7 @@
-// NewWorkItemDialog — modal form for creating a new Work Item
-// inside the active Organisation.
-//
-// Phase 2 (SaaS Onboarding). Type defaults to "project". The
-// "ea-blueprint" type is intentionally absent from the dropdown
-// because every Organisation already carries an auto-seeded
-// EA Blueprint and the registry refuses a second one.
-//
-// Conditional type availability: the registry rejects an
-// Enhancement / Change-Request creation when the active
-// organisation has no EA Blueprint. The dialog mirrors that rule
-// in the UI — when no EA Blueprint exists for the active org, the
-// type dropdown collapses to "Project" only. Every static label is
-// asserted against `assertAllOnboardingLanguage` at module load.
+// NewWorkItemDialog — modal form for creating a Work Item.
+// "ea-blueprint" is excluded (auto-seeded, one-per-org); the
+// triplet collapses to "Project" only when the active org has
+// no EA Blueprint, mirroring the registry's refusal rule.
 
 import { useEffect, useId, useMemo, useState, useSyncExternalStore } from "react";
 
@@ -28,10 +18,6 @@ import {
   type WorkItemType,
 } from "@/governance/workItemStore";
 
-// Types selectable from this dialog. EA Blueprint is excluded
-// (one-per-org rule, auto-seeded at org creation). The full
-// triplet is shown only when the active org already has an EA
-// Blueprint; otherwise only "project" is offered.
 const ALL_SELECTABLE_TYPES: readonly Exclude<WorkItemType, "ea-blueprint">[] = [
   "project",
   "enhancement",
@@ -49,6 +35,19 @@ const TYPE_LABELS: Readonly<Record<Exclude<WorkItemType, "ea-blueprint">, string
   "change-request": "Change Request",
 };
 
+// Subtype is optional and only offered for `project` / `enhancement`.
+// The empty-string sentinel maps back to `undefined` at submit.
+const SUBTYPE_OPTIONS = [
+  "New Application",
+  "New Software / 3rd-party Software",
+  "New Infrastructure Setup",
+  "Other",
+] as const;
+type SubtypeOption = (typeof SUBTYPE_OPTIONS)[number];
+
+const TYPES_WITH_SUBTYPE: ReadonlySet<Exclude<WorkItemType, "ea-blueprint">> =
+  new Set<Exclude<WorkItemType, "ea-blueprint">>(["project", "enhancement"]);
+
 const STATIC_LABELS = {
   heading: "Create Work Item",
   titleLabel: "Title",
@@ -56,13 +55,18 @@ const STATIC_LABELS = {
   descriptionLabel: "Description",
   descriptionPlaceholder: "Optional",
   typeLabel: "Type",
+  subtypeLabel: "Subtype",
+  subtypePlaceholder: "—",
   cancel: "Cancel",
   submit: "Create",
   errorPrefix: "Could not create Work Item: ",
   ...TYPE_LABELS,
 } as const;
 
-assertAllOnboardingLanguage(Object.values(STATIC_LABELS));
+assertAllOnboardingLanguage([
+  ...Object.values(STATIC_LABELS),
+  ...SUBTYPE_OPTIONS,
+]);
 
 interface NewWorkItemDialogProps {
   readonly open: boolean;
@@ -82,12 +86,14 @@ export function NewWorkItemDialog({
   const [type, setType] = useState<Exclude<WorkItemType, "ea-blueprint">>(
     "project",
   );
+  const [subtype, setSubtype] = useState<SubtypeOption | "">("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const titleId = useId();
   const descId = useId();
   const typeId = useId();
+  const subtypeId = useId();
 
   // Track the work-item store so the type dropdown reacts to the
   // EA Blueprint being created (which unlocks Enhancement /
@@ -111,9 +117,18 @@ export function NewWorkItemDialog({
     setTitle("");
     setDescription("");
     setType("project");
+    setSubtype("");
     setBusy(false);
     setError(null);
   }, [open]);
+
+  // Whenever the selected type loses subtype eligibility (the
+  // user flips to "Change Request"), drop any subtype the user
+  // had picked so the form cannot smuggle a stale value into the
+  // submit payload.
+  useEffect(() => {
+    if (!TYPES_WITH_SUBTYPE.has(type) && subtype !== "") setSubtype("");
+  }, [type, subtype]);
 
   // If the EA Blueprint disappears after the dialog mounts (e.g.
   // a switch into a freshly-created org from a different surface),
@@ -140,6 +155,9 @@ export function NewWorkItemDialog({
         type,
         title: title.trim(),
         description: description.trim(),
+        ...(TYPES_WITH_SUBTYPE.has(type) && subtype !== ""
+          ? { subtype }
+          : {}),
       });
       onCreated(wi.id);
     } catch (err) {
@@ -205,6 +223,28 @@ export function NewWorkItemDialog({
             ))}
           </select>
         </div>
+
+        {TYPES_WITH_SUBTYPE.has(type) && (
+          <div className="space-y-1.5">
+            <Label htmlFor={subtypeId}>{STATIC_LABELS.subtypeLabel}</Label>
+            <select
+              id={subtypeId}
+              data-testid="select-work-item-subtype"
+              value={subtype}
+              onChange={(e) =>
+                setSubtype(e.target.value as SubtypeOption | "")
+              }
+              className="h-9 w-full px-2 rounded-md border border-input bg-background text-sm"
+            >
+              <option value="">{STATIC_LABELS.subtypePlaceholder}</option>
+              {SUBTYPE_OPTIONS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="space-y-1.5">
           <Label htmlFor={descId}>{STATIC_LABELS.descriptionLabel}</Label>

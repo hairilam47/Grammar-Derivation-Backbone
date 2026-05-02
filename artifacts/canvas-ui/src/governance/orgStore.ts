@@ -438,6 +438,90 @@ export function removeOrganisation(id: string): void {
   removeAllWorkItemsForOrg(id);
 }
 
+// Update an Organisation's editable fields. Only `name`, `sector`,
+// and `natureOfBusiness` may change — `id`, `slug`, `createdAt`,
+// and `logo` are immutable through this mutator (slug is preserved
+// across renames per the existing `renameOrganisation` contract).
+// Idempotent: a patch that produces no change to any field is a
+// no-op (no write, no version bump, no server mirror). Throws on
+// a malformed id, an unknown id, an empty trimmed name, or an
+// invalid sector / natureOfBusiness enum value.
+export interface UpdateOrganisationInput {
+  readonly name?: string;
+  readonly sector?: OrgSector;
+  readonly natureOfBusiness?: NatureOfBusiness;
+}
+
+export function updateOrganisation(
+  id: string,
+  fields: UpdateOrganisationInput,
+): Organisation {
+  if (!isValidOrgId(id)) {
+    throw new Error(
+      `orgStore: invalid org id "${id}". Expected pattern ${ORG_ID_RE.source}.`,
+    );
+  }
+  const doc = readDoc();
+  const existing = doc.organisations[id];
+  if (!existing) {
+    throw new Error(`orgStore: no organisation with id "${id}".`);
+  }
+
+  let nextName = existing.name;
+  if (fields.name !== undefined) {
+    if (typeof fields.name !== "string" || fields.name.trim().length === 0) {
+      throw new Error(
+        "orgStore: organisation name must be a non-empty string.",
+      );
+    }
+    nextName = fields.name.trim();
+  }
+
+  let nextSector = existing.sector;
+  if (fields.sector !== undefined) {
+    if (typeof fields.sector !== "string" || !SECTOR_SET.has(fields.sector)) {
+      throw new Error(
+        `orgStore: invalid sector "${String(fields.sector)}". Allowed: ${ORG_SECTORS.join(", ")}.`,
+      );
+    }
+    nextSector = fields.sector;
+  }
+
+  let nextNature = existing.natureOfBusiness;
+  if (fields.natureOfBusiness !== undefined) {
+    if (
+      typeof fields.natureOfBusiness !== "string" ||
+      !NATURE_SET.has(fields.natureOfBusiness)
+    ) {
+      throw new Error(
+        `orgStore: invalid natureOfBusiness "${String(fields.natureOfBusiness)}".`,
+      );
+    }
+    nextNature = fields.natureOfBusiness;
+  }
+
+  if (
+    nextName === existing.name &&
+    nextSector === existing.sector &&
+    nextNature === existing.natureOfBusiness
+  ) {
+    return existing;
+  }
+
+  const next: Organisation = Object.freeze({
+    ...existing,
+    name: nextName,
+    sector: nextSector,
+    natureOfBusiness: nextNature,
+  });
+  writeDoc({
+    schemaVersion: ORG_SCHEMA_VERSION,
+    organisations: { ...doc.organisations, [id]: next },
+  });
+  mirrorOrgToServer(next);
+  return next;
+}
+
 // Rename an Organisation. Updates `name` only; the `slug` is
 // deliberately preserved across renames so any external reference
 // or future URL keyed on the slug stays stable. Idempotent: a

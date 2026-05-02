@@ -421,8 +421,16 @@ function WorkItemCard({
           </DropdownMenu.Root>
         </div>
         <CardTitle className="text-base">{wi.title}</CardTitle>
-        <CardDescription className="text-xs flex items-center gap-2">
+        <CardDescription className="text-xs flex items-center gap-2 flex-wrap">
           <span>{TYPE_LABELS[wi.type]}</span>
+          {wi.subtype && (
+            <span
+              className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] tracking-wide bg-secondary/40 border border-border/40 text-muted-foreground"
+              data-testid={`badge-subtype-${wi.id}`}
+            >
+              {wi.subtype}
+            </span>
+          )}
           {archived && (
             <span
               className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider bg-secondary/60 border border-border/60"

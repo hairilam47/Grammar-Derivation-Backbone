@@ -21,6 +21,7 @@ import {
   listOrganisations,
   removeOrganisation,
   renameOrganisation,
+  updateOrganisation,
 } from "./orgStore";
 import {
   getEaBlueprintForOrg,
@@ -322,11 +323,94 @@ function probeRenameAndDelete(): void {
   );
 }
 
+function probeUpdate(): void {
+  const r = createOrganisation({
+    name: "Delta",
+    sector: "private-sector",
+    natureOfBusiness: "other",
+  });
+  const orgId = r.organisation.id;
+  const slugBefore = r.organisation.slug;
+  const createdAtBefore = r.organisation.createdAt;
+
+  // Happy path — update all three editable fields at once.
+  const updated = updateOrganisation(orgId, {
+    name: "  Delta Renamed  ",
+    sector: "government",
+    natureOfBusiness: "government-administration",
+  });
+  if (updated.name !== "Delta Renamed") {
+    throw new Error("orgStore invariant: updateOrganisation did not trim name.");
+  }
+  if (updated.sector !== "government") {
+    throw new Error("orgStore invariant: updateOrganisation did not update sector.");
+  }
+  if (updated.natureOfBusiness !== "government-administration") {
+    throw new Error(
+      "orgStore invariant: updateOrganisation did not update natureOfBusiness.",
+    );
+  }
+  if (
+    updated.id !== orgId ||
+    updated.slug !== slugBefore ||
+    updated.createdAt !== createdAtBefore
+  ) {
+    throw new Error(
+      "orgStore invariant: updateOrganisation mutated immutable fields (id / slug / createdAt).",
+    );
+  }
+
+  // Idempotency: a no-op patch returns the same value with no
+  // further state change.
+  const same = updateOrganisation(orgId, {
+    name: "Delta Renamed",
+    sector: "government",
+    natureOfBusiness: "government-administration",
+  });
+  if (same.name !== updated.name) {
+    throw new Error(
+      "orgStore invariant: updateOrganisation idempotency probe failed.",
+    );
+  }
+
+  // Partial patch: only one field flips.
+  const onlyNature = updateOrganisation(orgId, { natureOfBusiness: "retail" });
+  if (
+    onlyNature.natureOfBusiness !== "retail" ||
+    onlyNature.name !== "Delta Renamed" ||
+    onlyNature.sector !== "government"
+  ) {
+    throw new Error(
+      "orgStore invariant: partial updateOrganisation patch leaked into other fields.",
+    );
+  }
+
+  // Rejections: empty name, invalid sector, invalid nature, unknown id, malformed id.
+  expectThrow("update to empty name", () =>
+    updateOrganisation(orgId, { name: "   " }),
+  );
+  expectThrow("update to invalid sector", () =>
+    updateOrganisation(orgId, { sector: "made-up" as never }),
+  );
+  expectThrow("update to invalid natureOfBusiness", () =>
+    updateOrganisation(orgId, { natureOfBusiness: "made-up" as never }),
+  );
+  expectThrow("update unknown id", () =>
+    updateOrganisation("org-doesnotexist", { name: "x" }),
+  );
+  expectThrow("update malformed id", () =>
+    updateOrganisation("not-an-org-id", { name: "x" }),
+  );
+
+  removeOrganisation(orgId);
+}
+
 function run(): void {
   withIsolatedStorage(() => {
     probeRoundTrip();
     probeRejections();
     probeRenameAndDelete();
+    probeUpdate();
   });
 }
 

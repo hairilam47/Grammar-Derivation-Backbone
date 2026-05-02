@@ -45,7 +45,16 @@ const TOP_ITEMS: readonly NavItem[] = [
     label: "Landing",
     icon: Home,
     testId: "nav-landing",
-    matches: (loc) => loc === "/",
+    // Landing covers the onboarding hub and its descendant
+    // surfaces (Organisation Home, Organisation Structure,
+    // Work-Item Dashboard) so a user inside the onboarding /
+    // hub flow always sees the Landing item highlighted in the
+    // sidebar — the hub does not get its own entry.
+    matches: (loc) =>
+      loc === "/" ||
+      loc === "/org-home" ||
+      loc === "/org-structure" ||
+      loc === "/dashboard",
   },
 ];
 
@@ -152,6 +161,9 @@ interface PageTitleEntry {
 
 const PAGE_TITLES: readonly PageTitleEntry[] = [
   { match: (l) => l === "/", title: "Landing" },
+  { match: (l) => l === "/org-home", title: "Organisation Home" },
+  { match: (l) => l === "/org-structure", title: "Organisation Structure" },
+  { match: (l) => l === "/dashboard", title: "Work Items" },
   { match: (l) => l === "/decision-canvas", title: "Decision Canvas" },
   { match: (l) => l === "/ctad" || l.startsWith("/ctad/"), title: "CTAD" },
   { match: (l) => l === "/portfolio", title: "Portfolio" },

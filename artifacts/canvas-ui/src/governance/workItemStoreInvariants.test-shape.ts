@@ -127,6 +127,7 @@ function assertDocAllowListShape(): void {
     "description",
     "createdAt",
     "archived",
+    "subtype",
   ]);
   for (const [wid, wi] of Object.entries(items)) {
     for (const k of Object.keys(wi)) {
@@ -342,11 +343,74 @@ function probeRenameAndArchive(): void {
   removeAllWorkItemsForOrg(orgA);
 }
 
+function probeSubtype(): void {
+  const orgA = "org-probeaaaaaa";
+  // No-subtype path: omitting `subtype` leaves the persisted row
+  // without the field — consumers can rely on `wi.subtype === undefined`.
+  const bare = createWorkItem({ orgId: orgA, type: "project", title: "Bare" });
+  if (bare.subtype !== undefined) {
+    throw new Error(
+      "workItemStore invariant: omitted subtype was not absent on the in-memory Work Item.",
+    );
+  }
+
+  // Happy path: a trimmed, non-empty subtype round-trips through
+  // create → list → getWorkItem.
+  const tagged = createWorkItem({
+    orgId: orgA,
+    type: "project",
+    title: "Tagged",
+    subtype: "  New Application  ",
+  });
+  if (tagged.subtype !== "New Application") {
+    throw new Error(
+      `workItemStore invariant: subtype was not trimmed on create (got "${String(tagged.subtype)}").`,
+    );
+  }
+  const looked = getWorkItem(tagged.id);
+  if (!looked || looked.subtype !== "New Application") {
+    throw new Error(
+      "workItemStore invariant: subtype did not survive a getWorkItem round-trip.",
+    );
+  }
+
+  // Rejections: empty / whitespace-only / oversize / wrong-type.
+  expectThrow("empty subtype", () =>
+    createWorkItem({
+      orgId: orgA,
+      type: "project",
+      title: "x",
+      subtype: "   ",
+    }),
+  );
+  expectThrow("oversize subtype", () =>
+    createWorkItem({
+      orgId: orgA,
+      type: "project",
+      title: "x",
+      subtype: "a".repeat(101),
+    }),
+  );
+  expectThrow("non-string subtype", () =>
+    createWorkItem({
+      orgId: orgA,
+      type: "project",
+      title: "x",
+      subtype: 42 as unknown as string,
+    }),
+  );
+
+  removeWorkItem(bare.id);
+  removeWorkItem(tagged.id);
+  removeAllWorkItemsForOrg(orgA);
+}
+
 function run(): void {
   withIsolatedStorage(() => {
     probeRoundTrip();
     probeRejections();
     probeRenameAndArchive();
+    probeSubtype();
   });
 }
 

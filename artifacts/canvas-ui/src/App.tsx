@@ -7,6 +7,8 @@ import NotFound from "@/pages/not-found";
 import OrgSelector from "@/pages/onboarding/OrgSelector";
 import WorkItemDashboard from "@/pages/dashboard/WorkItemDashboard";
 import WorkspaceHub from "@/pages/workspace/WorkspaceHub";
+import OrganisationHomePage from "@/pages/onboarding/OrganisationHomePage";
+import OrgStructurePage from "@/pages/onboarding/OrgStructurePage";
 import {
   CurrentOrgWorkItemProvider,
   useCurrentScope,
@@ -134,6 +136,8 @@ import "@/governance/storageKeyUtilsInvariants.test-shape";
 import "@/governance/workItemStoreInvariants.test-shape";
 import "@/governance/orgStoreInvariants.test-shape";
 import "@/governance/legacyMigrationInvariants.test-shape";
+import "@/pages/onboarding/organisationHomeSummaryInvariants.test-shape";
+import "@/pages/onboarding/orgStructureBpmnInvariants.test-shape";
 
 // Dev-only deterministic seed page (Task #119). Both the lazy
 // import expression and the route registration are gated on
@@ -199,11 +203,17 @@ function RouteTransition({ children }: { children: React.ReactNode }) {
 
 // Phase 2 (SaaS Onboarding) — root gate. `/` routes through the
 // onboarding flow based on the active scope: no org → OrgSelector,
-// org but no Work Item → WorkItemDashboard, both → WorkspaceHub.
+// org but no Work Item → redirect to `/org-home` (the four-card hub
+// from which the user reaches the Work-Item Dashboard, the
+// Organisation Structure page, the Organisation Profile dialog, and
+// the EA Blueprint), both → WorkspaceHub. The redirect (rather than
+// rendering the hub inline) keeps the URL bar honest so that a
+// deep-link, refresh, or sidebar active-state always agrees with
+// the surface the user is looking at.
 function RootGate() {
   const { orgId, workItemId } = useCurrentScope();
   if (!orgId) return <OrgSelector />;
-  if (!workItemId) return <WorkItemDashboard />;
+  if (!workItemId) return <Redirect to="/org-home" />;
   return <WorkspaceHub />;
 }
 
@@ -238,6 +248,16 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={RootGate} />
+      <Route path="/org-home">
+        <OrgGate>
+          <OrganisationHomePage />
+        </OrgGate>
+      </Route>
+      <Route path="/org-structure">
+        <OrgGate>
+          <OrgStructurePage />
+        </OrgGate>
+      </Route>
       <Route path="/dashboard">
         <OrgGate>
           <WorkItemDashboard />
