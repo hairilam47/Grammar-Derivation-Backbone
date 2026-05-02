@@ -887,36 +887,91 @@ export function seedGolden(): GoldenSeedSummary {
     }
 
     // ------------------------------------------------------------------
-    // 8. Edges (≥ 10 CONNECTS between System-typed application nodes)
+    // 8a. Canvas-level CONNECTS edges (≥ 10, no diagramType — rendered
+    //     on the main EAStudio canvas between System-typed domain nodes)
     // ------------------------------------------------------------------
-    const EDGE_SPECS: readonly { from: string; to: string }[] = [
-      { from: "gn-app-portal",  to: "gn-app-gateway"  },
-      { from: "gn-app-mobile",  to: "gn-app-gateway"  },
-      { from: "gn-app-web",     to: "gn-app-gateway"  },
-      { from: "gn-app-gateway", to: "gn-app-service"  },
-      { from: "gn-app-gateway", to: "gn-app-events"   },
-      { from: "gn-app-service", to: "gn-app-events"   },
-      { from: "gn-app-portal",  to: "gn-app-service"  },
-      { from: "gn-app-module",  to: "gn-app-service"  },
-      { from: "gn-app-integ",   to: "gn-app-gateway"  },
-      { from: "gn-app-web",     to: "gn-app-service"  },
-      { from: "gn-ctad-seq-portal",  to: "gn-ctad-seq-backend"  },
-      { from: "gn-ctad-bpmn-pool",   to: "gn-ctad-bpmn-task-check" },
+    interface CanvasEdgeSpec {
+      readonly from: string;
+      readonly to: string;
+    }
+    const CANVAS_EDGE_SPECS: readonly CanvasEdgeSpec[] = [
+      { from: "gn-app-portal",  to: "gn-app-gateway" },
+      { from: "gn-app-mobile",  to: "gn-app-gateway" },
+      { from: "gn-app-web",     to: "gn-app-gateway" },
+      { from: "gn-app-gateway", to: "gn-app-service" },
+      { from: "gn-app-gateway", to: "gn-app-events"  },
+      { from: "gn-app-service", to: "gn-app-events"  },
+      { from: "gn-app-portal",  to: "gn-app-service" },
+      { from: "gn-app-module",  to: "gn-app-service" },
+      { from: "gn-app-integ",   to: "gn-app-gateway" },
+      { from: "gn-app-web",     to: "gn-app-service" },
     ];
 
     let edgeCount = 0;
-    for (const e of EDGE_SPECS) {
+    for (const e of CANVAS_EDGE_SPECS) {
       const fromId = nodeIdMap.get(e.from);
-      const toId = nodeIdMap.get(e.to);
+      const toId   = nodeIdMap.get(e.to);
       if (fromId === undefined || toId === undefined) continue;
       const r = createEdge({ kind: "CONNECTS", fromId, toId });
       if (r.ok) {
         edgeCount += 1;
       } else {
         // eslint-disable-next-line no-console
-        console.warn(
-          `[seedGolden] createEdge ${e.from}→${e.to} failed: ${r.reason}`,
-        );
+        console.warn(`[seedGolden] canvas edge ${e.from}→${e.to}: ${r.reason}`);
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // 8b. CTAD diagram-scoped CONNECTS edges — each edge carries
+    //     (diagramType, diagramSubtype) matching the nodes it links so
+    //     CtadDesignShell renders them inside the correct diagram tab.
+    // ------------------------------------------------------------------
+    interface CtadEdgeSpec {
+      readonly from: string;
+      readonly to: string;
+      readonly diagramType: AcwDiagramType;
+      readonly diagramSubtype: string;
+    }
+    const CTAD_EDGE_SPECS: readonly CtadEdgeSpec[] = [
+      // BPMN — Border Entry Process BPMN
+      { from: "gn-ctad-bpmn-evt-start",   to: "gn-ctad-bpmn-pool",        diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN" },
+      { from: "gn-ctad-bpmn-pool",        to: "gn-ctad-bpmn-lane-officer", diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN" },
+      { from: "gn-ctad-bpmn-pool",        to: "gn-ctad-bpmn-lane-traveller", diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN" },
+      { from: "gn-ctad-bpmn-task-check",  to: "gn-ctad-bpmn-gateway",      diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN" },
+      { from: "gn-ctad-bpmn-gateway",     to: "gn-ctad-bpmn-task-bio",     diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN" },
+      { from: "gn-ctad-bpmn-task-bio",    to: "gn-ctad-bpmn-task-log",     diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN" },
+      { from: "gn-ctad-bpmn-task-log",    to: "gn-ctad-bpmn-evt-end",      diagramType: "bpmn", diagramSubtype: "Border Entry Process BPMN" },
+      // ERD — Core Entities ERD
+      { from: "gn-ctad-erd-traveller", to: "gn-ctad-erd-permit",  diagramType: "erd", diagramSubtype: "Core Entities ERD" },
+      { from: "gn-ctad-erd-officer",   to: "gn-ctad-erd-case",    diagramType: "erd", diagramSubtype: "Core Entities ERD" },
+      { from: "gn-ctad-erd-case",      to: "gn-ctad-erd-permit",  diagramType: "erd", diagramSubtype: "Core Entities ERD" },
+      // DDL — Physical DDL
+      { from: "gn-ctad-ddl-travellers", to: "gn-ctad-ddl-permits", diagramType: "ddl", diagramSubtype: "Physical DDL" },
+      { from: "gn-ctad-ddl-cases",      to: "gn-ctad-ddl-permits", diagramType: "ddl", diagramSubtype: "Physical DDL" },
+      // Sequence — Visa Application Flow
+      { from: "gn-ctad-seq-applicant", to: "gn-ctad-seq-portal",   diagramType: "sequence", diagramSubtype: "Visa Application Flow" },
+      { from: "gn-ctad-seq-portal",    to: "gn-ctad-seq-backend",  diagramType: "sequence", diagramSubtype: "Visa Application Flow" },
+      // Class — Payment Module Class Diagram
+      { from: "gn-ctad-class-permit", to: "gn-ctad-class-case", diagramType: "class", diagramSubtype: "Payment Module Class Diagram" },
+      { from: "gn-ctad-class-case",   to: "gn-ctad-class-doc",  diagramType: "class", diagramSubtype: "Payment Module Class Diagram" },
+    ];
+
+    for (const e of CTAD_EDGE_SPECS) {
+      const fromId = nodeIdMap.get(e.from);
+      const toId   = nodeIdMap.get(e.to);
+      if (fromId === undefined || toId === undefined) continue;
+      const r = createEdge({
+        kind: "CONNECTS",
+        fromId,
+        toId,
+        diagramType:    e.diagramType,
+        diagramSubtype: e.diagramSubtype,
+      });
+      if (r.ok) {
+        edgeCount += 1;
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn(`[seedGolden] ctad edge ${e.from}→${e.to}: ${r.reason}`);
       }
     }
 
