@@ -6,9 +6,13 @@
 // urgency / recommendation language into a dev page.
 
 import { useState } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
+import { useCurrentScope } from "@/governance/CurrentOrgWorkItemContext";
+import { getEaBlueprintForOrg } from "@/governance/workItemStore";
 import { seedGolden, type GoldenSeedSummary } from "./seedGolden";
+
+const GOLDEN_ORG_ID = "org-jabatan-imigresen";
 
 const PAGE_TITLE = "Golden scenario seed";
 const PAGE_LEAD =
@@ -19,6 +23,7 @@ const STATUS_IDLE = "No run on this page load.";
 const STATUS_HEADING = "Last run summary";
 const FOOTER_NOTE =
   "This page is gated to development builds and is not bundled into a published deployment.";
+const SWITCH_BUTTON = "Switch to this organisation";
 
 assertAllAcwPlaceholderLanguage([
   PAGE_TITLE,
@@ -28,6 +33,7 @@ assertAllAcwPlaceholderLanguage([
   STATUS_IDLE,
   STATUS_HEADING,
   FOOTER_NOTE,
+  SWITCH_BUTTON,
 ]);
 
 interface RunState {
@@ -49,6 +55,8 @@ function SummaryJson({ summary }: { summary: GoldenSeedSummary }) {
 
 export default function SeedGoldenPage() {
   const [state, setState] = useState<RunState>({ kind: "idle" });
+  const { setOrgId, setWorkItemId } = useCurrentScope();
+  const [, navigate] = useLocation();
 
   function handleSeed() {
     try {
@@ -56,6 +64,17 @@ export default function SeedGoldenPage() {
       setState({ kind: "seeded", summary });
     } catch (err) {
       setState({ kind: "error", errorMessage: (err as Error).message });
+    }
+  }
+
+  function handleSwitchToGolden() {
+    setOrgId(GOLDEN_ORG_ID);
+    const blueprint = getEaBlueprintForOrg(GOLDEN_ORG_ID);
+    if (blueprint !== null) {
+      setWorkItemId(blueprint.id);
+      navigate("/workspace/studio");
+    } else {
+      navigate("/org-home");
     }
   }
 
@@ -79,7 +98,16 @@ export default function SeedGoldenPage() {
           <p className="mt-1 text-xs text-muted-foreground">{STATUS_IDLE}</p>
         )}
         {state.kind === "seeded" && state.summary !== undefined && (
-          <SummaryJson summary={state.summary} />
+          <>
+            <SummaryJson summary={state.summary} />
+            <button
+              onClick={handleSwitchToGolden}
+              data-testid="button-switch-to-golden-org"
+              className="mt-4 inline-flex items-center rounded-md border border-border bg-secondary px-4 py-2 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-secondary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {SWITCH_BUTTON}
+            </button>
+          </>
         )}
         {state.kind === "error" && (
           <pre className="mt-3 overflow-x-auto rounded-md border border-destructive/40 bg-card p-4 font-mono text-xs text-destructive">
