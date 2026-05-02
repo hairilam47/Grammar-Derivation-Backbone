@@ -1,0 +1,205 @@
+## Task: Create a Single Golden‑Scenario Test Data Seeder
+
+You are working on `Grammar‑Derivation‑Backbone`. A dev‑only seed route (`/seed‑all`) already exists, populating multiple organisations and work items. We now need a second seed route (**`/seed‑golden`**) that creates exactly **one organisation**, **one work item** (the EA blueprint), and a thorough set of realistic test data that exercises every major surface: ADC requirements, CTAD logical diagrams, and the EAStudio four‑domain canvas. This will let us instantly see a complete, rich example and debug any UI or behaviour issues.
+
+**All data must be created by calling the existing store functions** – no raw `localStorage` writes. The seed must be deterministic and produce identical results on every run.
+
+---
+
+### Scenario: Immigration Department of Malaysia – Core Systems Modernisation
+
+| Element | Value |
+|---------|-------|
+| **Organisation** | `org-jabatan-imigresen` , name “Jabatan Imigresen Malaysia”, sector `government`, nature of business “Government Administration” |
+| **Work Item** | `wi-immigration-modernisation` (type `ea‑blueprint`), name “Immigration Systems Modernisation”, description “Replace legacy mainframe with modular digital platform” |
+
+---
+
+### 1. Organisation & Work Item Setup
+
+- Create the organisation using `createOrganization`.
+- The org store’s automatic seeding of the `ea‑blueprint` work item should produce the work item above. Rename it to “Immigration Systems Modernisation” via `updateWorkItem`.
+- Set the current org/work‑item context to this pair before populating any other data.
+
+---
+
+### 2. ADC – Modules and Requirements
+
+Create the following **Modules** (using `moduleCatalogStore.createModule`):
+
+| Module ID | Name | relatedCapabilityIds |
+|-----------|------|----------------------|
+| `module:border-control` | Border Control & Clearance | `CAP_EXTERNAL_ACCESS` |
+| `module:visa-processing` | Visa & Permit Processing | `CAP_CASE_MANAGEMENT` |
+| `module:enforcement` | Enforcement & Intelligence | `CAP_CASE_MANAGEMENT` |
+| `module:payment` | Payment & Billing | `CAP_WORKFLOW_APPROVAL` |
+| `module:biometric` | Biometric Identity Management | `CAP_AUDIT_COMPLIANCE` |
+| `module:analytics` | Reporting & Analytics | `CAP_REPORTING_ANALYTICS` |
+
+Create the following **Requirements** (using `requirementsStore.saveRequirement`):
+
+| Title | Type | Urgency | Module | Hardware details (if hardware) |
+|-------|------|---------|--------|-------------------------------|
+| "Self‑service kiosk for border checkpoints" | functional | high | `module:border-control` | – |
+| "Real‑time passport validation with ICAO" | functional | critical | `module:border-control` | – |
+| "Visa application portal for public" | functional | high | `module:visa-processing` | – |
+| "Automated visa risk scoring" | non‑functional | medium | `module:visa-processing` | – |
+| "Mobile enforcement check (tablet)" | functional | high | `module:enforcement` | – |
+| "Online payment for visas and permits" | functional | critical | `module:payment` | – |
+| "PCI‑DSS compliance for payment module" | constraint | critical | `module:payment` | – |
+| "Fingerprint & facial recognition scanner" | hardware | high | `module:biometric` | itemName “Biometric Scanner X200”, quantity 1200, unitCost 800, notes “Ruggedised for field use” |
+| "Thermal detector for health screening" | hardware | medium | `module:border-control` | itemName “Thermal Detector TD‑90”, quantity 200, unitCost 1500 |
+| "Executive dashboard for clearance KPIs" | functional | medium | `module:analytics` | – |
+| "Data warehouse for 10‑year retention" | non‑functional | high | `module:analytics` | – |
+
+Approve all requirements (status → `approved`) so they can be frozen later.
+
+---
+
+### 3. CTAD – Logical Design Diagrams
+
+All CTAD nodes must be stored in the ACW workspace (`acwStore`) with the appropriate `diagramType` and `diagramSubtype`, linked to Modules and Requirements where specified.
+
+#### 3.1 BPMN – “Border Entry Process”
+- Pool: “Border Control”
+- Lane: “Officer”, Lane: “Traveller”
+- Task: “Scan Passport” (in Officer lane, linked to requirement “Real‑time passport validation” and module `module:border-control`)
+- Task: “Verify Biometrics” (in Officer lane, linked to requirement “Fingerprint & facial recognition scanner” and module `module:biometric`)
+- Task: “Clear Entry” (in Officer lane)
+- Start Event → Scan Passport → Verify Biometrics → Clear Entry → End Event
+- Gateway (exclusive) after Verify Biometrics: if failed → “Refer to Secondary” (Task), then End Event.
+
+#### 3.2 ERD – Core Entities
+- Entity: “Traveller” (attributes: travellerId PK, firstName, lastName, nationality, passportNumber)
+- Entity: “Visa” (attributes: visaId PK, travellerId FK, type, issueDate, expiryDate)
+- Entity: “BorderCrossing” (attributes: crossingId PK, travellerId FK, checkpoint, timestamp, decision)
+- Relationship: Traveller 1‑N BorderCrossing
+- Relationship: Traveller 1‑N Visa
+
+Link the ERD entities to module `module:border-control`.
+
+#### 3.3 DDL – Physical Data Model
+- Table: “traveller” (columns: traveller_id PK, first_name, last_name, nationality, passport_number)
+- Table: “visa” (columns: visa_id PK, traveller_id FK, type, issue_date, expiry_date)
+- Table: “border_crossing” (columns: crossing_id PK, traveller_id FK, checkpoint, timestamp, decision)
+- Foreign key: visa.traveller_id → traveller.traveller_id
+- Foreign key: border_crossing.traveller_id → traveller.traveller_id
+
+#### 3.4 Sequence Diagram – “Visa Application Flow”
+- Lifelines: “Public Portal”, “Visa Service”, “Payment Gateway”, “Biometric Service”
+- Messages:
+  1. Public Portal → Visa Service: “Submit application (sync)”
+  2. Visa Service → Payment Gateway: “Authorise payment (sync)”
+  3. Payment Gateway → Visa Service: “Payment confirmed”
+  4. Visa Service → Biometric Service: “Request biometric verification (async)”
+  5. Biometric Service → Visa Service: “Biometric verified”
+
+Link the sequence diagram to module `module:visa-processing` and requirement “Online payment for visas and permits”.
+
+#### 3.5 Class Diagram – Payment Module
+- Class: “Payment” (attributes: paymentId, amount, currency; operations: processPayment(), refund())
+- Class: “CreditCard” inherits Payment (attributes: cardNumber, expiry; operation: authorize())
+- Class: “OnlineBanking” inherits Payment (attributes: bankCode, accountNumber; operation: authorize())
+- Link to module `module:payment`.
+
+---
+
+### 4. EAStudio – Four‑Domain Canvas
+
+Using `acwStore.createNode` and `acwStore.createEdge`, populate the EA Blueprint workspace with a realistic multi‑domain diagram.
+
+All nodes must be children of the seeded domain containers (`domain‑business`, `domain‑data`, `domain‑application`, `domain‑technology`).
+
+#### 4.1 Business Domain
+- Department “Immigration Operations”
+  - Org Unit “Border Control Division”
+    - Business Process “Border Entry Clearance” (linked to BPMN “Border Entry Process” by setting `moduleId` and optionally `boundRequirementIds`)
+    - Business Process “Passport Scanning”
+  - Org Unit “Visa Division”
+    - Business Process “Visa Application Processing”
+    - Business Process “Online Payment Handling”
+- Strategy Map “Immigration Digital Strategy 2030”
+- KPI Dashboard “Border KPIs” (linked to requirement “Executive dashboard”)
+
+#### 4.2 Application Domain
+- Web Portal “Public Immigration Portal”
+- Mobile App “Enforcement Tablet App”
+- API Gateway “Immigration API Gateway”
+- Microservice “Visa Processing Service”
+- Microservice “Payment Service”
+- Microservice “Biometric Verification Service”
+- Event Bus “Immigration Event Bus”
+- Integration “Mainframe Adapter” (legacy)
+
+#### 4.3 Data Domain
+- Database “Traveller DB” (type `Component`, domainTag `data`, boundTechnologyCategory `database`)
+- Database “Visa DB”
+- Data Flow “Payment Events” (connect Payment Service → Traveller DB)
+- Data Flow “Biometric Events”
+
+#### 4.4 Technology Domain
+- Cloud Region “AWS ap‑southeast‑1”
+- Network Layer “Internal Network”
+- Network Layer “DMZ”
+- Firewall “External Firewall”
+- Load Balancer “Web LB”
+- Runtime Engine “OpenShift Cluster”
+- Database “Oracle RAC” (for legacy)
+- Database “PostgreSQL” (for new services)
+- IAM Service “PingFederate”
+- Monitoring “Datadog APM”
+- Object Storage “S3 Document Store”
+- CI/CD Pipeline “GitLab CI”
+
+Add CONNECTS edges:
+- Public Immigration Portal → API Gateway
+- API Gateway → Visa Processing Service
+- Visa Processing Service → Payment Service
+- Payment Service → Payment Events → Traveller DB
+- Visa Processing Service → Biometric Verification Service
+- All microservices → Immigration Event Bus
+- Mainframe Adapter → Immigration Event Bus
+- OpenShift Cluster → Public Immigration Portal (deployment)
+- OpenShift Cluster → Visa Processing Service
+
+Also set properties on key nodes: status, maturity, priority, owner (e.g., “Border Control Division”, “IT Operations”).
+
+---
+
+### 5. Organisational Units & CTAD Promotion
+
+- Create two organisational units via `ouStore`: “Border Control Division” and “Visa Division” (id `ou‑border`, `ou‑visa`). Assign the Business Process nodes to these OUs via `updateNodeProperties`.
+- Promote at least three CTAD nodes to the EAStudio canvas:
+  - BPMN “Border Entry Process” → drag into Business domain (set `parentId = domain‑business`)
+  - ERD “Traveller” entity → drag into Data domain
+  - Sequence “Visa Application Flow” → drag into Application domain
+
+---
+
+### 6. Policy Signals
+
+Create two signals referencing the work item (or the EA blueprint) – note signals currently reference portfolio entries, but we can simulate by using a placeholder if needed. If signals can reference work items, do so; otherwise create minimal portfolio entries for the two decisions and reference them.
+
+- Signal “Risk Accumulation — Border Systems”, category `Risk Accumulation`, status `Under Discussion`, interpretation guidance “Is the concentration of biometric hardware suppliers a risk?”
+- Signal “Posture Drift — Cloud Adoption”, category `Posture Drift`, status `Observed`, interpretation guidance “Has the organisation started deviating from the on‑prem only policy?”
+
+---
+
+### 7. Seed Route & Cleanup
+
+- Create a new async function `seedGolden()` in `src/dev/seedAll.ts` (or a new file) that runs all the steps above sequentially.
+- Add a new route `/seed‑golden` behind `import.meta.env.DEV`.
+- The page shows a single button “Seed Golden Scenario” and displays a summary of what was created (counts of modules, requirements, CTAD nodes, ACW nodes, edges, etc.).
+- The seed must clear all existing scoped data for the target org/work‑item before populating, so running it twice gives an identical state.
+- Use a frozen clock for determinism (already available in the seeding utilities).
+
+---
+
+### 8. Acceptance Criteria
+
+- Visiting `/seed‑golden` in dev mode populates the app with the full Immigration Department scenario.
+- Navigating to the Organisation Home shows the new org and the “Immigration Systems Modernisation” blueprint.
+- Opening the blueprint in EAStudio shows a populated four‑domain canvas with nodes, edges, and promoted logical nodes.
+- The CTAD design canvas shows five diagram types, each with the nodes described above.
+- ADC requirements are visible, approved, and linked to modules.
+- All invariants pass after the seed.
