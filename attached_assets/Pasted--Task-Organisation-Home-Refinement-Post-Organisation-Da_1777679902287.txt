@@ -1,0 +1,100 @@
+## Task: Organisation Home Refinement — Post‑Organisation Dashboard & Work‑Item Subtype
+
+You are working on `Grammar-Derivation-Backbone`. Phase 2 (SaaS Onboarding) is complete. This task refines what the architect sees immediately after selecting an organisation. Instead of jumping directly to the existing Work‑Item Dashboard, a new **Organisation Home** page provides a four‑card hub, and the Work‑Item creation flow gains an optional `subtype` field.
+
+**Core principle:** All data reads from existing stores. No new stores; no schema changes beyond a single additive optional field. The existing tools (ADC, CTAD, ACW) remain untouched.
+
+---
+
+### 1. New Route: Organisation Home
+
+- **Route:** `/org-home` (or redirect `/dashboard` to here after org selection).
+- **File:** `src/pages/OrganisationHomePage.tsx`
+
+The page displays the current organisation name at the top (from `CurrentOrgWorkItemContext`) and four cards in a grid.
+
+#### Card 1 — Enterprise Architecture Blueprint
+- **Content:** If the `ea‑blueprint` work item exists (it always will), show its name, last‑updated date, and a brief description.
+- **Action button:** “Open Blueprint” — sets the current work item to `ea‑blueprint` via `setWorkItemId` and navigates to `/workspace/studio`.
+- **Edge case:** If for any reason no `ea‑blueprint` exists, show a “Create Enterprise Architecture Blueprint” button that calls `createWorkItem` with type `ea‑blueprint` and name “Enterprise Architecture Blueprint” (using the existing store function).
+
+#### Card 2 — Organisation Structure
+- **Content:** A summary line: “X Modules, Y Business Processes defined”. Compute counts from `moduleCatalogStore.listModules()` (scoped to current org) and the ACW workspace (nodes where `moduleId` matches a module ID and `diagramType === 'bpmn'`).
+- **Action button:** “View Structure” — navigates to a new route `/org‑structure` (see §2).
+
+#### Card 3 — Organisation Profile
+- **Content:** Current org name, sector, nature of business.
+- **Action button:** “Edit Profile” — opens a modal with a form (Name, Sector dropdown, Nature of Business dropdown using `NATURE_OF_BUSINESS_OPTIONS` from `orgStore`). On submit, calls `orgStore.updateOrganization(currentOrgId, fields)` and refreshes the card.
+
+#### Card 4 — Work Items
+- **Content:** “X active work items” with a breakdown by type (e.g., “2 projects, 1 enhancement”).
+- **Action button:** “View Work Items” — navigates to the existing Work‑Item Dashboard at `/dashboard` (see §3).
+
+All card UI must use the existing glass‑surface style from Task #104 and pass vocabulary guard.
+
+---
+
+### 2. New Route: Organisation Structure
+
+- **Route:** `/org‑structure`
+- **File:** `src/pages/OrgStructurePage.tsx`
+
+A read‑only page showing a collapsible tree of the organisation's Modules and their linked Business Processes.
+
+**Data sources:**
+- `moduleCatalogStore.listModules()` — scoped to current org.
+- `acwStore.getWorkspace()` — read the ACW workspace for the current org and the `ea‑blueprint` work item (or the special `ea‑blueprint` workItemId). Retrieve all nodes where `moduleId` is set and `diagramType === 'bpmn'`.
+
+**Tree structure:**
+- Top‑level: each Module (sorted by name). Click to expand.
+- Under each Module: list of Business Process nodes (name, type). Each item is a link that navigates to the CTAD design canvas at `/ctad/design` with a query parameter `?nodeId=…` to highlight that node.
+- If a Module has no linked Business Processes, show “No processes defined.”
+
+**No editing** is allowed — this page is purely navigational. A “Back to Organisation Home” link at the top.
+
+All static labels must pass vocabulary guard.
+
+---
+
+### 3. Enhance Existing Work‑Item Dashboard
+
+The existing Work‑Item Dashboard at `/dashboard` remains, but its “New Work Item” modal must be enhanced.
+
+**Add optional `subtype` field to WorkItem:**
+- In `governance/workItemStore.ts`: add `subtype?: string` to the `WorkItem` interface and the `ALLOWED_FIELDS` array, with a validator that accepts `'new‑application' | 'new‑software' | 'new‑infrastructure' | 'other'` or a free‑form string limited to 100 characters (choose one; we recommend a predefined dropdown for UX, but the store can accept any string for extensibility). The field is optional.
+- Update `workItemStoreInvariants.test-shape.ts` to accept the new optional field and reject values that exceed the length limit or are not strings.
+- Update the `createWorkItem` function to pass the `subtype` if provided.
+
+**Update the New Work Item modal:**
+- After the “Type” dropdown, if the selected type is `project` or `enhancement`, show an additional “Subtype” dropdown with options: `New Application`, `New Software / 3rd‑party Software`, `New Infrastructure Setup`, `Other`. The field is optional; leave blank if not needed.
+- Store the selected subtype value (or undefined) in the work item record.
+
+**The Work Item list** already groups by type; optionally display the subtype as a secondary badge on each card.
+
+---
+
+### 4. Routing Adjustments
+
+- After an organisation is selected (in `OnboardingPage` or `CurrentOrgWorkItemContext`), redirect to `/org‑home` instead of `/dashboard`.
+- The `AppShell` or the component that handles the “org selected” event must now navigate to `/org‑home`.
+- The existing `/dashboard` route remains; the “View Work Items” card on the Organisation Home links there.
+- Ensure the left sidebar (`AppSidebar`) highlights “Organisation Home” when on `/org‑home` and “Work Items” when on `/dashboard`. (If there is no separate nav item, simply ensure the active state is correct; we can add a new “Organisation Home” entry if time permits, but it’s not required.)
+
+---
+
+### 5. Vocabulary Guard
+
+All new static labels (card titles, button texts, placeholders, dropdown options) must be asserted via `assertAllGovernanceLanguage` (or `ONBOARDING_FORBIDDEN` if a separate tier was added during Phase 2). The subtype dropdown strings must be neutral: “New Application”, “New Software / 3rd‑party Software”, “New Infrastructure Setup”, “Other”.
+
+---
+
+### 6. Acceptance Criteria
+
+- After selecting an organisation, the architect sees the Organisation Home with four cards.
+- Clicking “Open Blueprint” opens EAStudio with the `ea‑blueprint` work item.
+- The Organisation Structure page shows a tree of Modules and their BPMN processes, with links to CTAD.
+- Editing the organisation profile updates the org details.
+- Clicking “View Work Items” navigates to the existing work‑item dashboard.
+- The “New Work Item” modal shows a Subtype dropdown for Projects and Enhancements; the chosen value is persisted and visible.
+- All existing invariants pass; the new `subtype` field is guarded by the work‑item store invariant.
+- No regression on the ADC wizard, CTAD design canvas, or ACW/EAStudio.

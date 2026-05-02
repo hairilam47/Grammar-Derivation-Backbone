@@ -31,11 +31,11 @@ import { assertAllTogafContainmentLanguage } from "@/governance/staticTextGuard"
 // in togafContainment.ts (mirroring the Phase 1 banner pattern).
 const PAGE_TITLE = "Constitutional Containment";
 const INTRO =
-  "This page records the constitutional position of Architecture Decision Canvas artefacts in relation to TOGAF artefacts, ArchiMate models, and EA tooling. It is read-only documentation; nothing on this page initiates, alters, or directs work.";
+  "This page records the constitutional position of Architecture Decision Canvas artefacts in relation to external enterprise architecture artefacts, models, and tooling. It is read-only documentation; nothing on this page initiates, alters, or directs work.";
 const SECTION_DISCLAIMER = "Mandatory non-authority disclaimer (verbatim)";
-const SECTION_DOCKING = "TOGAF Artefact Docking";
+const SECTION_DOCKING = "External EA Artefact Docking";
 const SECTION_DOCKING_HELPER =
-  "Each TOGAF artefact type carries one docking class. Any artefact type not listed here is treated as FORBIDDEN by default.";
+  "Each external enterprise architecture artefact type carries one docking class. Any artefact type not listed here is treated as FORBIDDEN by default.";
 const COL_ARTEFACT = "Artefact";
 const COL_DOCKING = "Docking class";
 const COL_RATIONALE = "Notes";
@@ -47,9 +47,9 @@ const COL_REANCHOR = "Re-anchoring sentence";
 const TRY_LABEL = "Try a phrase to see the matching re-anchor";
 const TRY_PLACEHOLDER = "Type or paste any sentence";
 const NO_INTENT = "No phrasing pattern detected.";
-const SECTION_ARCHIMATE = "ArchiMate Containment";
+const SECTION_ARCHIMATE = "External EA Model Containment";
 const SECTION_ARCHIMATE_HELPER =
-  "ADC artefacts are not ArchiMate elements. They do not appear in ArchiMate views, do not bind ArchiMate relationships, and may not be exported as ArchiMate models.";
+  "ADC artefacts are not external enterprise architecture model elements. They do not appear in external EA views, do not bind external EA relationships, and may not be exported as external EA models.";
 const BACK_TO_PORTFOLIO = "Back to portfolio";
 
 // PH6-HC1 / PH6-HC4 / PH6-HC5 — every label, helper, and column heading

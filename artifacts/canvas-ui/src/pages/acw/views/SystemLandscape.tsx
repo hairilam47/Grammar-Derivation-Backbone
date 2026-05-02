@@ -41,7 +41,7 @@ import {
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 
 const LENS_TITLE = "System Landscape";
-const LENS_LAYER = "TOGAF Application";
+const LENS_LAYER = "Application";
 const LENS_HINT =
   "2D canvas. Pan with mouse drag, zoom with mouse wheel. Drag nodes to position; group selected compute nodes into a Zone; collapse containers to focus.";
 const EMPTY_HINT = "Add systems to begin";

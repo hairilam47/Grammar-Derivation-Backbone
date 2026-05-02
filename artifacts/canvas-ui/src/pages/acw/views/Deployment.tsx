@@ -40,7 +40,7 @@ import {
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 
 const LENS_TITLE = "Deployment & Infrastructure";
-const LENS_LAYER = "TOGAF Technology";
+const LENS_LAYER = "Technology";
 const LENS_HINT =
   "2D canvas. Pan with Alt-drag or middle button, zoom with the mouse wheel. Drag the background to select an area; group selected siblings into a permitted container.";
 const EMPTY_HINT = "Add zones or compute nodes to begin";

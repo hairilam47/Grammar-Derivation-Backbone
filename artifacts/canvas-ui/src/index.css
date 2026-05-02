@@ -977,18 +977,8 @@ body {
 .eastudio-root .es-status-cell { display: inline-flex; align-items: center; gap: 5px; }
 .eastudio-root .es-status-key { text-transform: uppercase; letter-spacing: 0.16em; }
 .eastudio-root .es-status-val { color: var(--text0); }
-.eastudio-root .es-status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 8px;
-  background: var(--bg2);
-  border: 1px solid var(--border2);
-  border-radius: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--text1);
-}
+/* .es-status-badge rule removed alongside the framework-name badge
+   (Task #165). The badge element is no longer rendered. */
 
 /* Edge overlay svg --------------------------------------------- */
 .eastudio-root .es-edge-svg { position: absolute; inset: 0; pointer-events: none; }

@@ -1,10 +1,9 @@
 // EAStudio Phase 2 — bottom status bar (Task #99 visual alignment).
 //
-// Surfaces three pure read-outs the user needs while editing:
+// Surfaces two pure read-outs the user needs while editing:
 //   1. Live counts: nodes, edges (CONNECTS only — the only edge
 //      kind EAStudio surfaces in Phase 2).
 //   2. Mode: design / connect / pending-connect.
-//   3. A neutral "TOGAF 10 · ArchiMate 3.2" badge.
 //
 // The bar reads its data from the live grammar hook + the
 // lens-keyed view-state slices; it never mutates anything.
@@ -13,10 +12,16 @@
 //   - Lucide icons only.
 //   - Every static label asserted against ACW_PLACEHOLDER_FORBIDDEN
 //     at module load.
-//   - Vocabulary uses "permitted" not "allowed"; the badge text is
-//     literally framework names with no marketing modifier.
+//   - Vocabulary uses "permitted" not "allowed".
+//
+// Task #165: a previously-rendered framework-name badge
+// ("TOGAF 10 · ArchiMate 3.2") was removed from this surface to
+// avoid carrying third-party trademark text in the user interface.
+// The underlying file/symbol/type identifiers (togafContainment.ts,
+// TOGAF_ARTEFACT_DOCKING, etc.) are intentionally untouched — those
+// names are internal and do not appear on screen.
 import { useEffect, useState } from "react";
-import { Network, MousePointer2, Plug, ShieldCheck } from "lucide-react";
+import { Network, MousePointer2, Plug } from "lucide-react";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 import { useAcwWorkspace } from "@/acw/acwGrammarHooks";
 import {
@@ -31,7 +36,6 @@ const MODE_LABEL = "Mode";
 const MODE_IDLE = "Design";
 const MODE_CONNECT_IDLE = "Connect";
 const MODE_CONNECT_PENDING = "Connect (pending)";
-const FRAMEWORK_BADGE = "TOGAF 10 · ArchiMate 3.2";
 
 assertAllAcwPlaceholderLanguage([
   NODES_LABEL,
@@ -40,7 +44,6 @@ assertAllAcwPlaceholderLanguage([
   MODE_IDLE,
   MODE_CONNECT_IDLE,
   MODE_CONNECT_PENDING,
-  FRAMEWORK_BADGE,
 ]);
 
 export interface StatusBarProps {
@@ -97,13 +100,6 @@ export function StatusBar({ lensId }: StatusBarProps) {
           <span className="es-status-val">{modeText}</span>
         </span>
       </div>
-      <span
-        className="es-status-badge"
-        data-testid="acw-studio-status-bar-framework-badge"
-      >
-        <ShieldCheck className="w-3 h-3" />
-        <span>{FRAMEWORK_BADGE}</span>
-      </span>
     </footer>
   );
 }

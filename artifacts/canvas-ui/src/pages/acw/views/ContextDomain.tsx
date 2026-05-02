@@ -8,7 +8,7 @@ import { LiveStructurePanel } from "@/components/acw/LiveStructurePanel";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 
 const LENS_TITLE = "Context & Domain";
-const LENS_LAYER = "TOGAF Business — structural only";
+const LENS_LAYER = "Business — structural only";
 const LENS_HINT =
   "Empty domain panels. Domains are placeholders; no content is generated.";
 const PANEL_LABEL = "Business Domain";

@@ -11,7 +11,7 @@ import { LiveStructurePanel } from "@/components/acw/LiveStructurePanel";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 
 const LENS_TITLE = "Integration";
-const LENS_LAYER = "TOGAF Application + Data";
+const LENS_LAYER = "Application + Data";
 const LENS_HINT =
   "Empty interface slots and data-exchange placeholders. No schema or sensitivity attributes are inferred.";
 const INTERFACE_LABEL = "Interface";
