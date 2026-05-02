@@ -1,43 +1,48 @@
 // Golden-scenario seeder — deterministic test data for
 // "Immigration Department of Malaysia – Core Systems Modernisation".
 //
-// Routes exclusively through validator-gated public store APIs
-// (createOrganisation, renameWorkItem, createModule, saveRequirement,
-// approveRequirement, createOu, createNode, updateNodeParent,
-// updateNodeProperties, createEdge, clearWorkspace, clearOus,
-// ensureDomainContainers, createSignal).
+// Routes exclusively through validator-gated public store APIs.
 // No raw localStorage write is performed for governance / ACW state.
 //
 // Determinism contract
 // --------------------
-// Running the seeder twice over the seeded state must produce a
-// byte-identical localStorage snapshot. To ensure that:
-//   * The scope is set to FIXED keys (ORG_ID + WI_SCOPE_ID) before any
-//     store write. All WI-scoped storage therefore resolves to the same
-//     on-disk keys on every run.
-//   * The existing data under those keys is cleared before re-seeding,
-//     so reruns are idempotent.
-//   * withFrozenClock freezes Date, Math.random, crypto.randomUUID, and
-//     crypto.getRandomValues so every store-internal timestamp, counter,
-//     and random id (including the auto-generated blueprint WI id that
-//     createOrganisation assigns) resolves to the same value every run.
+// Running the seeder twice must produce a byte-identical localStorage
+// snapshot for every key the seeder writes.
+//   - withFrozenClock freezes Date, Math.random, crypto.randomUUID, and
+//     crypto.getRandomValues so every store-internal timestamp and random
+//     id (including the auto-generated blueprint WI id from
+//     createOrganisation) resolves identically on every run.
+//   - All node/edge/OU ids are hard-coded, so subsequent runs produce
+//     the same structure graph.
 //
 // Idempotency flow
 // ----------------
-//   1. Set currentScope to the fixed (ORG_ID, WI_SCOPE_ID) pair.
-//   2. Resolve + removeItem each governed base key from localStorage.
-//   3. clearWorkspace() + clearOus() clear the in-memory and on-disk
-//      caches for the canvas and OU stores.
-//   4. removeOrganisation(ORG_ID) removes the org entry if it exists.
-//   5. __resetScopedStorageForTest() + store reload flush all caches.
-//   6. Re-seed from scratch inside withFrozenClock.
+//   1. clearGoldenScope:
+//      a. Look up the existing blueprint WI id via getEaBlueprintForOrg.
+//      b. Set currentScope to (ORG_ID, existing-WI-id-or-placeholder).
+//      c. resolveActiveKey + localStorage.removeItem each governed key.
+//      d. clearWorkspace() + clearOus() flush the canvas/OU caches.
+//      e. removeOrganisation + removeAllWorkItemsForOrg remove the org.
+//      f. __resetScopedStorageForTest + reload caches.
+//   2. withFrozenClock:
+//      a. createOrganisation → captures deterministic wiId.
+//      b. renameWorkItem.
+//      c. currentScope.set to real wiId (so scoped stores resolve to the
+//         same key path the user opens via Organisation Home → Blueprint).
+//      d. Reload caches.
+//      e. Seed: modules → requirements → OUs → domain-canvas → CTAD →
+//         edges → signals.
 
 import {
   createOrganisation,
   getOrganisation,
   removeOrganisation,
 } from "@/governance/orgStore";
-import { renameWorkItem } from "@/governance/workItemStore";
+import {
+  renameWorkItem,
+  getEaBlueprintForOrg,
+  removeAllWorkItemsForOrg,
+} from "@/governance/workItemStore";
 import { createModule } from "@/governance/moduleCatalogStore";
 import {
   saveRequirement,
@@ -75,17 +80,12 @@ import { __resetScopedStorageForTest } from "@/governance/scopedStorageClient";
 
 const ORG_ID = "org-jabatan-imigresen";
 const ORG_NAME = "Jabatan Imigresen Malaysia";
-// Fixed scope key used for all WI-scoped storage. Stable across reruns.
-const WI_SCOPE_ID = "wi-immigration-modernisation";
-// Display title applied to the auto-created blueprint work item.
 const WI_TITLE = "Immigration Systems Modernisation";
 
 const FROZEN_ISO = "2026-01-15T12:00:00.000Z";
 const FROZEN_MS = Date.parse(FROZEN_ISO);
 
-// Base keys that the seeder writes to, matched with their scoping rule.
-// Org-only keys resolve under <orgId>:<key>; WI-scoped under
-// <orgId>:<workItemId>:<key>. Keep in sync with each store's getKey().
+// Base keys the seeder writes to, with their scoping rule.
 const GOLDEN_BASE_KEYS: ReadonlyArray<{ key: string; needsWorkItem: boolean }> =
   [
     { key: "adc.module-catalog.v1",       needsWorkItem: false },
@@ -130,7 +130,7 @@ function withFrozenClock<T>(fn: () => T): T {
     typeof crypto.getRandomValues === "function";
   const realUuid = hasCrypto ? crypto.randomUUID.bind(crypto) : undefined;
   const realGetRandomValues = hasCrypto
-    ? crypto.getRandomValues.bind(crypto)
+    ? (crypto.getRandomValues.bind(crypto) as typeof crypto.getRandomValues)
     : undefined;
 
   class FrozenDate extends RealDate {
@@ -149,8 +149,7 @@ function withFrozenClock<T>(fn: () => T): T {
   let randomCounter = 0;
   const nextLcg = (): number => {
     randomCounter += 1;
-    const x = (randomCounter * 1103515245 + 12345) >>> 0;
-    return x;
+    return (randomCounter * 1103515245 + 12345) >>> 0;
   };
   const frozenRandom = (): number => (nextLcg() % 0x7fffffff) / 0x7fffffff;
 
@@ -213,12 +212,18 @@ function withFrozenClock<T>(fn: () => T): T {
 function clearGoldenScope(): void {
   if (typeof window === "undefined") return;
 
-  // Step 1: Fix the scope to the stable (orgId, workItemId) pair so that
-  // resolveActiveKey resolves the same on-disk keys on every run.
-  currentScope.set({ orgId: ORG_ID, workItemId: WI_SCOPE_ID });
+  // Step 1: Find the existing blueprint WI id (if any) so we can resolve
+  // the correct WI-scoped keys to clear. On the very first run no org
+  // exists yet, so we fall back to an empty string (no WI-scoped keys
+  // will resolve with a null workItemId anyway).
+  const existingWi = getEaBlueprintForOrg(ORG_ID);
+  const prevWiId = existingWi?.id ?? null;
 
-  // Step 2: Remove each governed base key from localStorage so a second
-  // run starts from a truly empty slate at the storage layer.
+  // Step 2: Set scope so resolveActiveKey can compute the on-disk key
+  // for each base key. We need the WI-scoped stores to clear correctly.
+  currentScope.set({ orgId: ORG_ID, workItemId: prevWiId });
+
+  // Step 3: Remove each governed base key from localStorage.
   for (const { key, needsWorkItem } of GOLDEN_BASE_KEYS) {
     const resolved = resolveActiveKey(key, needsWorkItem);
     if (resolved !== null) {
@@ -226,28 +231,24 @@ function clearGoldenScope(): void {
     }
   }
 
-  // Step 3: Tell the canvas and OU store caches to forget their in-memory
-  // state (they may have been populated by a previous seed run).
+  // Step 4: Tell the canvas and OU stores to forget their in-memory state.
   clearWorkspace();
   clearOus();
 
-  // Step 4: Remove the org entry (which also carries the real blueprint WI
-  // id). On the first run the org does not exist yet — guard accordingly.
+  // Step 5: Remove org + all its work items (cascades the WI entry).
   if (getOrganisation(ORG_ID) !== null) {
     removeOrganisation(ORG_ID);
   }
+  removeAllWorkItemsForOrg(ORG_ID);
 
-  // Step 5: Flush the scoped-storage layer's internal state so subsequent
-  // reads return empty instead of a stale snapshot.
+  // Step 6: Flush the scoped-storage layer and reload all caches.
   __resetScopedStorageForTest();
-
-  // Step 6: Reload in-memory caches from the now-cleared storage.
   __acwStoreInternals.reloadFromStorageForTest();
   __ouStoreInternals.reloadFromStorageForTest();
 }
 
 // ---------------------------------------------------------------------------
-// Fixtures
+// Canvas fixtures
 // ---------------------------------------------------------------------------
 
 interface DomainNodeSpec {
@@ -258,20 +259,24 @@ interface DomainNodeSpec {
   readonly y: number;
 }
 
-// 5 CTAD logical-diagram nodes. All are created inside domain-technology
-// as a staging container; then updateNodeParent promotes each to its
-// semantically correct domain (the three that also receive
-// boundRequirementIds via updateNodeProperties are the "promoted" nodes
-// referenced in the task spec).
+// Five diagram types.  Each diagram is represented by multiple nodes that
+// share the same (diagramType, diagramSubtype) pair, mirroring how a real
+// CTAD design canvas groups elements by diagram instance.
+//
+// Promotion: the first node for BPMN, ERD, and Sequence is the "anchor"
+// node that receives boundRequirementIds + moduleId via updateNodeProperties
+// after a post-create updateNodeParent move (spec §1, promotion step).
+// Non-promoted nodes are created directly in their target domain.
 interface CtadNodeSpec {
   readonly id: string;
-  readonly stagingParentId: string;
-  readonly targetParentId: string;
   readonly label: string;
   readonly diagramType: AcwDiagramType;
   readonly diagramSubtype: string;
+  readonly targetParentId: string;
   readonly x: number;
   readonly y: number;
+  // Staging-and-promote only for the three promoted anchor nodes.
+  readonly stagingParentId?: string;
   readonly boundRequirementIds?: readonly string[];
   readonly moduleId?: string;
 }
@@ -314,61 +319,203 @@ const DOMAIN_NODES: readonly DomainNodeSpec[] = [
   { id: "gn-tec-cicd",       label: "CI/CD Pipeline",   parentId: "domain-technology",  x: 660, y: 220 },
 ];
 
-// All 5 CTAD nodes start in domain-technology (staging), then each is
-// moved to its semantic target domain via updateNodeParent. The three
-// that also receive boundRequirementIds are the "CTAD-to-canvas
-// promoted" nodes (task spec §1, promotion step).
+// BPMN: pool + 2 lanes + 3 tasks + 1 gateway + 2 events = 9 nodes
+// (anchor = bpmn-pool → promoted to domain-business)
+// ERD: 4 entity nodes (anchor = erd-traveller → promoted to domain-data)
+// DDL: 3 table nodes (no promotion)
+// Sequence: 3 lifeline nodes (anchor = seq-applicant → promoted to domain-application)
+// Class: 3 class nodes (no promotion)
+// Total CTAD: 22 nodes
 const CTAD_NODES: readonly CtadNodeSpec[] = [
+  // -- BPMN (Border Entry Process) ---
   {
-    id:              "gn-ctad-bpmn",
+    id: "gn-ctad-bpmn-pool",
+    label: "Border Entry Pool",
+    diagramType: "bpmn",
+    diagramSubtype: "Border Entry Process BPMN",
+    targetParentId: "domain-business",
     stagingParentId: "domain-technology",
-    targetParentId:  "domain-business",
-    label:           "Border Entry Process",
-    diagramType:     "bpmn",
-    diagramSubtype:  "Border Entry Process BPMN",
     x: 860, y: 60,
     boundRequirementIds: ["req-aa01bb02cc03", "req-bb02cc03dd04"],
     moduleId: "module:citizen-portal",
   },
   {
-    id:              "gn-ctad-erd",
+    id: "gn-ctad-bpmn-lane-officer",
+    label: "Officer Lane",
+    diagramType: "bpmn",
+    diagramSubtype: "Border Entry Process BPMN",
+    targetParentId: "domain-business",
+    x: 860, y: 200,
+  },
+  {
+    id: "gn-ctad-bpmn-lane-traveller",
+    label: "Traveller Lane",
+    diagramType: "bpmn",
+    diagramSubtype: "Border Entry Process BPMN",
+    targetParentId: "domain-business",
+    x: 860, y: 340,
+  },
+  {
+    id: "gn-ctad-bpmn-task-check",
+    label: "Check Documents",
+    diagramType: "bpmn",
+    diagramSubtype: "Border Entry Process BPMN",
+    targetParentId: "domain-business",
+    x: 1060, y: 200,
+  },
+  {
+    id: "gn-ctad-bpmn-task-bio",
+    label: "Biometric Scan",
+    diagramType: "bpmn",
+    diagramSubtype: "Border Entry Process BPMN",
+    targetParentId: "domain-business",
+    x: 1260, y: 200,
+  },
+  {
+    id: "gn-ctad-bpmn-task-log",
+    label: "Log Entry",
+    diagramType: "bpmn",
+    diagramSubtype: "Border Entry Process BPMN",
+    targetParentId: "domain-business",
+    x: 1460, y: 200,
+  },
+  {
+    id: "gn-ctad-bpmn-gateway",
+    label: "Approved?",
+    diagramType: "bpmn",
+    diagramSubtype: "Border Entry Process BPMN",
+    targetParentId: "domain-business",
+    x: 1060, y: 340,
+  },
+  {
+    id: "gn-ctad-bpmn-evt-start",
+    label: "Entry Start",
+    diagramType: "bpmn",
+    diagramSubtype: "Border Entry Process BPMN",
+    targetParentId: "domain-business",
+    x: 760, y: 270,
+  },
+  {
+    id: "gn-ctad-bpmn-evt-end",
+    label: "Entry Complete",
+    diagramType: "bpmn",
+    diagramSubtype: "Border Entry Process BPMN",
+    targetParentId: "domain-business",
+    x: 1660, y: 270,
+  },
+  // -- ERD (Core Entities) ---
+  {
+    id: "gn-ctad-erd-traveller",
+    label: "Traveller",
+    diagramType: "erd",
+    diagramSubtype: "Core Entities ERD",
+    targetParentId: "domain-data",
     stagingParentId: "domain-technology",
-    targetParentId:  "domain-data",
-    label:           "Core Entities ERD",
-    diagramType:     "erd",
-    diagramSubtype:  "Core Entities ERD",
-    x: 860, y: 60,
+    x: 860, y: 480,
     boundRequirementIds: ["req-0222a333b444"],
     moduleId: "module:document-mgmt",
   },
   {
-    id:              "gn-ctad-seq",
+    id: "gn-ctad-erd-permit",
+    label: "Permit",
+    diagramType: "erd",
+    diagramSubtype: "Core Entities ERD",
+    targetParentId: "domain-data",
+    x: 1060, y: 480,
+  },
+  {
+    id: "gn-ctad-erd-officer",
+    label: "Officer",
+    diagramType: "erd",
+    diagramSubtype: "Core Entities ERD",
+    targetParentId: "domain-data",
+    x: 860, y: 640,
+  },
+  {
+    id: "gn-ctad-erd-case",
+    label: "Case",
+    diagramType: "erd",
+    diagramSubtype: "Core Entities ERD",
+    targetParentId: "domain-data",
+    x: 1060, y: 640,
+  },
+  // -- DDL (Physical Schema) ---
+  {
+    id: "gn-ctad-ddl-travellers",
+    label: "travellers",
+    diagramType: "ddl",
+    diagramSubtype: "Physical DDL",
+    targetParentId: "domain-data",
+    x: 860, y: 800,
+  },
+  {
+    id: "gn-ctad-ddl-permits",
+    label: "permits",
+    diagramType: "ddl",
+    diagramSubtype: "Physical DDL",
+    targetParentId: "domain-data",
+    x: 1060, y: 800,
+  },
+  {
+    id: "gn-ctad-ddl-cases",
+    label: "cases",
+    diagramType: "ddl",
+    diagramSubtype: "Physical DDL",
+    targetParentId: "domain-data",
+    x: 1260, y: 800,
+  },
+  // -- Sequence (Visa Application Flow) ---
+  {
+    id: "gn-ctad-seq-applicant",
+    label: "Applicant",
+    diagramType: "sequence",
+    diagramSubtype: "Visa Application Flow",
+    targetParentId: "domain-application",
     stagingParentId: "domain-technology",
-    targetParentId:  "domain-application",
-    label:           "Visa Application Flow",
-    diagramType:     "sequence",
-    diagramSubtype:  "Visa Application Flow",
-    x: 860, y: 220,
+    x: 860, y: 480,
     boundRequirementIds: ["req-a333b444c555"],
     moduleId: "module:workflow-approval",
   },
   {
-    id:              "gn-ctad-ddl",
-    stagingParentId: "domain-technology",
-    targetParentId:  "domain-data",
-    label:           "Physical DDL",
-    diagramType:     "ddl",
-    diagramSubtype:  "Physical DDL",
-    x: 1060, y: 60,
+    id: "gn-ctad-seq-portal",
+    label: "Portal",
+    diagramType: "sequence",
+    diagramSubtype: "Visa Application Flow",
+    targetParentId: "domain-application",
+    x: 1060, y: 480,
   },
   {
-    id:              "gn-ctad-class",
-    stagingParentId: "domain-technology",
-    targetParentId:  "domain-application",
-    label:           "Payment Module Class",
-    diagramType:     "class",
-    diagramSubtype:  "Payment Module Class Diagram",
-    x: 1060, y: 220,
+    id: "gn-ctad-seq-backend",
+    label: "Backend Service",
+    diagramType: "sequence",
+    diagramSubtype: "Visa Application Flow",
+    targetParentId: "domain-application",
+    x: 1260, y: 480,
+  },
+  // -- Class (Payment Module) ---
+  {
+    id: "gn-ctad-class-permit",
+    label: "PermitService",
+    diagramType: "class",
+    diagramSubtype: "Payment Module Class Diagram",
+    targetParentId: "domain-application",
+    x: 860, y: 640,
+  },
+  {
+    id: "gn-ctad-class-case",
+    label: "CaseManager",
+    diagramType: "class",
+    diagramSubtype: "Payment Module Class Diagram",
+    targetParentId: "domain-application",
+    x: 1060, y: 640,
+  },
+  {
+    id: "gn-ctad-class-doc",
+    label: "DocumentStore",
+    diagramType: "class",
+    diagramSubtype: "Payment Module Class Diagram",
+    targetParentId: "domain-application",
+    x: 1260, y: 640,
   },
 ];
 
@@ -493,22 +640,32 @@ const REQUIREMENT_FIXTURES: readonly RequirementFixture[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+function warnIfFailed(label: string, result: { ok: boolean; reason?: string }): void {
+  if (!result.ok) {
+    // eslint-disable-next-line no-console
+    console.warn(`[seedGolden] ${label}: ${result.reason ?? "unknown reason"}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
 
 export function seedGolden(): GoldenSeedSummary {
-  // Wipe the target scope so every run starts from a clean slate.
+  // Wipe the target scope so reruns start from a truly clean slate.
   clearGoldenScope();
 
   return withFrozenClock(() => {
     // ------------------------------------------------------------------
     // 1. Organisation + EA Blueprint Work Item
     //
-    // The scope was already set to (ORG_ID, WI_SCOPE_ID) by
-    // clearGoldenScope, so all WI-scoped store writes resolve to the
-    // stable key prefix. The blueprint WI created inside
-    // createOrganisation gets a deterministic id (crypto.getRandomValues
-    // is frozen above); we capture it only for the rename call below.
+    // createOrganisation makes NO random calls before generateWorkItemId
+    // (id + slug are supplied explicitly, avoiding any slug-dedup random).
+    // crypto.getRandomValues is frozen above, so the generated blueprint
+    // WI id is the same deterministic bytes on every run.
     // ------------------------------------------------------------------
     const { organisation: org, eaBlueprintWorkItemId: wiId } =
       createOrganisation({
@@ -521,7 +678,9 @@ export function seedGolden(): GoldenSeedSummary {
 
     renameWorkItem(wiId, WI_TITLE);
 
-    // Reload caches now that the org and WI entries exist in storage.
+    // Set scope to the REAL blueprint WI id so all WI-scoped store
+    // writes target the same key path users open via Organisation Home.
+    currentScope.set({ orgId: org.id, workItemId: wiId });
     __acwStoreInternals.reloadFromStorageForTest();
     __ouStoreInternals.reloadFromStorageForTest();
 
@@ -568,7 +727,7 @@ export function seedGolden(): GoldenSeedSummary {
     ];
 
     // ------------------------------------------------------------------
-    // 3. Eleven requirements — saved then approved (all have moduleId)
+    // 3. Eleven requirements — saved then approved
     // ------------------------------------------------------------------
     for (const r of REQUIREMENT_FIXTURES) {
       saveRequirement({
@@ -600,7 +759,7 @@ export function seedGolden(): GoldenSeedSummary {
     });
 
     // ------------------------------------------------------------------
-    // 5. EAStudio canvas — 4 domain containers + 31 child nodes
+    // 5. EAStudio canvas — 4 domain containers + 31 domain child nodes
     // ------------------------------------------------------------------
     clearWorkspace();
     ensureDomainContainers();
@@ -625,106 +784,144 @@ export function seedGolden(): GoldenSeedSummary {
           ? { boundParam: item.boundParam }
           : {}),
       });
-      if (r.ok) {
-        nodeIdMap.set(spec.id, r.id);
-        acwNodeCount += 1;
+      if (!r.ok) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[seedGolden] createNode "${spec.id}" failed: ${r.reason}`,
+        );
+        continue;
       }
+      nodeIdMap.set(spec.id, r.id);
+      acwNodeCount += 1;
     }
 
     // ------------------------------------------------------------------
-    // 6. OU assignments to Business Process domain nodes
+    // 6. OU assignments on Business Process domain nodes
     // ------------------------------------------------------------------
     const busProcId = nodeIdMap.get("gn-bus-process");
     const busValueId = nodeIdMap.get("gn-bus-value");
     if (ouBorderResult.ok && busProcId !== undefined) {
-      updateNodeProperties(busProcId, {
-        organisationalUnitId: ouBorderResult.id,
-      });
+      warnIfFailed(
+        "updateNodeProperties(gn-bus-process, ou-border)",
+        updateNodeProperties(busProcId, {
+          organisationalUnitId: ouBorderResult.id,
+        }),
+      );
     }
     if (ouVisaResult.ok && busValueId !== undefined) {
-      updateNodeProperties(busValueId, {
-        organisationalUnitId: ouVisaResult.id,
-      });
+      warnIfFailed(
+        "updateNodeProperties(gn-bus-value, ou-visa)",
+        updateNodeProperties(busValueId, {
+          organisationalUnitId: ouVisaResult.id,
+        }),
+      );
     }
 
     // ------------------------------------------------------------------
-    // 7. CTAD logical-diagram nodes
+    // 7. CTAD logical-diagram nodes (22 nodes across 5 diagram types)
     //
-    // Two-step promotion flow (task spec §1, promotion step):
-    //   a) Create each CTAD node inside domain-technology (staging).
-    //   b) updateNodeParent to move it to its semantic target domain.
-    //   c) updateNodeProperties to set boundRequirementIds + moduleId on
-    //      the three promoted nodes (BPMN, ERD, Sequence).
+    // Promotion flow for 3 anchor nodes (BPMN pool, ERD Traveller,
+    // Sequence Applicant):
+    //   a) Create in staging domain (domain-technology).
+    //   b) updateNodeParent → semantic target domain.
+    //   c) updateNodeProperties → boundRequirementIds + moduleId.
+    // Non-anchor CTAD nodes are created directly in their target domain.
     // ------------------------------------------------------------------
     let ctadNodeCount = 0;
 
     for (const spec of CTAD_NODES) {
-      // a) Create in staging container.
+      const isPromoted =
+        spec.stagingParentId !== undefined &&
+        spec.stagingParentId !== spec.targetParentId;
+
+      // a) Create node — in staging (for promoted) or target directly.
+      const initialParent = isPromoted
+        ? (spec.stagingParentId as string)
+        : spec.targetParentId;
+
       const r = createNode({
         id:            spec.id,
         type:          "System",
-        parentId:      spec.stagingParentId,
+        parentId:      initialParent,
         label:         spec.label,
         x:             spec.x,
         y:             spec.y,
         diagramType:   spec.diagramType,
         diagramSubtype: spec.diagramSubtype,
       });
-      if (!r.ok) continue;
+
+      if (!r.ok) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[seedGolden] createNode CTAD "${spec.id}" failed: ${r.reason}`,
+        );
+        continue;
+      }
 
       nodeIdMap.set(spec.id, r.id);
       acwNodeCount += 1;
       ctadNodeCount += 1;
 
-      // b) Promote to semantic target domain via post-create parent update.
-      if (spec.targetParentId !== spec.stagingParentId) {
-        updateNodeParent(r.id, spec.targetParentId);
+      // b) Post-create parent update (promotion to target domain).
+      if (isPromoted) {
+        warnIfFailed(
+          `updateNodeParent(${spec.id}, ${spec.targetParentId})`,
+          updateNodeParent(r.id, spec.targetParentId),
+        );
       }
 
-      // c) Bind requirements + module on the promoted nodes.
+      // c) Bind requirements + module on promoted anchor nodes.
       if (spec.boundRequirementIds !== undefined || spec.moduleId !== undefined) {
-        updateNodeProperties(r.id, {
-          ...(spec.boundRequirementIds !== undefined
-            ? { boundRequirementIds: spec.boundRequirementIds }
-            : {}),
-          ...(spec.moduleId !== undefined
-            ? { moduleId: spec.moduleId }
-            : {}),
-        });
+        warnIfFailed(
+          `updateNodeProperties(${spec.id}, boundReqs+moduleId)`,
+          updateNodeProperties(r.id, {
+            ...(spec.boundRequirementIds !== undefined
+              ? { boundRequirementIds: spec.boundRequirementIds }
+              : {}),
+            ...(spec.moduleId !== undefined
+              ? { moduleId: spec.moduleId }
+              : {}),
+          }),
+        );
       }
     }
 
     // ------------------------------------------------------------------
-    // 8. Edges (≥ 10) — CONNECTS / DATA_FLOW / INTERFACES_WITH
+    // 8. Edges (≥ 10 CONNECTS between System-typed application nodes)
     // ------------------------------------------------------------------
-    type EdgeKind = "CONNECTS" | "DATA_FLOW" | "INTERFACES_WITH";
-    const EDGE_SPECS: readonly { from: string; to: string; kind: EdgeKind }[] =
-      [
-        { from: "gn-app-portal",  to: "gn-app-gateway",  kind: "CONNECTS"        },
-        { from: "gn-app-mobile",  to: "gn-app-gateway",  kind: "CONNECTS"        },
-        { from: "gn-app-web",     to: "gn-app-gateway",  kind: "CONNECTS"        },
-        { from: "gn-app-gateway", to: "gn-app-service",  kind: "CONNECTS"        },
-        { from: "gn-app-gateway", to: "gn-app-events",   kind: "INTERFACES_WITH" },
-        { from: "gn-app-service", to: "gn-app-events",   kind: "INTERFACES_WITH" },
-        { from: "gn-app-service", to: "gn-dat-stream",   kind: "DATA_FLOW"       },
-        { from: "gn-app-service", to: "gn-dat-product",  kind: "DATA_FLOW"       },
-        { from: "gn-dat-etl",     to: "gn-dat-stream",   kind: "DATA_FLOW"       },
-        { from: "gn-app-portal",  to: "gn-app-service",  kind: "DATA_FLOW"       },
-        { from: "gn-ctad-seq",    to: "gn-app-service",  kind: "INTERFACES_WITH" },
-        { from: "gn-ctad-bpmn",   to: "gn-app-gateway",  kind: "DATA_FLOW"       },
-      ];
+    const EDGE_SPECS: readonly { from: string; to: string }[] = [
+      { from: "gn-app-portal",  to: "gn-app-gateway"  },
+      { from: "gn-app-mobile",  to: "gn-app-gateway"  },
+      { from: "gn-app-web",     to: "gn-app-gateway"  },
+      { from: "gn-app-gateway", to: "gn-app-service"  },
+      { from: "gn-app-gateway", to: "gn-app-events"   },
+      { from: "gn-app-service", to: "gn-app-events"   },
+      { from: "gn-app-portal",  to: "gn-app-service"  },
+      { from: "gn-app-module",  to: "gn-app-service"  },
+      { from: "gn-app-integ",   to: "gn-app-gateway"  },
+      { from: "gn-app-web",     to: "gn-app-service"  },
+      { from: "gn-ctad-seq-portal",  to: "gn-ctad-seq-backend"  },
+      { from: "gn-ctad-bpmn-pool",   to: "gn-ctad-bpmn-task-check" },
+    ];
 
     let edgeCount = 0;
     for (const e of EDGE_SPECS) {
       const fromId = nodeIdMap.get(e.from);
       const toId = nodeIdMap.get(e.to);
       if (fromId === undefined || toId === undefined) continue;
-      const r = createEdge({ kind: e.kind, fromId, toId });
-      if (r.ok) edgeCount += 1;
+      const r = createEdge({ kind: "CONNECTS", fromId, toId });
+      if (r.ok) {
+        edgeCount += 1;
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[seedGolden] createEdge ${e.from}→${e.to} failed: ${r.reason}`,
+        );
+      }
     }
 
     // ------------------------------------------------------------------
-    // 9. Policy signals (2)
+    // 9. Policy signals (2: Risk Accumulation + Posture Drift)
     // ------------------------------------------------------------------
     const sig1: CreateSignalInput = {
       signalCategory: "Risk Accumulation",
@@ -766,10 +963,6 @@ export function seedGolden(): GoldenSeedSummary {
 
     createSignal(sig1);
     createSignal(sig2);
-
-    // The org.id is used only internally; the stable scope key is
-    // WI_SCOPE_ID. Suppress the unused-variable lint for org.
-    void org;
 
     return {
       modules:      moduleList.length,
