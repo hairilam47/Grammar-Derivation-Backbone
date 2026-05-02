@@ -140,6 +140,17 @@ const ALLOWED_IMPORT_PREFIXES: readonly string[] = [
   "@/ctad/ctadRegistry",
   "../ctad/ctadRegistry",
   "../../ctad/ctadRegistry",
+  // Canvas Enhancements (standalone tab) — StudioCanvas reads the
+  // WorkItem title via `getWorkItem` to set `document.title` when the
+  // `?standalone=1` flag is active. The import is purely read-only
+  // (no mutation of the work-item store occurs from any ACW module),
+  // the store itself carries no CTAD decision-pipeline state, and it
+  // does not transitively import any pipeline module. Access is
+  // one-directional: work-item metadata flows into ACW for display
+  // only; ACW never writes back.
+  "@/governance/workItemStore",
+  "../governance/workItemStore",
+  "../../governance/workItemStore",
 ];
 
 function isAllowedSpecifier(specifier: string): boolean {
