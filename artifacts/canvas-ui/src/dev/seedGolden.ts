@@ -477,6 +477,7 @@ export function seedGolden(): GoldenSeedSummary {
     // ---------------------------------------------------------------
     const ouBorder = createOu({ id: "ou-border", name: "Border Control Operations" });
     const ouVisa   = createOu({ id: "ou-visa",   name: "Visa Services"             });
+    const ouCount  = (ouBorder.ok ? 1 : 0) + (ouVisa.ok ? 1 : 0);
 
     // ---------------------------------------------------------------
     // 5. EAStudio canvas
@@ -700,24 +701,33 @@ export function seedGolden(): GoldenSeedSummary {
       ctadNodeCount += 1;
 
       // Post-create parent update (stage → target domain Zone).
+      // Critical semantic step: throw if the promotion is refused so the
+      // seeder surfaces a clear error rather than leaving the node in the
+      // wrong domain and reporting success.
       if (isPromoted) {
-        warnIfFailed(
-          `updateNodeParent(${spec.id}, ${spec.targetParentId})`,
-          updateNodeParent(nodeId, spec.targetParentId),
-        );
+        const pr = updateNodeParent(nodeId, spec.targetParentId);
+        if (!pr.ok) {
+          throw new Error(
+            `[seedGolden] required updateNodeParent(${spec.id}, ${spec.targetParentId}) refused: ${pr.reason}`,
+          );
+        }
       }
 
       // Bind requirements + module on the three anchor nodes.
+      // Also fail-fast: a missing binding breaks the scenario's cross-
+      // surface linkage (CTAD ↔ ADC requirements ↔ module catalog).
       if (spec.boundRequirementIds !== undefined || spec.moduleId !== undefined) {
-        warnIfFailed(
-          `updateNodeProperties(${spec.id}, boundReqs+moduleId)`,
-          updateNodeProperties(nodeId, {
-            ...(spec.boundRequirementIds !== undefined
-              ? { boundRequirementIds: spec.boundRequirementIds }
-              : {}),
-            ...(spec.moduleId !== undefined ? { moduleId: spec.moduleId } : {}),
-          }),
-        );
+        const br = updateNodeProperties(nodeId, {
+          ...(spec.boundRequirementIds !== undefined
+            ? { boundRequirementIds: spec.boundRequirementIds }
+            : {}),
+          ...(spec.moduleId !== undefined ? { moduleId: spec.moduleId } : {}),
+        });
+        if (!br.ok) {
+          throw new Error(
+            `[seedGolden] required updateNodeProperties(${spec.id}, boundReqs+moduleId) refused: ${br.reason}`,
+          );
+        }
       }
     }
 
@@ -832,8 +842,17 @@ export function seedGolden(): GoldenSeedSummary {
       reviewingBody: "Digital Transformation Steering Committee",
     };
 
-    createSignal(sig1);
-    createSignal(sig2);
+    // createSignal returns the created PolicySignal directly (no .ok).
+    // We track the count by catching any thrown validation errors.
+    let signalCount = 0;
+    try { createSignal(sig1); signalCount += 1; } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn("[seedGolden] createSignal(sig1):", (e as Error).message);
+    }
+    try { createSignal(sig2); signalCount += 1; } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn("[seedGolden] createSignal(sig2):", (e as Error).message);
+    }
 
     return {
       modules:      moduleList.length,
@@ -841,8 +860,8 @@ export function seedGolden(): GoldenSeedSummary {
       ctadNodes:    ctadNodeCount,
       acwNodes:     acwNodeCount,
       edges:        edgeCount,
-      ous:          2,
-      signals:      2,
+      ous:          ouCount,
+      signals:      signalCount,
     };
   });
 }
