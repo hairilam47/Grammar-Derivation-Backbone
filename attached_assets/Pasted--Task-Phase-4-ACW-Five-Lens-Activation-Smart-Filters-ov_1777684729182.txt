@@ -1,0 +1,153 @@
+## Task: Phase 4 – ACW Five‑Lens Activation (Smart Filters over the EAStudio Canvas)
+
+You are working on `Grammar-Derivation-Backbone`. The EAStudio canvas (`/workspace/studio`) already holds a complete four‑domain enterprise architecture model (Business, Data, Application, Technology). The five classic ACW lenses (`/workspace/context`, `/workspace/landscape`, `/workspace/integration`, `/workspace/deployment`, `/workspace/operations`) currently show empty placeholders or minimal 2D/3D embeds. This task transforms each lens into a **live, filtered view** of the same underlying `acw‑1.0` workspace.
+
+**No new stores. No schema changes.** The lenses become pure UI‑layer filters over the existing data.
+
+---
+
+## 1. Filter Logic for Each Lens
+
+Each lens receives the full workspace from `acwStore` and applies a node/edge filter based on `domainTag`, node type, and edge patterns.
+
+### 1.1 Context & Domain (`/workspace/context`)
+- **What it shows:** The business architecture—actors, org units, capabilities, value streams, and high‑level data concepts.
+- **Filter:**
+  - Nodes where `domainTag === 'business'`
+  - Nodes with types `BusinessEntity`, `Department`, `OrgUnit`, `StrategyMap`, `Capability`, `ValueStream` (regardless of `domainTag`, for backward compatibility)
+  - Nodes with `domainTag === 'data'` AND `type === 'System'` (to include high‑level data concepts like "Enterprise Data Lake")
+  - Edges where both source and target pass the node filter
+- **Palette:** Only business tiles (Strategy Map, Business Process, Governance Model, etc.). Filter `DOMAIN_PALETTE.business` items.
+
+### 1.2 System Landscape (`/workspace/landscape`)
+- **What it shows:** The application architecture—services, APIs, microservices, front‑ends.
+- **Filter:**
+  - Nodes where `domainTag === 'application'`
+  - Nodes with type `System` or `Component` that have `boundTechnologyCategory` in `['frontend', 'backend', 'gateway', 'message-queue', 'integration']` (these are application‑layer artifacts)
+  - Edges where both endpoints pass the node filter
+- **Palette:** Application tiles (Application, API Gateway, Microservice, etc.)
+
+### 1.3 Integration (`/workspace/integration`)
+- **What it shows:** Cross‑domain connections—interfaces, data flows, and bridges between Business, Application, Data, Technology, and External systems.
+- **Filter:**
+  - **All** nodes that participate in at least one `CONNECTS` edge where the source and target are in **different** `domainTag` values (including `'external'` if present, or `'business'`-to-`'application'`, `'application'`-to-`'technology'`, etc.)
+  - Also include any node with `domainTag === 'external'` (third‑party actors) as they are always integration points
+  - Edges that cross domain boundaries (regardless of endpoint domain tags, as long as the domains differ)
+- **Palette:** Integration‑specific tiles: `integration-system-connector` (plus any other connector‑type tiles defined). Optionally, allow the user to see all tiles but default to a filtered set.
+
+### 1.4 Deployment & Infrastructure (`/workspace/deployment`)
+- **What it shows:** Technology architecture—servers, clusters, networks, cloud regions, databases (as infrastructure), and physical devices.
+- **Filter:**
+  - Nodes where `domainTag === 'technology'`
+  - Nodes with type `ComputeNode`, `Zone` (tech zones like `CloudRegion`, `NetworkLayer`), `Container`, `Database` (when acting as infrastructure – they will have `domainTag === 'technology'` in EAStudio)
+  - Edges between technology nodes
+- **Palette:** Technology tiles (Cloud Region, Network Layer, Database, Runtime Engine, etc.)
+- **Existing 3D toggle:** Preserve the current `LensCanvas` 2D/3D toggle; the filter is applied before rendering in either mode.
+
+### 1.5 Operations & Continuity (`/workspace/operations`)
+- **What it shows:** Operational artifacts—monitoring, backup, disaster recovery, security controls—and the technology nodes they relate to.
+- **Filter:**
+  - Nodes where `domainTag === 'operations'` (the new domain tag added earlier)
+  - **Also include** all technology nodes (`domainTag === 'technology'`) so the architect can link operational policies to the servers/databases they govern
+  - Edges where at least one endpoint passes the node filter
+- **Palette:** Operations tiles (Monitoring Dashboard, Backup Policy, Disaster Recovery Site, Runbook). Show only these; do not show the full technology palette.
+
+---
+
+## 2. Implementation Approach
+
+### 2.1 Refactor Each Lens Page
+
+The five lenses currently exist as individual page components:
+
+- `pages/acw/views/ContextDomain.tsx`
+- `pages/acw/views/SystemLandscape.tsx`
+- `pages/acw/views/IntegrationView.tsx`
+- `pages/acw/views/Deployment.tsx`
+- `pages/acw/views/OperationsContinuity.tsx`
+
+Each one needs to be updated to:
+
+1. **Read the current workspace** from `useAcwWorkspace()` (or `getWorkspace()` via the ACW store).
+2. **Apply the domain filter** as defined in §1.
+3. **Render the filtered graph** using the existing `InteractiveCanvas2D` (or `LensCanvas` for Deployment) with the filtered `nodes` and `edges`. The canvas component already accepts `nodes` and `edges` props.
+4. **Pass a lens‑specific palette** to the left palette drawer. Use the `lensVisibility` field on palette items (already defined in `paletteRegistry.ts`). If `lensVisibility` is undefined, the tile is visible everywhere; if set, only show tiles whose array includes the current lens ID (`'context'`, `'landscape'`, `'integration'`, `'deployment'`, `'operations'`).
+5. **Auto‑assign domain tag** when a new node is created from the palette. Set `domainTag` to the lens's primary domain (e.g., `'business'` for Context & Domain, `'application'` for System Landscape, etc.). For Integration lens, set `domainTag` to the tile's own domain (some integration tiles may be `application`, others `external`). For Operations lens, set `domainTag: 'operations'`.
+6. **Optionally** show a simplified properties panel (reuse `NodePropertiesPanel` from EAStudio). This is not required for the initial task but can be added if straightforward.
+
+### 2.2 Lens‑Specific Palette Filtering
+
+In `PalettePanel.tsx`, when rendering the palette, accept a new optional prop `allowedLensId`. Filter the palette items using:
+
+```ts
+item.lensVisibility === undefined || item.lensVisibility.includes(allowedLensId)
+Pass the appropriate allowedLensId from each lens page.
+
+For the Operations lens, if some operations tiles are missing from the main palette registry because they were added only as lens‑specific items, ensure they exist in DOMAIN_PALETTE.operations with lensVisibility: ['operations'].
+
+2.3 Preserve Existing 3D Toggle (Deployment Only)
+The Deployment lens already uses LensCanvas to toggle between 2D and 3D. Keep this behavior. The filter is applied to nodes and edges before they reach LensCanvas.
+
+All other lenses remain 2D only.
+
+3. New Domain Tag 'external' (Optional but Recommended)
+From the NIISe and Core Architecture diagrams, there are many external actors (payment gateways, agencies, airlines). To keep the System Landscape and Deployment lenses clean, add 'external' to the AcwDomainTag union (in acwGrammar.ts):
+
+ts
+type AcwDomainTag = 'business' | 'data' | 'application' | 'technology' | 'operations' | 'external';
+Update the grammar invariant (acwGrammarInvariants.test-shape.ts) to accept 'external'.
+
+Add an “External System” palette tile (already exists in Application domain) that sets domainTag: 'external'. It will be visible in the Integration lens and Context & Domain lens (where external actors belong). The tile can have lensVisibility: ['context', 'integration'].
+
+4. Scope & Constraints
+No new stores. The filters are UI‑only.
+
+No ACW schema changes beyond optionally adding 'external' to AcwDomainTag.
+
+All existing invariants must pass. The ACW isolation invariant still applies: the lenses must not import from the decision pipeline.
+
+The EAStudio canvas is untouched. The filters only affect what each classic lens renders; the master four‑domain canvas at /workspace/studio continues to show all nodes.
+
+The left sidebar already has navigation entries for the five lenses; no new navigation needed.
+
+5. Acceptance Criteria
+Navigating to any of the five ACW lenses shows a filtered subset of the EAStudio workspace.
+
+Each lens palette shows only the tiles relevant to that lens.
+
+Dragging a tile onto the canvas creates a node with the correct domainTag.
+
+The Integration lens shows nodes from multiple domains connected by cross‑domain edges.
+
+The Deployment lens retains its 2D/3D toggle.
+
+All existing EAStudio functionality works unchanged.
+
+All build‑time invariants pass.
+
+New vocabulary labels pass assertAllAcwPlaceholderLanguage.
+
+6. Relevant Files
+pages/acw/views/ContextDomain.tsx
+
+pages/acw/views/SystemLandscape.tsx
+
+pages/acw/views/IntegrationView.tsx
+
+pages/acw/views/Deployment.tsx
+
+pages/acw/views/OperationsContinuity.tsx
+
+components/acw/InteractiveCanvas2D.tsx
+
+components/acw/LensCanvas.tsx
+
+components/acw/palette/PalettePanel.tsx
+
+acw/palette/paletteRegistry.ts
+
+acw/acwGrammar.ts
+
+acw/acwGrammarInvariants.test-shape.ts
+
+acw/acwIsolationInvariants.test-shape.ts
