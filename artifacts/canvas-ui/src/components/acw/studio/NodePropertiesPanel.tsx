@@ -51,6 +51,7 @@ import {
 } from "@/acw/acwStore";
 import { publishRefusal } from "@/acw/acwRefusalChannel";
 import {
+  getLensLayers,
   getSelectedNodeId,
   setSelectedNodeId,
   subscribeViewState,
@@ -104,6 +105,9 @@ const REMOVE_LABEL = "Remove";
 const ADD_UNIT_PROMPT = "Name of the new unit";
 const REMOVE_CONFIRM = "Remove this unit? Nodes carrying it will be cleared.";
 const NONE_LABEL = "Not specified";
+// Canvas Enhancements — layer assignment field.
+const FIELD_LAYERS = "Layers";
+const LAYERS_NONE_NOTICE = "No layers defined for this lens.";
 const INCIDENT_TITLE = "Incident connections";
 const NO_EDGES = "No connections incident to this node.";
 const CONNECT_FROM = "from";
@@ -126,6 +130,8 @@ assertAllAcwPlaceholderLanguage([
   ADD_UNIT_PROMPT,
   REMOVE_CONFIRM,
   NONE_LABEL,
+  FIELD_LAYERS,
+  LAYERS_NONE_NOTICE,
   INCIDENT_TITLE,
   NO_EDGES,
   CONNECT_FROM,
@@ -466,6 +472,22 @@ export function NodePropertiesPanel({ lensId }: NodePropertiesPanelProps) {
     if (!r.ok) publishRefusal(r.reason);
   }
 
+  // Canvas Enhancements — layer assignment for this node.
+  const lensLayers = getLensLayers(lensId);
+
+  function commitLayerToggle(layerId: string) {
+    if (node === null) return;
+    const current = node.layerIds ?? [];
+    const checked = current.includes(layerId);
+    const next = checked
+      ? current.filter((id) => id !== layerId)
+      : [...current, layerId];
+    const r = updateNodeProperties(node.id, {
+      layerIds: next.length === 0 ? null : next,
+    });
+    if (!r.ok) publishRefusal(r.reason);
+  }
+
   const incidentEdges = ws.structureGraph.edges.filter(
     (e) => e.fromId === node.id || e.toId === node.id,
   );
@@ -594,6 +616,60 @@ export function NodePropertiesPanel({ lensId }: NodePropertiesPanelProps) {
             {REMOVE_LABEL}
           </button>
         </div>
+      </div>
+
+      {/*
+        Canvas Enhancements — layer membership multi-select.
+        Lists every layer defined on the current lens; each row is
+        a checkbox so the user can assign the node to multiple layers.
+        When no layers have been defined yet the field shows a brief
+        notice instead of an empty checkbox list.
+      */}
+      <div
+        className="es-props-field"
+        data-testid="acw-studio-properties-layers-field"
+      >
+        <label className="es-props-label">{FIELD_LAYERS}</label>
+        {lensLayers.length === 0 ? (
+          <p
+            className="es-mono"
+            style={{
+              fontSize: 10,
+              color: "var(--text2)",
+              fontStyle: "italic",
+              margin: 0,
+            }}
+          >
+            {LAYERS_NONE_NOTICE}
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {lensLayers.map((layer) => {
+              const checked = (node.layerIds ?? []).includes(layer.id);
+              return (
+                <label
+                  key={layer.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: 10,
+                    cursor: "pointer",
+                  }}
+                  data-testid={`acw-studio-properties-layer-row-${layer.id}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => commitLayerToggle(layer.id)}
+                    data-testid={`acw-studio-properties-layer-checkbox-${layer.id}`}
+                  />
+                  <span>{layer.name}</span>
+                </label>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <section className="es-props-section">

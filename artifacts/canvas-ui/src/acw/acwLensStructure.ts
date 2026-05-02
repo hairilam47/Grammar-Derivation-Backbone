@@ -72,13 +72,28 @@ export function enumerateLensVisibility(
   // same predicate the collapse-filter already uses below. Absent
   // (the v3 default) preserves pre-Phase-2 behaviour exactly.
   currentLodLevel?: AcwLodLevel,
+  // Canvas Enhancements — when supplied, nodes that carry at least
+  // one layer id AND have no overlap with this set are filtered out.
+  // Nodes with no `layerIds` (or an empty array) are always shown,
+  // matching the "unassigned = always visible" contract. Absent
+  // (no layers defined on the lens) preserves prior behaviour.
+  activeLayerIds?: ReadonlySet<string>,
 ): LensVisibility {
   const lodFilter = (n: AcwNode): boolean =>
     currentLodLevel === undefined ? true : isVisibleAtLod(n, currentLodLevel);
+  // Canvas Enhancements — layer membership filter. A node with a
+  // non-empty layerIds array must intersect the active set;
+  // absence / empty-array means "always visible".
+  const layerFilter = (n: AcwNode): boolean => {
+    if (activeLayerIds === undefined) return true;
+    if (!n.layerIds || n.layerIds.length === 0) return true;
+    return n.layerIds.some((id) => activeLayerIds.has(id));
+  };
   // Standard window: nodes whose parent is the focused parent.
   const baseSiblings = nodes
     .filter((n) => n.parentId === focusedParentId)
-    .filter(lodFilter);
+    .filter(lodFilter)
+    .filter(layerFilter);
   // EAStudio Phase 2 (LoS framework) — at L3 the structural depth
   // window is widened to surface every L3-only node (lodRange
   // starting at 3) regardless of its depth from the focus, because
@@ -122,7 +137,10 @@ export function enumerateLensVisibility(
     const collapsedHere = collapsedIds.has(sib.id);
     const childRefs =
       hasChildren && !collapsedHere
-        ? nodes.filter((n) => n.parentId === sib.id).filter(lodFilter)
+        ? nodes
+            .filter((n) => n.parentId === sib.id)
+            .filter(lodFilter)
+            .filter(layerFilter)
         : [];
     return {
       node: sib,

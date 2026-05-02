@@ -43,6 +43,7 @@ import { DomainTabBar } from "@/components/acw/palette/DomainTabBar";
 import { PalettePanel } from "@/components/acw/palette/PalettePanel";
 import { DomainGrid } from "@/components/acw/palette/DomainGrid";
 import { NodePropertiesPanel } from "@/components/acw/studio/NodePropertiesPanel";
+import { LayersPanel } from "@/components/acw/studio/LayersPanel";
 import { StatusBar } from "@/components/acw/studio/StatusBar";
 import { StudioTopBar } from "@/components/acw/studio/StudioTopBar";
 import { MatrixView } from "@/components/acw/studio/MatrixView";
@@ -120,6 +121,22 @@ export default function StudioCanvas() {
   useEffect(() => subscribeAcwStore(() => setStoreTick((t) => t + 1)), []);
   void storeTick;
 
+  // Canvas Enhancements — standalone tab mode.
+  // When ?standalone=1 the lens nav is suppressed so EAStudio fills
+  // its own tab without the workspace switcher chrome. Reads once on
+  // mount; the search param is stable for the lifetime of the page.
+  const standalone =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("standalone") === "1";
+  useEffect(() => {
+    if (standalone) {
+      document.title = "EA Studio";
+    }
+  }, [standalone]);
+
+  // Canvas Enhancements — layers panel toggle.
+  const [layersPanelOpen, setLayersPanelOpen] = useState(false);
+
   // EAStudio Phase 2 (LoS framework) — edge-trigger the L3
   // generator on the per-session transition INTO L3
   // (`activeLod !== 3` → `activeLod === 3`). The Studio shell
@@ -186,7 +203,7 @@ export default function StudioCanvas() {
   }, [lensId]);
 
   return (
-    <WorkspaceShell hideShellChrome>
+    <WorkspaceShell hideShellChrome hideLensNav={standalone}>
       <div
         className="eastudio-root"
         data-testid="acw-studio-canvas"
@@ -208,7 +225,11 @@ export default function StudioCanvas() {
             inline style is scoped to this element.
            */}
           <div style={{ position: "relative", zIndex: 10 }}>
-            <StudioTopBar lensId={lensId} />
+            <StudioTopBar
+              lensId={lensId}
+              layersPanelOpen={layersPanelOpen}
+              onLayersToggle={() => setLayersPanelOpen((v) => !v)}
+            />
           </div>
 
           {activeTab === "design" && activeLod !== 3 ? (
@@ -260,6 +281,9 @@ export default function StudioCanvas() {
                   <PalettePanel activeDomain={activeDomain} />
                   <DomainGrid lensId={lensId} />
                   <NodePropertiesPanel lensId={lensId} />
+                  {layersPanelOpen ? (
+                    <LayersPanel lensId={lensId} />
+                  ) : null}
                 </div>
               ) : null}
               {activeTab === "matrix" ? <MatrixView lensId={lensId} /> : null}

@@ -103,39 +103,50 @@ export interface WorkspaceShellProps {
    * the prior inline behaviour.
    */
   hideShellChrome?: boolean;
+  /**
+   * Canvas Enhancements — when `true` the lens-navigation header
+   * is suppressed in addition to the shell chrome, leaving only
+   * the fullscreen canvas surface. Used by the `?standalone=1`
+   * URL mode so EAStudio opens in its own tab without the workspace
+   * lens switcher. Defaults to `false`.
+   */
+  hideLensNav?: boolean;
 }
 
 export function WorkspaceShell({
   children,
   hideShellChrome = false,
+  hideLensNav = false,
 }: WorkspaceShellProps) {
   const [location] = useLocation();
   return (
     <div className="min-h-[100dvh] bg-background text-foreground flex flex-col font-mono">
-      <div
-        className="border-b border-border/40 bg-muted/10 sticky top-12 z-10"
-        data-testid="acw-lens-nav"
-      >
-        <div className="container max-w-6xl mx-auto px-4 py-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] uppercase tracking-widest">
-          {ACW_LENSES.map((lens) => {
-            const active = location === lens.path;
-            return (
-              <Link
-                key={lens.path}
-                href={lens.path}
-                className={`px-2 py-1 rounded border transition-colors ${
-                  active
-                    ? "border-primary text-primary"
-                    : "border-transparent text-muted-foreground hover:text-primary"
-                }`}
-                data-testid={`acw-lens-link-${lens.path.split("/").pop()}`}
-              >
-                {lens.label}
-              </Link>
-            );
-          })}
+      {hideLensNav ? null : (
+        <div
+          className="border-b border-border/40 bg-muted/10 sticky top-12 z-10"
+          data-testid="acw-lens-nav"
+        >
+          <div className="container max-w-6xl mx-auto px-4 py-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] uppercase tracking-widest">
+            {ACW_LENSES.map((lens) => {
+              const active = location === lens.path;
+              return (
+                <Link
+                  key={lens.path}
+                  href={lens.path}
+                  className={`px-2 py-1 rounded border transition-colors ${
+                    active
+                      ? "border-primary text-primary"
+                      : "border-transparent text-muted-foreground hover:text-primary"
+                  }`}
+                  data-testid={`acw-lens-link-${lens.path.split("/").pop()}`}
+                >
+                  {lens.label}
+                </Link>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       <main className="flex-1 container max-w-6xl mx-auto px-4 py-6 space-y-4">
         {hideShellChrome ? null : (

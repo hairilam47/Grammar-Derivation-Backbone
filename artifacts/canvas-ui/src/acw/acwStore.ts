@@ -247,6 +247,13 @@ export interface AcwNode {
   readonly logicalPosition?: AcwLogicalPosition;
   readonly logicalParentId?: string;
   readonly logicalStyle?: Readonly<Record<string, string>>;
+  // Canvas Enhancements — optional layer membership. A node with
+  // a non-empty layerIds array will only render when at least one
+  // of its layer ids is visible in the current lens; nodes with
+  // no layerIds (or an empty array) are always visible. The
+  // schema version stays `acw-1.0` — this field is purely additive
+  // and optional; every pre-existing document loads unchanged.
+  readonly layerIds?: readonly string[];
 }
 
 export interface AcwEdge {
@@ -326,6 +333,11 @@ const ALLOWED_NODE = [
   "logicalPosition",
   "logicalParentId",
   "logicalStyle",
+  // Canvas Enhancements — optional layer membership. Absent on every
+  // pre-enhancement document; the read-validator accepts absence and
+  // well-formed presence (an array of non-empty strings) and rejects
+  // malformed shapes. Schema version stays `acw-1.0`.
+  "layerIds",
 ] as const;
 const ALLOWED_EDGE = [
   "id",
@@ -572,6 +584,15 @@ function assertAllowedFields(workspace: unknown): void {
     ) {
       throw new Error(
         "ACW node.logicalStyle, when present, must be a string-to-string record with non-empty keys.",
+      );
+    }
+    // Canvas Enhancements — layerIds optional shape check.
+    if (
+      node.layerIds !== undefined &&
+      !isAcwBoundRequirementIdsShape(node.layerIds)
+    ) {
+      throw new Error(
+        "ACW node.layerIds, when present, must be an array of non-empty strings.",
       );
     }
     nodeIds.add(node.id);
@@ -826,6 +847,9 @@ export interface CreateNodeRequest {
   readonly logicalPosition?: AcwLogicalPosition;
   readonly logicalParentId?: string;
   readonly logicalStyle?: Readonly<Record<string, string>>;
+  // Canvas Enhancements — optional layer membership. Forwarded onto
+  // the new node verbatim when present; absence persists no field.
+  readonly layerIds?: readonly string[];
 }
 
 export interface CreateEdgeRequest {
@@ -1060,6 +1084,10 @@ export function createNode(req: CreateNodeRequest): CreateNodeResult {
       : {}),
     ...(req.logicalStyle !== undefined
       ? { logicalStyle: Object.freeze({ ...req.logicalStyle }) }
+      : {}),
+    // Canvas Enhancements — freeze caller-supplied layerIds array.
+    ...(req.layerIds !== undefined
+      ? { layerIds: Object.freeze([...req.layerIds]) }
       : {}),
   });
   const next: AcwWorkspace = Object.freeze({
@@ -1395,6 +1423,11 @@ export interface UpdateNodePropertiesRequest {
   readonly logicalPosition?: AcwLogicalPosition | null;
   readonly logicalParentId?: string | null;
   readonly logicalStyle?: Readonly<Record<string, string>> | null;
+  // Canvas Enhancements — layer membership update. Pass `undefined`
+  // to leave unchanged; pass `null` to clear; pass an array (empty
+  // or populated) to set. The validator rejects non-string entries
+  // at the storage boundary.
+  readonly layerIds?: readonly string[] | null;
 }
 
 export function updateNodeProperties(
@@ -1529,6 +1562,18 @@ export function updateNodeProperties(
         "logicalStyle, when supplied, must be a string-to-string record with non-empty keys.",
     };
   }
+  // Canvas Enhancements — layerIds mutation validator.
+  if (
+    req.layerIds !== undefined &&
+    req.layerIds !== null &&
+    !isAcwBoundRequirementIdsShape(req.layerIds)
+  ) {
+    return {
+      ok: false,
+      reason:
+        "layerIds, when supplied, must be an array of non-empty strings.",
+    };
+  }
   const nextDescription =
     req.description === undefined ? prev.description : req.description ?? undefined;
   const nextOwner =
@@ -1575,6 +1620,15 @@ export function updateNodeProperties(
       : req.logicalStyle === null
         ? undefined
         : Object.freeze({ ...req.logicalStyle });
+  // Canvas Enhancements — fold layerIds. `undefined` = leave
+  // unchanged; `null` = clear (omit from persisted shape);
+  // array (empty or populated) = replace with a new frozen copy.
+  const nextLayerIds: readonly string[] | undefined =
+    req.layerIds === undefined
+      ? prev.layerIds
+      : req.layerIds === null
+        ? undefined
+        : Object.freeze([...req.layerIds]);
   const updated: AcwNode = Object.freeze({
     id: prev.id,
     type: prev.type,
@@ -1620,6 +1674,8 @@ export function updateNodeProperties(
     ...(nextLogicalStyle !== undefined
       ? { logicalStyle: nextLogicalStyle }
       : {}),
+    // Canvas Enhancements — layerIds fold result.
+    ...(nextLayerIds !== undefined ? { layerIds: nextLayerIds } : {}),
   });
   const nodes = ws.structureGraph.nodes.slice();
   nodes[idx] = updated;

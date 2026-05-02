@@ -25,7 +25,9 @@ import { useEffect, useState } from "react";
 import {
   Box,
   Download,
+  ExternalLink,
   Grid3X3,
+  Layers,
   LayoutGrid,
   Sparkles,
   Users,
@@ -69,6 +71,11 @@ const CONNECT_LABEL = "Connect";
 // row; the per-button title attribute discloses the affordance.
 const ORG_VIEW_LABEL = "Org View";
 const ORG_VIEW_TITLE = "Toggle organisational unit overlay";
+// Canvas Enhancements — Layers panel toggle and standalone tab.
+const LAYERS_LABEL = "Layers";
+const LAYERS_TITLE = "Manage layers for this lens";
+const OPEN_TAB_LABEL = "New tab";
+const OPEN_TAB_TITLE = "Open EAStudio in a standalone tab";
 const CLEAR_CONFIRM =
   "Remove every node and connection? Sealed domain containers stay.";
 // EAStudio Phase 2 (LoS framework) — short, plain labels for the
@@ -105,6 +112,10 @@ assertAllAcwPlaceholderLanguage([
   CONNECT_LABEL,
   ORG_VIEW_LABEL,
   ORG_VIEW_TITLE,
+  LAYERS_LABEL,
+  LAYERS_TITLE,
+  OPEN_TAB_LABEL,
+  OPEN_TAB_TITLE,
   CLEAR_CONFIRM,
   LOD_LABELS[1],
   LOD_LABELS[2],
@@ -130,9 +141,14 @@ function TabIcon({ tab }: { tab: AcwStudioViewTab }) {
 
 export interface StudioTopBarProps {
   readonly lensId: string;
+  // Canvas Enhancements — layers panel state lifted from StudioCanvas
+  // so the panel can render as a sibling of NodePropertiesPanel.
+  readonly layersPanelOpen?: boolean;
+  readonly onLayersToggle?: () => void;
 }
 
-export function StudioTopBar({ lensId }: StudioTopBarProps) {
+export function StudioTopBar(props: StudioTopBarProps) {
+  const { lensId } = props;
   const [tick, setTick] = useState(0);
   useEffect(() => subscribeViewState(() => setTick((t) => t + 1)), []);
   void tick;
@@ -151,6 +167,12 @@ export function StudioTopBar({ lensId }: StudioTopBarProps) {
   // pressed state mirrors the per-lens slice on view-state.
   const showOrgToggle = lensId === STUDIO_LENS_ID;
   const orgOverlayOn = getShowOrgOverlay(lensId);
+
+  // Canvas Enhancements — Layers panel toggle. State lives in the
+  // parent (StudioCanvas) so the LayersPanel can mount/unmount
+  // as a sibling of NodePropertiesPanel there.
+  const layersPanelOpen = props.layersPanelOpen ?? false;
+  const onLayersToggle = props.onLayersToggle ?? (() => {});
 
   const onClear = () => {
     if (typeof window !== "undefined" && !window.confirm(CLEAR_CONFIRM)) return;
@@ -267,6 +289,21 @@ export function StudioTopBar({ lensId }: StudioTopBarProps) {
           <Zap className="w-3.5 h-3.5" />
           <span>{CONNECT_LABEL}</span>
         </button>
+        {showLodToggle ? (
+          <button
+            type="button"
+            onClick={onLayersToggle}
+            data-testid="acw-studio-layers-toggle-button"
+            aria-pressed={layersPanelOpen}
+            data-active={layersPanelOpen ? "true" : "false"}
+            title={LAYERS_TITLE}
+            aria-label={LAYERS_TITLE}
+            className="es-btn"
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>{LAYERS_LABEL}</span>
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => setViewTab(lensId, "export")}
@@ -278,6 +315,21 @@ export function StudioTopBar({ lensId }: StudioTopBarProps) {
           <Download className="w-3.5 h-3.5" />
           <span>{EXPORT_LABEL}</span>
         </button>
+        {showLodToggle ? (
+          <button
+            type="button"
+            onClick={() =>
+              window.open(`${window.location.pathname}?standalone=1`, "_blank")
+            }
+            data-testid="acw-studio-open-new-tab"
+            title={OPEN_TAB_TITLE}
+            aria-label={OPEN_TAB_TITLE}
+            className="es-btn"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            <span>{OPEN_TAB_LABEL}</span>
+          </button>
+        ) : null}
       </div>
     </header>
   );

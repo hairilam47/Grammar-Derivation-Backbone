@@ -30,9 +30,15 @@
 import {
   ACW_VIEW_SCHEMA_VERSION,
   __acwViewStateInternals,
+  addLensLayer,
   clearViewState,
-  toggleCollapsed,
+  deleteLensLayer,
+  getLensLayerVisibility,
+  getLensLayers,
   isCollapsed,
+  renameLensLayer,
+  toggleCollapsed,
+  toggleLensLayerVisibility,
 } from "./acwViewState";
 import {
   __acwStoreInternals,
@@ -1186,6 +1192,126 @@ try {
   }
 } finally {
   restoreLocalStorage(phase2Snapshot);
+}
+
+// Canvas Enhancements — invariant probes for layerIds node field
+// and layersByLens view-state slice. Focus-stack is transient
+// (module-level Map, never persisted) so no invariant is needed for it.
+{
+  const ceSnapshot = snapshotLocalStorage();
+  try {
+    clearViewState();
+    // Drop any persisted nodes from localStorage so the probe starts
+    // from an empty workspace. The snapshot was taken above so the
+    // finally block restores the user's real data.
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem("acw.workspace.v1");
+    }
+    __acwStoreInternals.reloadFromStorageForTest();
+
+    // --- layerIds field on AcwNode ---
+    // Seed a node for all layer-field probes.
+    const seedResult = createNode({ type: "System", parentId: null, label: "L-probe", x: 0, y: 0 });
+    if (!seedResult.ok) {
+      throw new Error(`${PREFIX} CE: seed node refused: ${seedResult.reason}`);
+    }
+    const layerProbeId = seedResult.id;
+
+    // Probe 1: undefined layerIds (not set) is accepted on initial create.
+    const rawSeed = parseSnapshot(__acwStoreInternals.serializeForTest()).nodes.find(
+      (n) => n.id === layerProbeId,
+    ) as Record<string, unknown> | undefined;
+    if (rawSeed === undefined) {
+      throw new Error(`${PREFIX} CE: probe node missing after seed.`);
+    }
+    // The serialised node must NOT carry a layerIds key when unset.
+    if ("layerIds" in rawSeed && (rawSeed as Record<string, unknown>).layerIds !== null && (rawSeed as Record<string, unknown>).layerIds !== undefined) {
+      throw new Error(`${PREFIX} CE: unset layerIds must not appear in persisted node.`);
+    }
+
+    // Probe 2: setting layerIds to a populated string array is accepted.
+    const setLayersResult = updateNodeProperties(layerProbeId, {
+      layerIds: ["layer-a", "layer-b"],
+    });
+    if (!setLayersResult.ok) {
+      throw new Error(`${PREFIX} CE: setting layerIds refused: ${setLayersResult.reason}`);
+    }
+    const afterSet = parseSnapshot(__acwStoreInternals.serializeForTest()).nodes.find(
+      (n) => n.id === layerProbeId,
+    ) as Record<string, unknown> | undefined;
+    if (afterSet === undefined) {
+      throw new Error(`${PREFIX} CE: probe node missing after layerIds set.`);
+    }
+    const storedLayerIds = (afterSet as Record<string, unknown>).layerIds;
+    if (
+      !Array.isArray(storedLayerIds) ||
+      storedLayerIds.length !== 2 ||
+      storedLayerIds[0] !== "layer-a" ||
+      storedLayerIds[1] !== "layer-b"
+    ) {
+      throw new Error(`${PREFIX} CE: stored layerIds does not match ["layer-a","layer-b"].`);
+    }
+
+    // Probe 3: clearing layerIds (null) is accepted.
+    const clearLayersResult = updateNodeProperties(layerProbeId, { layerIds: null });
+    if (!clearLayersResult.ok) {
+      throw new Error(`${PREFIX} CE: clearing layerIds refused: ${clearLayersResult.reason}`);
+    }
+
+    // --- layersByLens view-state slice ---
+    // The view-state helpers must round-trip layer definitions through
+    // the assertValid boundary without throwing or returning stale data.
+    const testLensId = "/workspace/studio";
+
+    // Probe 4: a fresh lens has no layers.
+    const initialLayers = getLensLayers(testLensId);
+    if (initialLayers.length !== 0) {
+      throw new Error(`${PREFIX} CE: fresh lens unexpectedly has ${initialLayers.length} layer(s).`);
+    }
+
+    // Probe 5: addLensLayer creates a layer with a string id and name.
+    addLensLayer(testLensId, "Infrastructure");
+    const afterAdd = getLensLayers(testLensId);
+    if (afterAdd.length !== 1) {
+      throw new Error(`${PREFIX} CE: expected 1 layer after add, got ${afterAdd.length}.`);
+    }
+    const layerDef = afterAdd[0];
+    if (typeof layerDef.id !== "string" || layerDef.id.length === 0) {
+      throw new Error(`${PREFIX} CE: addLensLayer produced a layer with empty id.`);
+    }
+    if (layerDef.name !== "Infrastructure") {
+      throw new Error(`${PREFIX} CE: addLensLayer name mismatch: "${layerDef.name}".`);
+    }
+
+    // Probe 6: visibility defaults to true.
+    const visAfterAdd = getLensLayerVisibility(testLensId);
+    if (visAfterAdd[layerDef.id] !== undefined && visAfterAdd[layerDef.id] !== true) {
+      throw new Error(`${PREFIX} CE: default layer visibility must be true or absent.`);
+    }
+
+    // Probe 7: toggleLensLayerVisibility flips to false.
+    toggleLensLayerVisibility(testLensId, layerDef.id);
+    const visAfterToggle = getLensLayerVisibility(testLensId);
+    if (visAfterToggle[layerDef.id] !== false) {
+      throw new Error(`${PREFIX} CE: toggle did not set visibility to false.`);
+    }
+
+    // Probe 8: renameLensLayer changes the name.
+    renameLensLayer(testLensId, layerDef.id, "Network");
+    const afterRename = getLensLayers(testLensId);
+    if (afterRename[0].name !== "Network") {
+      throw new Error(`${PREFIX} CE: renameLensLayer did not update name (got "${afterRename[0].name}").`);
+    }
+
+    // Probe 9: deleteLensLayer removes the layer.
+    deleteLensLayer(testLensId, layerDef.id);
+    const afterDelete = getLensLayers(testLensId);
+    if (afterDelete.length !== 0) {
+      throw new Error(`${PREFIX} CE: deleteLensLayer left ${afterDelete.length} layer(s).`);
+    }
+  } finally {
+    restoreLocalStorage(ceSnapshot);
+  }
 }
 
 function parseSnapshot(s: string): {

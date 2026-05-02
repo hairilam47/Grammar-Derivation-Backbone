@@ -42,6 +42,8 @@ import { publishRefusal } from "@/acw/acwRefusalChannel";
 import {
   getActiveLod,
   getCollapsedIds,
+  getLensLayerVisibility,
+  getLensLayers,
   isCollapsed,
   subscribeViewState,
   toggleCollapsed,
@@ -93,8 +95,11 @@ const CAMERA_FIT_LABEL = "Fit visible content";
 const CAMERA_RECENTRE_LABEL = "Recentre on selection";
 const CAMERA_ZOOM_LEVEL_LABEL = "Camera zoom level";
 const CAMERA_PAN_HINT_LABEL =
-  "Hold space, Alt, or the middle mouse button to pan. Hold Ctrl or Cmd while scrolling to pinch-zoom toward the cursor. Press F to recentre on the selection.";
+  "Hold space, Alt, or the middle mouse button to pan. Hold Ctrl or Cmd while scrolling to pinch-zoom toward the cursor. Press F to focus on the selection or recentre when nothing is selected.";
 const MINIMAP_LABEL = "Canvas minimap";
+// Canvas Enhancements — Focus mode floating bar labels.
+const FOCUS_BAR_LABEL = "Focused on";
+const FOCUS_SHOW_ALL_LABEL = "Show all";
 
 assertAllAcwPlaceholderLanguage([
   EMPTY_TITLE,
@@ -117,7 +122,16 @@ assertAllAcwPlaceholderLanguage([
   CAMERA_ZOOM_LEVEL_LABEL,
   CAMERA_PAN_HINT_LABEL,
   MINIMAP_LABEL,
+  FOCUS_BAR_LABEL,
+  FOCUS_SHOW_ALL_LABEL,
 ]);
+
+// Canvas Enhancements — Focus mode per-lens transient stack.
+// Module-level so the stack persists across re-renders without being
+// stored in React state (which would cause a re-render loop) and
+// without touching the persisted workspace document (it is purely a
+// runtime navigation aid). Keyed by lensId.
+const focusStackByLens = new Map<string, readonly (readonly string[])[]>();
 
 // Visual constants. Pure rendering geometry — no semantics.
 const NODE_W = 96;
@@ -361,6 +375,27 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
   const [viewTick, setViewTick] = useState(0);
   useEffect(() => subscribeViewState(() => setViewTick((t) => t + 1)), []);
 
+  // Canvas Enhancements — Focus mode tick. Increments whenever the
+  // per-lens focus stack changes so memos that derive from it
+  // recompute without storing the stack in React state.
+  const [focusTick, setFocusTick] = useState(0);
+
+  // Stable refs for values needed inside the once-registered
+  // keydown closure without adding listener churn. Updated every
+  // render so the closure always reads the latest value.
+  const selectionRef = useRef<readonly string[]>([]);
+  selectionRef.current = selection;
+  const connectModeRef = useRef<boolean>(false);
+  connectModeRef.current = connectMode;
+  const pendingSourceIdRef = useRef<string | null>(null);
+  pendingSourceIdRef.current = pendingSourceId;
+
+  // Clear focus stack when the active lens changes.
+  useEffect(() => {
+    focusStackByLens.delete(lensId);
+    setFocusTick((t) => t + 1);
+  }, [lensId]);
+
   // ---- Visibility filtering --------------------------------------
   // Only nodes whose direct parent is the focused container are
   // rendered as siblings. Children of any *collapsed* sibling are
@@ -382,16 +417,54 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
   // nodes carry no `lodRange` and always pass; this keeps every
   // existing lens (Track 3, authored 2D lenses) pixel-identical.
   const activeLod = getActiveLod(lensId);
+
+  // Canvas Enhancements — active layer ids for visibility filter.
+  // A node is visible if it carries no layerIds (unassigned = always
+  // visible) or if any of its layerIds map to a visible layer.
+  const activeLayerIds = useMemo<ReadonlySet<string> | undefined>(() => {
+    const layers = getLensLayers(lensId);
+    if (layers.length === 0) return undefined; // no layers defined → no filter
+    const vis = getLensLayerVisibility(lensId);
+    const hidden = layers.filter((l) => vis[l.id] === false).map((l) => l.id);
+    if (hidden.length === 0) return undefined; // all layers visible → no filter
+    // Build a set of IDs for layers that ARE visible.
+    const visibleIds = new Set(
+      layers.filter((l) => vis[l.id] !== false).map((l) => l.id),
+    );
+    return visibleIds;
+  }, [lensId, viewTick]);
+
+  // Canvas Enhancements — focus mode node filter.
+  // When the per-lens focus stack is non-empty the canvas only shows
+  // nodes whose id appears in the topmost stack frame. The stack is
+  // stored in the module-level `focusStackByLens` map; `focusTick`
+  // is the invalidation signal.
+  const focusedNodeIds = useMemo<ReadonlySet<string> | null>(() => {
+    void focusTick;
+    const stack = focusStackByLens.get(lensId) ?? [];
+    if (stack.length === 0) return null;
+    const top = stack[stack.length - 1];
+    return new Set(top);
+  }, [lensId, focusTick]);
+
+  // Apply focus filter: when in focus mode, restrict the node list
+  // so enumerateLensVisibility only sees the focused nodes.
+  const nodesForVisibility = useMemo<readonly AcwNode[]>(() => {
+    if (focusedNodeIds === null) return nodes;
+    return nodes.filter((n) => focusedNodeIds.has(n.id));
+  }, [nodes, focusedNodeIds]);
+
   const visibility = useMemo(
     () =>
       enumerateLensVisibility(
-        nodes,
+        nodesForVisibility,
         edges,
         focusedParentId,
         collapsedIds,
         activeLod,
+        activeLayerIds,
       ),
-    [nodes, edges, focusedParentId, collapsedIds, activeLod],
+    [nodesForVisibility, edges, focusedParentId, collapsedIds, activeLod, activeLayerIds],
   );
   const directSiblings = visibility.directSiblings;
 
@@ -756,7 +829,39 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
       }
       if ((e.key === "f" || e.key === "F") && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
-        recentreOnSelectionRef.current();
+        const sel = selectionRef.current;
+        if (sel.length > 0) {
+          // Push the current selection onto the per-lens focus stack
+          // so only those nodes are visible. The floating "Show all"
+          // bar lets the user clear the stack.
+          const prev = focusStackByLens.get(lensId) ?? [];
+          focusStackByLens.set(lensId, [...prev, sel]);
+          setFocusTick((t) => t + 1);
+        } else {
+          recentreOnSelectionRef.current();
+        }
+        return;
+      }
+      if (e.key === "Escape" && !e.ctrlKey && !e.metaKey) {
+        // Only pop the focus stack when neither L3 exit (handled by
+        // StudioCanvas) nor connect-mode cancel is in play. This
+        // ensures the chain: L3 exit → cancel connect → pop focus.
+        const stack = focusStackByLens.get(lensId) ?? [];
+        if (
+          stack.length > 0 &&
+          getActiveLod(lensId) !== 3 &&
+          !connectModeRef.current &&
+          pendingSourceIdRef.current === null
+        ) {
+          e.preventDefault();
+          const next = stack.slice(0, -1);
+          if (next.length === 0) {
+            focusStackByLens.delete(lensId);
+          } else {
+            focusStackByLens.set(lensId, next);
+          }
+          setFocusTick((t) => t + 1);
+        }
       }
     }
     function onKeyUp(e: KeyboardEvent) {
@@ -1070,9 +1175,61 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
         backgroundImage:
           "radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px)",
         backgroundSize: `${GRID}px ${GRID}px`,
+        backgroundPosition: `${view.x}px ${view.y}px`,
       }}
       className="rounded-md border border-border/40 bg-muted/10"
     >
+      {/* Canvas Enhancements — Focus mode floating bar.
+          Appears only when the per-lens focus stack is non-empty.
+          Positioned at the top-centre above the HUD so it is
+          discoverable without obscuring canvas content. */}
+      {focusedNodeIds !== null ? (
+        <div
+          data-testid="acw-canvas-focus-bar"
+          onMouseDown={(e) => e.stopPropagation()}
+          style={{
+            position: "absolute",
+            top: 8,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 20,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "4px 10px",
+            borderRadius: 6,
+            background: "var(--bg-surface, #1a1a2e)",
+            border: "1px solid var(--border, rgba(255,255,255,0.12))",
+            fontSize: 10,
+            color: "var(--text2, rgba(255,255,255,0.6))",
+            pointerEvents: "auto",
+          }}
+        >
+          <span>
+            {FOCUS_BAR_LABEL} {focusedNodeIds.size} node
+            {focusedNodeIds.size !== 1 ? "s" : ""}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              focusStackByLens.delete(lensId);
+              setFocusTick((t) => t + 1);
+            }}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              padding: "0 4px",
+              color: "inherit",
+              fontSize: 10,
+              textDecoration: "underline",
+            }}
+          >
+            {FOCUS_SHOW_ALL_LABEL}
+          </button>
+        </div>
+      ) : null}
+
       {/* HUD. We stop mousedown from bubbling so that clicking
           buttons (Reset, Group) or the selection counter does NOT
           start a marquee on the canvas background — which would

@@ -133,6 +133,24 @@ export interface AcwViewState {
   // stays one-line-per-slice. Optional and absent on every pre-
   // Phase-3 document; absence reads as `false` (overlay off).
   readonly showOrgOverlayByLens?: Readonly<Record<string, boolean>>;
+  // Canvas Enhancements — per-lens named layer definitions and
+  // visibility flags. Each lens gets an optional slice describing
+  // its user-defined layers; nodes opt in by listing layer ids in
+  // their `layerIds` field. Absence of this field (pre-enhancement
+  // documents) reads as "no layers defined". The schema version
+  // stays `acw-view-1.0` — the field is purely additive.
+  readonly layersByLens?: Readonly<Record<string, AcwLensLayerSlice>>;
+}
+
+// Canvas Enhancements — per-lens layer types.
+export interface AcwLayerDef {
+  readonly id: string;
+  readonly name: string;
+}
+
+export interface AcwLensLayerSlice {
+  readonly definitions: readonly AcwLayerDef[];
+  readonly visibility: Readonly<Record<string, boolean>>;
 }
 
 // EAStudio Phase 3 — top-bar tab values. Closed set; the read-
@@ -165,6 +183,8 @@ const ALLOWED_TOP = [
   "viewTabByLens",
   "activeLodByLens",
   "showOrgOverlayByLens",
+  // Canvas Enhancements — per-lens layer definitions and visibility.
+  "layersByLens",
 ] as const;
 
 function emptyView(): AcwViewState {
@@ -180,6 +200,7 @@ function emptyView(): AcwViewState {
     viewTabByLens: Object.freeze({}),
     activeLodByLens: Object.freeze({}),
     showOrgOverlayByLens: Object.freeze({}),
+    layersByLens: Object.freeze({}),
   });
 }
 
@@ -415,6 +436,69 @@ function assertValid(raw: unknown): asserts raw is AcwViewState {
       }
     }
   }
+  // Canvas Enhancements — layersByLens. Optional. When present it
+  // must be an object whose values each contain a `definitions`
+  // array of `{id, name}` pairs and a `visibility` boolean map.
+  if (r.layersByLens !== undefined) {
+    if (r.layersByLens === null || typeof r.layersByLens !== "object") {
+      throw new Error("ACW view-state layersByLens must be an object.");
+    }
+    const lm = r.layersByLens as Record<string, unknown>;
+    for (const [lensId, slice] of Object.entries(lm)) {
+      if (typeof lensId !== "string" || lensId.length === 0) {
+        throw new Error("ACW view-state lens id must be a non-empty string.");
+      }
+      if (slice === null || typeof slice !== "object") {
+        throw new Error("ACW view-state layersByLens entry must be an object.");
+      }
+      const s = slice as Record<string, unknown>;
+      if (!Array.isArray(s.definitions)) {
+        throw new Error(
+          "ACW view-state layersByLens.definitions must be an array.",
+        );
+      }
+      for (const def of s.definitions as unknown[]) {
+        if (def === null || typeof def !== "object") {
+          throw new Error(
+            "ACW view-state layer definition must be an object.",
+          );
+        }
+        const d = def as Record<string, unknown>;
+        if (typeof d.id !== "string" || d.id.length === 0) {
+          throw new Error(
+            "ACW view-state layer definition id must be a non-empty string.",
+          );
+        }
+        if (typeof d.name !== "string" || d.name.length === 0) {
+          throw new Error(
+            "ACW view-state layer definition name must be a non-empty string.",
+          );
+        }
+      }
+      if (
+        s.visibility === null ||
+        typeof s.visibility !== "object" ||
+        Array.isArray(s.visibility)
+      ) {
+        throw new Error(
+          "ACW view-state layersByLens.visibility must be an object.",
+        );
+      }
+      const v = s.visibility as Record<string, unknown>;
+      for (const [layerId, vis] of Object.entries(v)) {
+        if (typeof layerId !== "string" || layerId.length === 0) {
+          throw new Error(
+            "ACW view-state layer visibility key must be a non-empty string.",
+          );
+        }
+        if (typeof vis !== "boolean") {
+          throw new Error(
+            "ACW view-state layer visibility value must be a boolean.",
+          );
+        }
+      }
+    }
+  }
 }
 
 function isValid(raw: unknown): raw is AcwViewState {
@@ -456,6 +540,7 @@ function normalize(raw: AcwViewState): AcwViewState {
     viewTabByLens: raw.viewTabByLens ?? Object.freeze({}),
     activeLodByLens: raw.activeLodByLens ?? Object.freeze({}),
     showOrgOverlayByLens: raw.showOrgOverlayByLens ?? Object.freeze({}),
+    layersByLens: raw.layersByLens ?? Object.freeze({}),
   });
 }
 
@@ -791,6 +876,139 @@ export function setShowOrgOverlay(lensId: string, on: boolean): void {
     ...prev,
     schemaVersion: ACW_VIEW_SCHEMA_VERSION,
     showOrgOverlayByLens: Object.freeze(nextMap),
+  });
+  writeToStorage(next);
+  cache = next;
+  notify();
+}
+
+// Canvas Enhancements — per-lens layer management helpers.
+//
+// Layers are purely visual: they do not change the workspace
+// document or the grammar. Each lens has its own independent
+// layer list stored in `layersByLens[lensId]`. The helpers below
+// are the single mutation point for all layer operations so the
+// assertValid boundary is always crossed before persistence.
+
+export function getLensLayers(lensId: string): readonly AcwLayerDef[] {
+  const map = getViewState().layersByLens ?? {};
+  return map[lensId]?.definitions ?? Object.freeze([]);
+}
+
+export function getLensLayerVisibility(
+  lensId: string,
+): Readonly<Record<string, boolean>> {
+  const map = getViewState().layersByLens ?? {};
+  return map[lensId]?.visibility ?? Object.freeze({});
+}
+
+function freshLayerId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `layer-${crypto.randomUUID()}`;
+  }
+  return `layer-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function addLensLayer(lensId: string, name: string): void {
+  const prev = getViewState();
+  const prevLayers = prev.layersByLens ?? {};
+  const prevSlice: AcwLensLayerSlice = prevLayers[lensId] ?? {
+    definitions: Object.freeze([]),
+    visibility: Object.freeze({}),
+  };
+  const id = freshLayerId();
+  const nextDefs = Object.freeze([
+    ...prevSlice.definitions,
+    Object.freeze({ id, name }),
+  ]);
+  const nextVis = Object.freeze({ ...prevSlice.visibility, [id]: true });
+  const nextSlice: AcwLensLayerSlice = Object.freeze({
+    definitions: nextDefs,
+    visibility: nextVis,
+  });
+  const next: AcwViewState = Object.freeze({
+    ...prev,
+    schemaVersion: ACW_VIEW_SCHEMA_VERSION,
+    layersByLens: Object.freeze({ ...prevLayers, [lensId]: nextSlice }),
+  });
+  writeToStorage(next);
+  cache = next;
+  notify();
+}
+
+export function renameLensLayer(
+  lensId: string,
+  layerId: string,
+  name: string,
+): void {
+  const prev = getViewState();
+  const prevLayers = prev.layersByLens ?? {};
+  const prevSlice = prevLayers[lensId];
+  if (!prevSlice) return;
+  const nextDefs = Object.freeze(
+    prevSlice.definitions.map((d) =>
+      d.id === layerId ? Object.freeze({ id: d.id, name }) : d,
+    ),
+  );
+  const nextSlice: AcwLensLayerSlice = Object.freeze({
+    ...prevSlice,
+    definitions: nextDefs,
+  });
+  const next: AcwViewState = Object.freeze({
+    ...prev,
+    schemaVersion: ACW_VIEW_SCHEMA_VERSION,
+    layersByLens: Object.freeze({ ...prevLayers, [lensId]: nextSlice }),
+  });
+  writeToStorage(next);
+  cache = next;
+  notify();
+}
+
+export function deleteLensLayer(lensId: string, layerId: string): void {
+  const prev = getViewState();
+  const prevLayers = prev.layersByLens ?? {};
+  const prevSlice = prevLayers[lensId];
+  if (!prevSlice) return;
+  const nextDefs = Object.freeze(
+    prevSlice.definitions.filter((d) => d.id !== layerId),
+  );
+  const nextVis: Record<string, boolean> = { ...prevSlice.visibility };
+  delete nextVis[layerId];
+  const nextSlice: AcwLensLayerSlice = Object.freeze({
+    definitions: nextDefs,
+    visibility: Object.freeze(nextVis),
+  });
+  const next: AcwViewState = Object.freeze({
+    ...prev,
+    schemaVersion: ACW_VIEW_SCHEMA_VERSION,
+    layersByLens: Object.freeze({ ...prevLayers, [lensId]: nextSlice }),
+  });
+  writeToStorage(next);
+  cache = next;
+  notify();
+}
+
+export function toggleLensLayerVisibility(
+  lensId: string,
+  layerId: string,
+): void {
+  const prev = getViewState();
+  const prevLayers = prev.layersByLens ?? {};
+  const prevSlice = prevLayers[lensId];
+  if (!prevSlice) return;
+  const current = prevSlice.visibility[layerId] !== false;
+  const nextVis = Object.freeze({
+    ...prevSlice.visibility,
+    [layerId]: !current,
+  });
+  const nextSlice: AcwLensLayerSlice = Object.freeze({
+    ...prevSlice,
+    visibility: nextVis,
+  });
+  const next: AcwViewState = Object.freeze({
+    ...prev,
+    schemaVersion: ACW_VIEW_SCHEMA_VERSION,
+    layersByLens: Object.freeze({ ...prevLayers, [lensId]: nextSlice }),
   });
   writeToStorage(next);
   cache = next;
