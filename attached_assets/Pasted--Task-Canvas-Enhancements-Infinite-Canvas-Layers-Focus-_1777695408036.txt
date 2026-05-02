@@ -1,0 +1,146 @@
+## Task: Canvas Enhancements – Infinite Canvas, Layers, Focus Mode, and Standalone Tab
+
+You are working on `Grammar-Derivation-Backbone`. EAStudio (`/workspace/studio`) and the five ACW lenses already render architecture diagrams on a full‑page canvas with zoom, pan, and a minimap (Task #157). However, very large enterprise blueprints still feel cramped, there is no way to organisationally layer parts of the diagram, and the editing experience is embedded inside the app shell.
+
+This task adds four capabilities — all UI‑layer, with one additive optional field on `AcwNode` (`layerIds`). No new stores; no schema version bump.
+
+---
+
+### 1. Infinite Canvas
+
+**Goal:** Remove pan boundaries so the canvas can scroll infinitely. The grid repeats seamlessly, and the minimap adapts.
+
+**Steps:**
+- In `InteractiveCanvas2D.tsx`, remove any clamp on the viewport translation. Allow `translateX` and `translateY` to reach any value (positive or negative).
+- Replace the fixed‑size grid with a CSS `background‑repeat: repeat` pattern that tiles across the entire viewport, regardless of pan position.
+- Update the minimap (from Task #157): instead of drawing a fixed‑size world, compute the bounding box of all nodes (plus 200px padding), redraw the minimap when nodes move, and use that as the minimap's world extent.
+- Ensure cursor‑based zoom (zoom toward the mouse pointer) still works correctly with unbounded coordinates.
+
+---
+
+### 2. Layers
+
+**Goal:** Allow architects to define named layers (e.g., “Current State”, “Future State”, “Security View”) and assign nodes to one or more layers. Toggling a layer shows/hides its nodes and edges.
+
+**Data model:**
+- Add an optional field `layerIds?: string[]` to `AcwNode` (in `acwGrammar.ts`). Widen `acwStore`'s `ALLOWED_NODE` and read‑validator to accept it. Schema stays `acw‑1.0`.
+- Layer definitions and visibility are stored in the existing `acwViewState` (localStorage key `acw.workspace.view.v1`, schema `acw‑view‑1.0`). Add a new per‑lens slice:
+  ```ts
+  layersByLens: Record<string, {
+    definitions: { id: string; name: string }[];
+    visibility: Record<string, boolean>;
+  }>;
+where lensId is the lens path (e.g., "studio", "context", etc.). The slice default is an empty object.
+
+UI:
+
+Add a “Layers” button in the EAStudio toolbar (and in each classic lens toolbar). Clicking it opens a collapsible Layers panel (right‑side or floating). The panel lists all layers for the current lens. Each row shows the layer name, an eye‑toggle icon for visibility, and a delete icon for the layer. A “+ New Layer” button at the bottom prompts for a name and adds a layer.
+
+Nodes can be assigned to layers through the existing NodePropertiesPanel: add a “Layers” multi‑select (checkboxes) populated from the current lens's layer definitions. Selecting/deselecting updates the node's layerIds via updateNodeProperties (debounced).
+
+Alternatively, right‑click on one or more selected nodes and use a context menu “Assign to layers…” that opens a quick multi‑select popup.
+
+Filtering:
+
+In enumerateLensVisibility (or a wrapper), accept the current set of active layer IDs. Exclude nodes whose layerIds is non‑empty AND has no overlap with the active layer set. Nodes with no layerIds are always visible. Edges are visible only when both endpoints are visible under the layer filter.
+
+3. Focus Mode
+Goal: Allow isolating one or more selected nodes in a dedicated view, hiding the rest. Exiting restores the full view.
+
+Steps:
+
+Add a keyboard shortcut F: when one or more nodes are selected, push the current selection onto a focusStack (component state, not persisted), hide all non‑selected nodes/edges, and zoom the canvas to fit the selected nodes.
+
+Display a floating bar at the top: “Focused on [node name] — [Show all]”. Clicking “Show all” or pressing Escape pops the stack and restores the previous focus level. If the stack is empty, return to the full unfiltered view.
+
+Focus mode is lens‑scoped and transient; switching lenses or refreshing the page clears the stack.
+
+Ensure all canvas interactions (drag, connect, palette drop) still work while focused.
+
+4. Standalone Tab Mode (Editor‑Style)
+Goal: Let the user open EAStudio in its own browser tab, devoid of the Replit app shell (global sidebar, app header), so the entire window is the diagram editor — matching the Three.js Editor experience.
+
+Steps:
+
+In StudioCanvas.tsx (or the parent that renders the workspace), read a standalone query parameter: new URLSearchParams(location.search).get('standalone') === '1'.
+
+When standalone is true, pass hideShellChrome={true} to the existing WorkspaceShell (this prop already suppresses the global sidebar and app header).
+
+Add an “Open in New Tab” icon button to StudioTopBar (use ExternalLink icon from lucide‑react). On click, call window.open('/workspace/studio?standalone=1', '_blank').
+
+In standalone mode, the canvas, palette, domain tabs, properties panel, and status bar all remain functional. Only the outer app chrome is hidden.
+
+Set document.title to the current workspace name (or “EAStudio”) when in standalone mode, so the browser tab has a meaningful title.
+
+5. Scope & Constraints
+No acw‑1.0 schema version bump. The layerIds field is additive and optional; nodes without it are unaffected.
+
+No new stores. Layers use the existing acwViewState; focus mode uses component state.
+
+All existing behaviours preserved: drag‑and‑drop, connect mode, properties panel, LoS switching, promotion from CTAD.
+
+Performance: For the infinite canvas, rely on CSS transforms for pan/zoom (GPU‑accelerated). The minimap should render only bounding boxes of nodes, not full shapes.
+
+Vocabulary guard: All new UI labels (“Layers”, “Add layer”, “Focus mode”, “Show all”, “Open in new tab”) must pass assertAllAcwPlaceholderLanguage.
+
+ACW isolation invariant continues to pass — new features import only from acw/* and components/acw/*.
+
+6. Implementation Order
+Infinite canvas — simplest and foundational.
+
+Layers — adds the layerIds field, layers panel, and visibility filter.
+
+Focus mode — builds on filtering infrastructure.
+
+Standalone tab — one button and one prop.
+
+7. Acceptance Criteria
+The canvas pans without bounds; the grid repeats seamlessly.
+
+The minimap reflects the actual node bounds.
+
+Architects can create, rename, delete layers per lens.
+
+Nodes can be assigned to layers; toggling visibility works correctly.
+
+Focusing on a node hides all others and zooms to fit; Escape restores.
+
+Clicking “Open in New Tab” opens EAStudio in a new tab with no app shell.
+
+All existing invariants pass; new invariant probes cover the layerIds field shape.
+
+The studio canvas and the five lenses all benefit from these four enhancements.
+
+8. Relevant Files
+components/acw/InteractiveCanvas2D.tsx
+
+components/acw/LensCanvas.tsx
+
+components/acw/studio/StudioTopBar.tsx
+
+components/acw/studio/StudioCanvas.tsx
+
+components/acw/studio/NodePropertiesPanel.tsx
+
+components/acw/studio/StatusBar.tsx
+
+components/acw/palette/PalettePanel.tsx
+
+components/acw/palette/DomainTabBar.tsx
+
+acw/acwGrammar.ts
+
+acw/acwStore.ts
+
+acw/acwViewState.ts
+
+acw/acwLensStructure.ts
+
+acw/acwGrammarInvariants.test-shape.ts
+
+acw/acwGrammarV2Invariants.test-shape.ts
+
+acw/acwIsolationInvariants.test-shape.ts
+
+pages/acw/WorkspaceShell.tsx
+
