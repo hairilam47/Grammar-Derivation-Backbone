@@ -51,6 +51,7 @@ import {
   createNode,
   createEdge,
   deleteEdge,
+  getWorkspace,
   renameNode,
   updateNodeBinding,
   updateNodeParent,
@@ -1348,18 +1349,29 @@ try {
     }
 
     // Probe 11: enumerateLensVisibility layer-filter semantics.
-    // Pure function — no store mutation. Uses inline objects cast to
-    // the minimal shape that enumerateLensVisibility reads.
+    // Uses createNode + getWorkspace so every node object is a
+    // properly-typed AcwNode — no `as any` casts required.
+    // The ceSnapshot/restoreLocalStorage finaliser undoes the
+    // node creations at the end of this block.
     {
       // A node with one visible + one hidden layer must pass.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const nLayered = { id: "p11-1", parentId: null, type: "system", label: "L", x: 0, y: 0, layerIds: ["lv", "lh"] } as any;
+      const r1 = createNode({ type: "System", parentId: null, label: "P11-L", x: 0, y: 0 });
       // A node with no layerIds must always pass (unassigned contract).
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const nOpen = { id: "p11-2", parentId: null, type: "system", label: "O", x: 0, y: 0 } as any;
+      const r2 = createNode({ type: "System", parentId: null, label: "P11-O", x: 0, y: 0 });
       // A node whose only layer is hidden must be filtered out.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const nHidden = { id: "p11-3", parentId: null, type: "system", label: "H", x: 0, y: 0, layerIds: ["lh"] } as any;
+      const r3 = createNode({ type: "System", parentId: null, label: "P11-H", x: 0, y: 0 });
+      if (!r1.ok || !r2.ok || !r3.ok) {
+        throw new Error(`${PREFIX} CE: createNode failed during probe 11 setup.`);
+      }
+      updateNodeProperties(r1.id, { layerIds: ["lv", "lh"] });
+      updateNodeProperties(r3.id, { layerIds: ["lh"] });
+      const wsNodes = getWorkspace().structureGraph.nodes;
+      const nLayered = wsNodes.find((n) => n.id === r1.id);
+      const nOpen    = wsNodes.find((n) => n.id === r2.id);
+      const nHidden  = wsNodes.find((n) => n.id === r3.id);
+      if (!nLayered || !nOpen || !nHidden) {
+        throw new Error(`${PREFIX} CE: probe 11 nodes missing from workspace after createNode.`);
+      }
       const activeSet = new Set(["lv"]);
       const vis11 = enumerateLensVisibility(
         [nLayered, nOpen, nHidden],
@@ -1370,17 +1382,17 @@ try {
         activeSet,
       );
       const ids = new Set(vis11.directSiblings.map((n) => n.id));
-      if (!ids.has("p11-1")) {
+      if (!ids.has(r1.id)) {
         throw new Error(
           `${PREFIX} CE: enumerateLensVisibility must pass node whose layerIds intersects activeLayerIds.`,
         );
       }
-      if (!ids.has("p11-2")) {
+      if (!ids.has(r2.id)) {
         throw new Error(
           `${PREFIX} CE: enumerateLensVisibility must pass node with no layerIds regardless of layer filter.`,
         );
       }
-      if (ids.has("p11-3")) {
+      if (ids.has(r3.id)) {
         throw new Error(
           `${PREFIX} CE: enumerateLensVisibility must filter out node whose all layers are hidden.`,
         );

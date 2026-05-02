@@ -19,6 +19,7 @@ import { WorkspaceShell } from "../WorkspaceShell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LensCanvas } from "@/components/acw/LensCanvas";
+import { LayersPanel } from "@/components/acw/studio/LayersPanel";
 import { LiveStructurePanel } from "@/components/acw/LiveStructurePanel";
 import { AuthoringPanel } from "@/components/acw/AuthoringPanel";
 import { WorkspaceLensFloatingOverlay } from "@/components/acw/WorkspaceLensFloatingOverlay";
@@ -78,6 +79,7 @@ export default function ContextDomain() {
   useViewPrefsDoc();
   const isFullscreen = getLensPrefs(LENS_PATH).isFullscreen;
   const [depthPath, setDepthPath] = useState<readonly string[]>([]);
+  const [layersPanelOpen, setLayersPanelOpen] = useState(false);
   const workspace = useAcwWorkspace();
 
   const handleDrillDown = useCallback((nodeId: string) => {
@@ -171,7 +173,10 @@ export default function ContextDomain() {
             height="100%"
             testId="acw-context-canvas"
             onDrillDown={handleDrillDown}
+            layersPanelOpen={layersPanelOpen}
+            onLayersToggle={() => setLayersPanelOpen((v) => !v)}
           />
+          {layersPanelOpen ? <LayersPanel lensId={LENS_PATH} /> : null}
           <WorkspaceLensFloatingOverlay
             testIdPrefix="acw-context-overlay"
             lensName={LENS_TITLE}
@@ -275,7 +280,10 @@ export default function ContextDomain() {
         height={460}
         testId="acw-context-canvas"
         onDrillDown={handleDrillDown}
+        layersPanelOpen={layersPanelOpen}
+        onLayersToggle={() => setLayersPanelOpen((v) => !v)}
       />
+      {layersPanelOpen ? <LayersPanel lensId={LENS_PATH} /> : null}
 
       <LiveStructurePanel
         testIdPrefix="acw-context-structure"

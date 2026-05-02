@@ -999,6 +999,9 @@ export function DomainGrid({ lensId }: DomainGridProps) {
                 activeLod={activeLod}
                 lensId={lensId}
                 onClose={() => setCtxMenu(null)}
+                selectedNodeIds={
+                  selectedNodeId !== null ? [selectedNodeId] : undefined
+                }
               />
             );
           })()

@@ -27,7 +27,7 @@ import { useMemo } from "react";
 import { ArrowLeftRight, Layers } from "lucide-react";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 import type { AcwNode } from "@/acw/acwStore";
-import { updateNodeBinding, updateNodeProperties } from "@/acw/acwStore";
+import { getWorkspace, updateNodeBinding, updateNodeProperties } from "@/acw/acwStore";
 import { resolveBoundOption, resolveBoundOptions } from "@/acw/semantic/techNodeBinding";
 import { publishRefusal } from "@/acw/acwRefusalChannel";
 import {
@@ -71,10 +71,14 @@ export interface NodeContextMenuProps {
   // checkbox. Omit (or leave undefined) on call sites that do
   // not know the active lensId (e.g. the AuthoringPanel popover).
   readonly lensId?: string;
+  // Canvas Enhancements — when provided, layer-assignment toggles are
+  // applied to every node in this set rather than only node.id.
+  // Falls back to [node.id] when absent or empty.
+  readonly selectedNodeIds?: readonly string[];
 }
 
 export function NodeContextMenu(props: NodeContextMenuProps) {
-  const { node, x, y, activeLod, onClose, lensId } = props;
+  const { node, x, y, activeLod, onClose, lensId, selectedNodeIds } = props;
   // Canvas Enhancements — layer list for the assignment section.
   const layers = useMemo(
     () => (lensId !== undefined ? getLensLayers(lensId) : Object.freeze([])),
@@ -202,13 +206,27 @@ export function NodeContextMenu(props: NodeContextMenuProps) {
           <ul className="es-context-menu-list">
             {layers.map((layer) => {
               const checked = node.layerIds?.includes(layer.id) ?? false;
+              // Apply the toggle to every node in selectedNodeIds (or fall
+              // back to just node.id when the selection is empty/absent).
+              const targetIds =
+                selectedNodeIds && selectedNodeIds.length > 0
+                  ? selectedNodeIds
+                  : [node.id];
               const toggle = () => {
-                const prev = node.layerIds ?? [];
-                const next = checked
-                  ? prev.filter((id) => id !== layer.id)
-                  : [...prev, layer.id];
-                const r = updateNodeProperties(node.id, { layerIds: next });
-                if (!r.ok) publishRefusal(r.reason);
+                // `checked` (derived from node.layerIds) drives the direction
+                // for all targets. Each target's current layerIds are read from
+                // the live workspace so the toggle is additive/subtractive
+                // relative to that node's own state.
+                const wsNodes = getWorkspace().structureGraph.nodes;
+                for (const nid of targetIds) {
+                  const targetNode = wsNodes.find((n) => n.id === nid);
+                  const prevIds = targetNode?.layerIds ?? [];
+                  const nextIds = checked
+                    ? prevIds.filter((id) => id !== layer.id)
+                    : [...prevIds, layer.id];
+                  const r = updateNodeProperties(nid, { layerIds: nextIds });
+                  if (!r.ok) publishRefusal(r.reason);
+                }
               };
               return (
                 <li key={layer.id}>

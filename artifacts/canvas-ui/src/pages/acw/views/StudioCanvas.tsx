@@ -139,7 +139,7 @@ export default function StudioCanvas() {
       // hydrates, or when lensId doesn't map to a known WorkItem).
       const scope = currentScope.get();
       const wi = scope.workItemId !== null ? getWorkItem(scope.workItemId) : null;
-      document.title = wi?.title ?? "EA Studio";
+      document.title = wi?.title ?? "EAStudio";
     }
   }, [standalone]);
 
