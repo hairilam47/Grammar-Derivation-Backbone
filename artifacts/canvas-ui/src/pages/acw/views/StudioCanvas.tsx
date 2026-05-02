@@ -65,6 +65,8 @@ import {
 import { subscribeRefusals } from "@/acw/acwRefusalChannel";
 import { getWorkspace, subscribe as subscribeAcwStore } from "@/acw/acwStore";
 import { setActiveLod } from "@/acw/acwViewState";
+import { getWorkItem } from "@/governance/workItemStore";
+import { currentScope } from "@/governance/storageKeyUtils";
 
 const REFUSAL_PREFIX = "Refused:";
 const DISMISS_LABEL = "Dismiss";
@@ -130,7 +132,14 @@ export default function StudioCanvas() {
     new URLSearchParams(window.location.search).get("standalone") === "1";
   useEffect(() => {
     if (standalone) {
-      document.title = "EA Studio";
+      // Canvas Enhancements — standalone tab: use the workspace name
+      // (WorkItem.title) as the page title so each tab can be identified
+      // in the browser tab bar. Falls back to "EA Studio" when the work
+      // item cannot be resolved (e.g. on first load before the store
+      // hydrates, or when lensId doesn't map to a known WorkItem).
+      const scope = currentScope.get();
+      const wi = scope.workItemId !== null ? getWorkItem(scope.workItemId) : null;
+      document.title = wi?.title ?? "EA Studio";
     }
   }, [standalone]);
 

@@ -24,27 +24,31 @@
 // an empty list because the binding is stale). The empty-state copy
 // is intentionally neutral — no judgment, no instruction.
 import { useMemo } from "react";
-import { ArrowLeftRight } from "lucide-react";
+import { ArrowLeftRight, Layers } from "lucide-react";
 import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 import type { AcwNode } from "@/acw/acwStore";
-import { updateNodeBinding } from "@/acw/acwStore";
+import { updateNodeBinding, updateNodeProperties } from "@/acw/acwStore";
 import { resolveBoundOption, resolveBoundOptions } from "@/acw/semantic/techNodeBinding";
 import { publishRefusal } from "@/acw/acwRefusalChannel";
 import {
   invalidateL3Memo,
   runL3GeneratorForPersistedArchitectures,
 } from "@/acw/l3/l3Generator";
+import { getLensLayers } from "@/acw/acwViewState";
 
 const MENU_TITLE = "Swap technology";
 const NO_OPTIONS = "No other options available.";
 const CURRENT_SUFFIX = "current";
 const CANCEL_LABEL = "Cancel";
+// Canvas Enhancements — layer assignment section.
+const ASSIGN_LAYERS_TITLE = "Assign to layers";
 
 assertAllAcwPlaceholderLanguage([
   MENU_TITLE,
   NO_OPTIONS,
   CURRENT_SUFFIX,
   CANCEL_LABEL,
+  ASSIGN_LAYERS_TITLE,
 ]);
 
 export interface NodeContextMenuProps {
@@ -62,10 +66,20 @@ export interface NodeContextMenuProps {
   // reflects the swap immediately.
   readonly activeLod: 1 | 2 | 3;
   readonly onClose: () => void;
+  // Canvas Enhancements — when supplied the menu gains a layer-
+  // assignment section listing every layer on the lens as a
+  // checkbox. Omit (or leave undefined) on call sites that do
+  // not know the active lensId (e.g. the AuthoringPanel popover).
+  readonly lensId?: string;
 }
 
 export function NodeContextMenu(props: NodeContextMenuProps) {
-  const { node, x, y, activeLod, onClose } = props;
+  const { node, x, y, activeLod, onClose, lensId } = props;
+  // Canvas Enhancements — layer list for the assignment section.
+  const layers = useMemo(
+    () => (lensId !== undefined ? getLensLayers(lensId) : Object.freeze([])),
+    [lensId],
+  );
   // Phase 3 — surface ONLY the alternatives. The current selection
   // is intentionally NOT rendered as a disabled item: when the
   // bound parameter has exactly one option (the one already in
@@ -175,6 +189,44 @@ export function NodeContextMenu(props: NodeContextMenuProps) {
           ))
         )}
       </ul>
+      {/* Canvas Enhancements — layer assignment section. Visible only
+          when the host provides a lensId and the lens has at least one
+          layer defined. Each checkbox toggles membership via the
+          validator-gated updateNodeProperties API. */}
+      {layers.length > 0 ? (
+        <section className="es-context-menu-section">
+          <header className="es-context-menu-subhead">
+            <Layers className="w-3 h-3" aria-hidden="true" />
+            <span>{ASSIGN_LAYERS_TITLE}</span>
+          </header>
+          <ul className="es-context-menu-list">
+            {layers.map((layer) => {
+              const checked = node.layerIds?.includes(layer.id) ?? false;
+              const toggle = () => {
+                const prev = node.layerIds ?? [];
+                const next = checked
+                  ? prev.filter((id) => id !== layer.id)
+                  : [...prev, layer.id];
+                const r = updateNodeProperties(node.id, { layerIds: next });
+                if (!r.ok) publishRefusal(r.reason);
+              };
+              return (
+                <li key={layer.id}>
+                  <label className="es-context-menu-layer-item">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={toggle}
+                      className="accent-primary"
+                    />
+                    <span>{layer.name}</span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
       <footer className="es-context-menu-foot">
         <button
           type="button"

@@ -1015,6 +1015,50 @@ export function toggleLensLayerVisibility(
   notify();
 }
 
+// Canvas Enhancements — transient (non-persisted) per-lens focus stack.
+//
+// Each lens maintains a stack of frozen selection frames. Pushing a frame
+// restricts the Studio canvas to only those node ids; popping restores the
+// previous frame. The stack is module-level and ephemeral — it is
+// intentionally NOT written to view-state or localStorage because focus mode
+// is a short-lived navigation aid, not a persistent configuration choice.
+// Both DomainGrid and InteractiveCanvas2D read and write through these
+// helpers so the same logical stack is shared across both rendering paths
+// for a given lensId.
+const _focusStackByLens = new Map<string, readonly (readonly string[])[]>();
+
+export function getFocusStack(
+  lensId: string,
+): readonly (readonly string[])[] {
+  return _focusStackByLens.get(lensId) ?? Object.freeze([]);
+}
+
+export function pushFocusFrame(
+  lensId: string,
+  nodeIds: readonly string[],
+): void {
+  const prev = _focusStackByLens.get(lensId) ?? [];
+  _focusStackByLens.set(
+    lensId,
+    Object.freeze([...prev, Object.freeze([...nodeIds])]),
+  );
+}
+
+export function popFocusFrame(lensId: string): void {
+  const prev = _focusStackByLens.get(lensId) ?? [];
+  if (prev.length === 0) return;
+  const next = prev.slice(0, -1);
+  if (next.length === 0) {
+    _focusStackByLens.delete(lensId);
+  } else {
+    _focusStackByLens.set(lensId, Object.freeze(next));
+  }
+}
+
+export function clearFocusStack(lensId: string): void {
+  _focusStackByLens.delete(lensId);
+}
+
 // Test / maintenance affordance: clear all view-state.
 export function clearViewState(): void {
   const next = emptyView();
@@ -1030,6 +1074,10 @@ export const __acwViewStateInternals = Object.freeze({
   emptyView,
   ALLOWED_VIEW_MODES,
   DEFAULT_VIEW_MODE,
+  // Focus stack exposed for invariant probes only — do not use in
+  // production code; call getFocusStack / pushFocusFrame /
+  // popFocusFrame / clearFocusStack instead.
+  _focusStackByLens,
   reloadFromStorageForTest(): void {
     __resetScopedStorageForTest();
     cache = null;

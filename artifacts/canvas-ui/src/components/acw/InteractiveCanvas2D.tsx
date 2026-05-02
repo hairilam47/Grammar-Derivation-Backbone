@@ -40,11 +40,15 @@ import type { AcwNode, AcwEdge } from "@/acw/acwStore";
 import { updateNodePosition, updateNodeParent, createNode } from "@/acw/acwStore";
 import { publishRefusal } from "@/acw/acwRefusalChannel";
 import {
+  clearFocusStack,
   getActiveLod,
   getCollapsedIds,
+  getFocusStack,
   getLensLayerVisibility,
   getLensLayers,
   isCollapsed,
+  popFocusFrame,
+  pushFocusFrame,
   subscribeViewState,
   toggleCollapsed,
 } from "@/acw/acwViewState";
@@ -125,13 +129,6 @@ assertAllAcwPlaceholderLanguage([
   FOCUS_BAR_LABEL,
   FOCUS_SHOW_ALL_LABEL,
 ]);
-
-// Canvas Enhancements — Focus mode per-lens transient stack.
-// Module-level so the stack persists across re-renders without being
-// stored in React state (which would cause a re-render loop) and
-// without touching the persisted workspace document (it is purely a
-// runtime navigation aid). Keyed by lensId.
-const focusStackByLens = new Map<string, readonly (readonly string[])[]>();
 
 // Visual constants. Pure rendering geometry — no semantics.
 const NODE_W = 96;
@@ -392,7 +389,7 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
 
   // Clear focus stack when the active lens changes.
   useEffect(() => {
-    focusStackByLens.delete(lensId);
+    clearFocusStack(lensId);
     setFocusTick((t) => t + 1);
   }, [lensId]);
 
@@ -437,11 +434,11 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
   // Canvas Enhancements — focus mode node filter.
   // When the per-lens focus stack is non-empty the canvas only shows
   // nodes whose id appears in the topmost stack frame. The stack is
-  // stored in the module-level `focusStackByLens` map; `focusTick`
-  // is the invalidation signal.
+  // stored in the shared module-level acwViewState focus helpers;
+  // `focusTick` is the invalidation signal.
   const focusedNodeIds = useMemo<ReadonlySet<string> | null>(() => {
     void focusTick;
-    const stack = focusStackByLens.get(lensId) ?? [];
+    const stack = getFocusStack(lensId);
     if (stack.length === 0) return null;
     const top = stack[stack.length - 1];
     return new Set(top);
@@ -809,6 +806,14 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
   // exactly once on mount.
   const recentreOnSelectionRef = useRef(recentreOnSelection);
   recentreOnSelectionRef.current = recentreOnSelection;
+  // Canvas Enhancements — fit-to-selection for focus mode F key. When the
+  // user presses F with a non-empty selection we push a focus frame AND
+  // immediately zoom-to-fit the selected nodes so they fill the viewport.
+  const fitSelectionRef = useRef<() => void>(() => undefined);
+  fitSelectionRef.current = () => {
+    const sb = selectionBounds();
+    if (sb !== null) fitView(sb);
+  };
   useEffect(() => {
     function isTypingTarget(t: EventTarget | null): boolean {
       if (!(t instanceof HTMLElement)) return false;
@@ -831,12 +836,13 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
         e.preventDefault();
         const sel = selectionRef.current;
         if (sel.length > 0) {
-          // Push the current selection onto the per-lens focus stack
-          // so only those nodes are visible. The floating "Show all"
-          // bar lets the user clear the stack.
-          const prev = focusStackByLens.get(lensId) ?? [];
-          focusStackByLens.set(lensId, [...prev, sel]);
+          // Push the current selection onto the per-lens focus stack so only
+          // those nodes are visible. Also zoom-to-fit the focused selection
+          // immediately so it fills the viewport. The floating "Show all" bar
+          // lets the user clear the stack.
+          pushFocusFrame(lensId, sel);
           setFocusTick((t) => t + 1);
+          fitSelectionRef.current();
         } else {
           recentreOnSelectionRef.current();
         }
@@ -846,7 +852,7 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
         // Only pop the focus stack when neither L3 exit (handled by
         // StudioCanvas) nor connect-mode cancel is in play. This
         // ensures the chain: L3 exit → cancel connect → pop focus.
-        const stack = focusStackByLens.get(lensId) ?? [];
+        const stack = getFocusStack(lensId);
         if (
           stack.length > 0 &&
           getActiveLod(lensId) !== 3 &&
@@ -854,12 +860,7 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
           pendingSourceIdRef.current === null
         ) {
           e.preventDefault();
-          const next = stack.slice(0, -1);
-          if (next.length === 0) {
-            focusStackByLens.delete(lensId);
-          } else {
-            focusStackByLens.set(lensId, next);
-          }
+          popFocusFrame(lensId);
           setFocusTick((t) => t + 1);
         }
       }
@@ -1212,7 +1213,7 @@ export function InteractiveCanvas2D(props: InteractiveCanvas2DProps) {
           <button
             type="button"
             onClick={() => {
-              focusStackByLens.delete(lensId);
+              clearFocusStack(lensId);
               setFocusTick((t) => t + 1);
             }}
             style={{

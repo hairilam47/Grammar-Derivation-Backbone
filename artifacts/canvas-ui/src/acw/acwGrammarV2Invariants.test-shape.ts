@@ -31,15 +31,20 @@ import {
   ACW_VIEW_SCHEMA_VERSION,
   __acwViewStateInternals,
   addLensLayer,
+  clearFocusStack,
   clearViewState,
   deleteLensLayer,
+  getFocusStack,
   getLensLayerVisibility,
   getLensLayers,
   isCollapsed,
+  popFocusFrame,
+  pushFocusFrame,
   renameLensLayer,
   toggleCollapsed,
   toggleLensLayerVisibility,
 } from "./acwViewState";
+import { enumerateLensVisibility } from "./acwLensStructure";
 import {
   __acwStoreInternals,
   ACW_SCHEMA_VERSION,
@@ -1308,6 +1313,78 @@ try {
     const afterDelete = getLensLayers(testLensId);
     if (afterDelete.length !== 0) {
       throw new Error(`${PREFIX} CE: deleteLensLayer left ${afterDelete.length} layer(s).`);
+    }
+
+    // Probe 10: focus-stack push / pop / clear.
+    // The stack is module-level (transient), not stored in localStorage.
+    // The snapshot/restore around this block is harmless.
+    {
+      const p10 = "__probe-focus-10__";
+      clearFocusStack(p10);
+      if (getFocusStack(p10).length !== 0) {
+        throw new Error(`${PREFIX} CE: focus stack for an unseen lens must start empty.`);
+      }
+      pushFocusFrame(p10, ["na", "nb"]);
+      const s1 = getFocusStack(p10);
+      if (s1.length !== 1) {
+        throw new Error(`${PREFIX} CE: focus stack depth after one push must be 1, got ${s1.length}.`);
+      }
+      if (s1[0].length !== 2 || !s1[0].includes("na")) {
+        throw new Error(`${PREFIX} CE: top frame must contain the pushed node ids.`);
+      }
+      pushFocusFrame(p10, ["nc"]);
+      if (getFocusStack(p10).length !== 2) {
+        throw new Error(`${PREFIX} CE: focus stack depth after second push must be 2.`);
+      }
+      popFocusFrame(p10);
+      const s3 = getFocusStack(p10);
+      if (s3.length !== 1 || !s3[0].includes("na")) {
+        throw new Error(`${PREFIX} CE: pop must revert to the first frame.`);
+      }
+      clearFocusStack(p10);
+      if (getFocusStack(p10).length !== 0) {
+        throw new Error(`${PREFIX} CE: clearFocusStack must empty the stack.`);
+      }
+    }
+
+    // Probe 11: enumerateLensVisibility layer-filter semantics.
+    // Pure function — no store mutation. Uses inline objects cast to
+    // the minimal shape that enumerateLensVisibility reads.
+    {
+      // A node with one visible + one hidden layer must pass.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const nLayered = { id: "p11-1", parentId: null, type: "system", label: "L", x: 0, y: 0, layerIds: ["lv", "lh"] } as any;
+      // A node with no layerIds must always pass (unassigned contract).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const nOpen = { id: "p11-2", parentId: null, type: "system", label: "O", x: 0, y: 0 } as any;
+      // A node whose only layer is hidden must be filtered out.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const nHidden = { id: "p11-3", parentId: null, type: "system", label: "H", x: 0, y: 0, layerIds: ["lh"] } as any;
+      const activeSet = new Set(["lv"]);
+      const vis11 = enumerateLensVisibility(
+        [nLayered, nOpen, nHidden],
+        [],
+        null,
+        new Set<string>(),
+        undefined,
+        activeSet,
+      );
+      const ids = new Set(vis11.directSiblings.map((n) => n.id));
+      if (!ids.has("p11-1")) {
+        throw new Error(
+          `${PREFIX} CE: enumerateLensVisibility must pass node whose layerIds intersects activeLayerIds.`,
+        );
+      }
+      if (!ids.has("p11-2")) {
+        throw new Error(
+          `${PREFIX} CE: enumerateLensVisibility must pass node with no layerIds regardless of layer filter.`,
+        );
+      }
+      if (ids.has("p11-3")) {
+        throw new Error(
+          `${PREFIX} CE: enumerateLensVisibility must filter out node whose all layers are hidden.`,
+        );
+      }
     }
   } finally {
     restoreLocalStorage(ceSnapshot);

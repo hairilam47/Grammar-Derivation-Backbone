@@ -82,9 +82,15 @@ import {
 } from "@/acw/acwStore";
 import { publishRefusal } from "@/acw/acwRefusalChannel";
 import {
+  clearFocusStack,
   getConnectMode,
   getConnectPendingSource,
+  getFocusStack,
+  getLensLayerVisibility,
+  getLensLayers,
   getSelectedNodeId,
+  popFocusFrame,
+  pushFocusFrame,
   setConnectPendingSource,
   setSelectedNodeId,
   getSelectedEdgeId,
@@ -122,6 +128,10 @@ const CAMERA_ZOOM_LEVEL_LABEL = "Camera zoom level";
 const CAMERA_PAN_HINT_LABEL =
   "Hold space, Alt, or the middle mouse button to pan. Hold Ctrl or Cmd while scrolling to pinch-zoom toward the cursor. Press F to recentre on the selection.";
 const MINIMAP_LABEL = "Canvas minimap";
+// Canvas Enhancements — focus mode floating bar labels (mirror
+// InteractiveCanvas2D so both studio surfaces feel identical).
+const FOCUS_FOCUSED_LABEL = "Focused on";
+const FOCUS_SHOW_ALL_LABEL = "Show all";
 
 assertAllAcwPlaceholderLanguage([
   SEAL_LABEL,
@@ -137,6 +147,8 @@ assertAllAcwPlaceholderLanguage([
   CAMERA_ZOOM_LEVEL_LABEL,
   CAMERA_PAN_HINT_LABEL,
   MINIMAP_LABEL,
+  FOCUS_FOCUSED_LABEL,
+  FOCUS_SHOW_ALL_LABEL,
 ]);
 
 // Local view state shape — same convention as
@@ -177,6 +189,10 @@ export function DomainGrid({ lensId }: DomainGridProps) {
   // the overlay tint and aria augmentation track the current store.
   const [ouTick, setOuTick] = useState(0);
   useEffect(() => subscribeOus(() => setOuTick((t) => t + 1)), []);
+  // Canvas Enhancements — focus mode invalidation tick. Bumped whenever
+  // the per-lens focus stack changes so the descendants filter and the
+  // floating "Show all" bar both re-read the current stack.
+  const [focusTick, setFocusTick] = useState(0);
   void ouTick;
   // Phase 3 OU overlay slice — when ON we tint each NodeCard whose
   // `organisationalUnitId` is set with `cssForOu(id)` (S=35%, L=22%).
@@ -227,6 +243,12 @@ export function DomainGrid({ lensId }: DomainGridProps) {
   const [view, setViewRaw] = useState<DomainGridView>(() =>
     dgViewFromCamera(getAcwCanvasCamera(lensId)),
   );
+  // Canvas Enhancements — stable ref to the current view so that the
+  // fitToSelectedCard callback (used in the F-key handler, which is
+  // bound once at mount) always reads the latest pan / zoom without
+  // needing to be rebound on every camera update.
+  const viewRef = useRef<DomainGridView>(view);
+  viewRef.current = view;
   useEffect(() => {
     setViewRaw(dgViewFromCamera(getAcwCanvasCamera(lensId)));
   }, [lensId]);
@@ -241,6 +263,14 @@ export function DomainGrid({ lensId }: DomainGridProps) {
   useEffect(() => {
     return () => {
       flushAcwCanvasCameraWrites();
+    };
+  }, [lensId]);
+  // Canvas Enhancements — clear the per-lens focus stack on lens
+  // change or unmount so a stale stack never bleeds into a future
+  // session or a different lens reusing the same lensId path.
+  useEffect(() => {
+    return () => {
+      clearFocusStack(lensId);
     };
   }, [lensId]);
   const commitView = useCallback(
@@ -434,6 +464,60 @@ export function DomainGrid({ lensId }: DomainGridProps) {
   // and bind the window listeners exactly once on mount.
   const recentreOnSelectionRef = useRef(recentreOnSelection);
   recentreOnSelectionRef.current = recentreOnSelection;
+  // Canvas Enhancements — stable lensId ref so the keyboard handler
+  // (bound once at mount with empty deps) always reads the current
+  // lensId without needing to be rebound on every render.
+  const lensIdRef = useRef(lensId);
+  lensIdRef.current = lensId;
+  // Canvas Enhancements — zoom-to-fit the selected card in the
+  // DomainGrid viewport. Called immediately after pushFocusFrame so
+  // the focused node fills the screen. Falls back to fitContent when
+  // no node is selected or the card cannot be found in the DOM.
+  const fitToSelectedCard = useCallback(() => {
+    if (selectedNodeId === null) {
+      fitContent();
+      return;
+    }
+    const grid = gridRef.current;
+    const vp = viewportRef.current;
+    if (!grid || !vp) {
+      fitContent();
+      return;
+    }
+    const card = grid.querySelector<HTMLElement>(
+      `[data-acw-node-id="${CSS.escape(selectedNodeId)}"]`,
+    );
+    if (card === null) {
+      fitContent();
+      return;
+    }
+    const cardRect = card.getBoundingClientRect();
+    const vpRect = vp.getBoundingClientRect();
+    const vw = vpRect.width;
+    const vh = vpRect.height;
+    if (vw === 0 || vh === 0) return;
+    // Card dimensions in canvas (un-zoomed) space.
+    const cardW = cardRect.width / viewRef.current.zoom;
+    const cardH = cardRect.height / viewRef.current.zoom;
+    // Card centre in canvas space (undoes current pan + zoom).
+    const cardCenterSx = cardRect.left + cardRect.width / 2 - vpRect.left;
+    const cardCenterSy = cardRect.top + cardRect.height / 2 - vpRect.top;
+    const cardCenterCx = (cardCenterSx - viewRef.current.x) / viewRef.current.zoom;
+    const cardCenterCy = (cardCenterSy - viewRef.current.y) / viewRef.current.zoom;
+    // Zoom to fit with 15% margin on each side.
+    const margin = 0.15;
+    const nextZoom = clampAcwCameraZoom(
+      Math.min(
+        (vw * (1 - margin * 2)) / Math.max(cardW, 1),
+        (vh * (1 - margin * 2)) / Math.max(cardH, 1),
+      ),
+    );
+    const x = vw / 2 - cardCenterCx * nextZoom;
+    const y = vh / 2 - cardCenterCy * nextZoom;
+    commitView({ x, y, zoom: nextZoom });
+  }, [commitView, fitContent, selectedNodeId]);
+  const fitToSelectedCardRef = useRef(fitToSelectedCard);
+  fitToSelectedCardRef.current = fitToSelectedCard;
   useEffect(() => {
     function isTypingTarget(t: EventTarget | null): boolean {
       if (!(t instanceof HTMLElement)) return false;
@@ -459,7 +543,30 @@ export function DomainGrid({ lensId }: DomainGridProps) {
         !e.altKey
       ) {
         e.preventDefault();
-        recentreOnSelectionRef.current();
+        const lid = lensIdRef.current;
+        const selId = getSelectedNodeId(lid);
+        if (selId !== null) {
+          // Canvas Enhancements — focus mode: push the selected node
+          // onto the per-lens stack and zoom to fit it immediately.
+          pushFocusFrame(lid, [selId]);
+          setFocusTick((t) => t + 1);
+          fitToSelectedCardRef.current();
+        } else {
+          recentreOnSelectionRef.current();
+        }
+        return;
+      }
+      if (e.key === "Escape" && !e.ctrlKey && !e.metaKey) {
+        // Canvas Enhancements — pop the focus stack. Only fires when
+        // there is a stack to pop and connect mode is inactive
+        // (chained after StudioCanvas Escape for L3 exit).
+        const lid = lensIdRef.current;
+        const stack = getFocusStack(lid);
+        if (stack.length > 0 && !getConnectMode(lid)) {
+          e.preventDefault();
+          popFocusFrame(lid);
+          setFocusTick((t) => t + 1);
+        }
       }
     }
     function onKeyUp(e: KeyboardEvent) {
@@ -597,6 +704,28 @@ export function DomainGrid({ lensId }: DomainGridProps) {
       viewportBox,
     };
   })();
+
+  // Canvas Enhancements — layer visibility filter.
+  // Computed once per render (cheap) and shared by every domain zone
+  // so all four grids see the same filter without duplicating the
+  // layer-state read. `null` means "no filter active".
+  const dgVisibleLayerIds = (() => {
+    const layers = getLensLayers(lensId);
+    if (layers.length === 0) return null;
+    const vis = getLensLayerVisibility(lensId);
+    if (!layers.some((l) => vis[l.id] === false)) return null;
+    return new Set(layers.filter((l) => vis[l.id] !== false).map((l) => l.id));
+  })();
+
+  // Canvas Enhancements — focus mode node filter.
+  // When the per-lens focus stack is non-empty, only the nodes in the
+  // topmost frame are rendered. `null` means "not in focus mode".
+  void focusTick;
+  const dgFocusStack = getFocusStack(lensId);
+  const dgFocusedNodeIds: ReadonlySet<string> | null =
+    dgFocusStack.length > 0
+      ? new Set(dgFocusStack[dgFocusStack.length - 1])
+      : null;
 
   return (
     <div className="es-canvas-wrap" style={{ overflow: "hidden" }}>
@@ -745,6 +874,22 @@ export function DomainGrid({ lensId }: DomainGridProps) {
             // never leak into the L1 / L2 flat grids; legacy nodes
             // without a `lodRange` always pass.
             if (!isVisibleAtLod(n, activeLod)) return false;
+            // Canvas Enhancements — layer visibility filter.
+            // A node with a non-empty layerIds array must intersect
+            // the active layer set; empty / absent → always visible.
+            if (dgVisibleLayerIds !== null) {
+              if (n.layerIds && n.layerIds.length > 0) {
+                if (!n.layerIds.some((id) => dgVisibleLayerIds.has(id))) {
+                  return false;
+                }
+              }
+            }
+            // Canvas Enhancements — focus mode filter.
+            // When the stack is non-empty only nodes in the top frame
+            // are rendered so the user sees only their selection.
+            if (dgFocusedNodeIds !== null && !dgFocusedNodeIds.has(n.id)) {
+              return false;
+            }
             let cursor: string | null = n.parentId;
             let guard = 0;
             while (cursor !== null && guard < 1024) {
@@ -852,11 +997,60 @@ export function DomainGrid({ lensId }: DomainGridProps) {
                 x={ctxMenu.x}
                 y={ctxMenu.y}
                 activeLod={activeLod}
+                lensId={lensId}
                 onClose={() => setCtxMenu(null)}
               />
             );
           })()
         : null}
+      {/* Canvas Enhancements — focus mode floating bar. Mirrors the
+          IC2D floating bar: appears at the top-centre when the per-
+          lens focus stack is non-empty. "Show all" clears the stack. */}
+      {dgFocusedNodeIds !== null ? (
+        <div
+          style={{
+            position: "absolute",
+            top: 56,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 25,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            background: "var(--bg1, hsl(var(--background)))",
+            border: "1px solid var(--border2, hsl(var(--border)))",
+            borderRadius: 6,
+            padding: "4px 10px",
+            fontSize: 11,
+            whiteSpace: "nowrap",
+            pointerEvents: "auto",
+          }}
+          data-testid="acw-studio-dg-focus-bar"
+        >
+          <span>
+            {FOCUS_FOCUSED_LABEL} {dgFocusedNodeIds.size} node
+            {dgFocusedNodeIds.size !== 1 ? "s" : ""}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              clearFocusStack(lensId);
+              setFocusTick((t) => t + 1);
+            }}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              padding: "0 4px",
+              fontSize: 11,
+              textDecoration: "underline",
+            }}
+            data-testid="acw-studio-dg-focus-show-all"
+          >
+            {FOCUS_SHOW_ALL_LABEL}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

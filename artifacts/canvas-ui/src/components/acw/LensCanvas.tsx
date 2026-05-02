@@ -23,6 +23,7 @@
 //   - Toggle controls visualisation only — picking 3D never
 //     changes the workspace document.
 import { useEffect, useState } from "react";
+import { Layers } from "lucide-react";
 import { InteractiveCanvas2D, type InteractiveCanvas2DProps } from "./InteractiveCanvas2D";
 import { Canvas3DStructural } from "./Canvas3DStructural";
 import { detectWebGL } from "./Canvas3D";
@@ -37,13 +38,22 @@ import { assertAllAcwPlaceholderLanguage } from "@/governance/staticTextGuard";
 const VIEW_LABEL = "View";
 const MODE_2D_LABEL = "2D";
 const MODE_3D_LABEL = "3D";
+// Canvas Enhancements — layers panel toggle button label.
+const LAYERS_LABEL = "Layers";
 
-assertAllAcwPlaceholderLanguage([VIEW_LABEL, MODE_2D_LABEL, MODE_3D_LABEL]);
+assertAllAcwPlaceholderLanguage([VIEW_LABEL, MODE_2D_LABEL, MODE_3D_LABEL, LAYERS_LABEL]);
 
-export type LensCanvasProps = InteractiveCanvas2DProps;
+// Canvas Enhancements — extend with layers-panel props so the toggle
+// button can live alongside the 2D/3D toggle in the same toolbar row.
+// Both props are optional: call sites that have not adopted the layers
+// panel omit them and the button is simply absent.
+export type LensCanvasProps = InteractiveCanvas2DProps & {
+  readonly layersPanelOpen?: boolean;
+  readonly onLayersToggle?: () => void;
+};
 
 export function LensCanvas(props: LensCanvasProps) {
-  const { lensId, testId = "acw-lens-canvas" } = props;
+  const { lensId, testId = "acw-lens-canvas", layersPanelOpen, onLayersToggle } = props;
 
   // Subscribe to view-state so the toggle reflects external changes.
   const [viewTick, setViewTick] = useState(0);
@@ -97,6 +107,25 @@ export function LensCanvas(props: LensCanvasProps) {
             </button>
           );
         })}
+        {/* Canvas Enhancements — layers panel toggle. Only rendered
+            when the host opts in by supplying onLayersToggle. */}
+        {onLayersToggle !== undefined ? (
+          <button
+            type="button"
+            onClick={onLayersToggle}
+            className={`px-2 py-0.5 rounded border transition-colors ${
+              layersPanelOpen
+                ? "border-primary text-primary"
+                : "border-border/60 hover:text-primary hover:border-primary/60"
+            }`}
+            data-testid={`${testId}-toggle-layers`}
+            aria-pressed={layersPanelOpen ?? false}
+            title={LAYERS_LABEL}
+            aria-label={LAYERS_LABEL}
+          >
+            <Layers className="h-3 w-3" aria-hidden="true" />
+          </button>
+        ) : null}
       </div>
 
       {effectiveMode === "2d" ? (
