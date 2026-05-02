@@ -155,6 +155,10 @@ const SeedAllPage = import.meta.env.DEV
   ? lazy(() => import("@/dev/SeedAllPage"))
   : null;
 
+const SeedGoldenPage = import.meta.env.DEV
+  ? lazy(() => import("@/dev/SeedGoldenPage"))
+  : null;
+
 // Dev-only seeder determinism invariant (Task #119). Loaded via a
 // dynamic `import()` inside an `import.meta.env.DEV` guard so the
 // production bundle dead-code-eliminates both the import call and
@@ -368,6 +372,13 @@ function Router() {
         <Route path="/seed-all">
           <Suspense fallback={null}>
             <SeedAllPage />
+          </Suspense>
+        </Route>
+      )}
+      {import.meta.env.DEV && SeedGoldenPage !== null && (
+        <Route path="/seed-golden">
+          <Suspense fallback={null}>
+            <SeedGoldenPage />
           </Suspense>
         </Route>
       )}
