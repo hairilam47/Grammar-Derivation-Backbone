@@ -224,6 +224,11 @@ export function DomainGrid({ lensId }: DomainGridProps) {
   const selectedEdgeId = getSelectedEdgeId(lensId);
   const selectedNodeId = getSelectedNodeId(lensId);
   const connectOn = getConnectMode(lensId);
+  // Canvas Enhancements — stable ref so the Escape keydown handler
+  // (bound once at mount) always reads the latest connect-mode state
+  // rather than a stale closure value. Updated every render.
+  const connectModeRef = useRef(connectOn);
+  connectModeRef.current = connectOn;
   const pendingSource = getConnectPendingSource(lensId);
   // EAStudio Phase 2 (LoS framework) — current Level of Specification
   // for this lens. Used below to drop nodes whose declared `lodRange`
@@ -562,7 +567,7 @@ export function DomainGrid({ lensId }: DomainGridProps) {
         // (chained after StudioCanvas Escape for L3 exit).
         const lid = lensIdRef.current;
         const stack = getFocusStack(lid);
-        if (stack.length > 0 && !getConnectMode(lid)) {
+        if (stack.length > 0 && !connectModeRef.current) {
           e.preventDefault();
           popFocusFrame(lid);
           setFocusTick((t) => t + 1);
@@ -1031,8 +1036,12 @@ export function DomainGrid({ lensId }: DomainGridProps) {
           data-testid="acw-studio-dg-focus-bar"
         >
           <span>
-            {FOCUS_FOCUSED_LABEL} {dgFocusedNodeIds.size} node
-            {dgFocusedNodeIds.size !== 1 ? "s" : ""}
+            {FOCUS_FOCUSED_LABEL}:{" "}
+            {dgFocusedNodeIds.size === 1
+              ? (workspace.structureGraph.nodes.find(
+                  (n) => n.id === [...dgFocusedNodeIds][0],
+                )?.label ?? `${dgFocusedNodeIds.size} nodes`)
+              : `${dgFocusedNodeIds.size} nodes`}
           </span>
           <button
             type="button"

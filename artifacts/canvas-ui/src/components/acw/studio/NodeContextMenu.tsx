@@ -223,7 +223,7 @@ export function NodeContextMenu(props: NodeContextMenuProps) {
                   const prevIds = targetNode?.layerIds ?? [];
                   const nextIds = checked
                     ? prevIds.filter((id) => id !== layer.id)
-                    : [...prevIds, layer.id];
+                    : [...new Set([...prevIds, layer.id])];
                   const r = updateNodeProperties(nid, { layerIds: nextIds });
                   if (!r.ok) publishRefusal(r.reason);
                 }
